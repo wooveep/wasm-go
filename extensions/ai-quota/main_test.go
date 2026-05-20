@@ -1,22 +1,10 @@
-// Copyright (c) 2024 Alibaba Group Holding Ltd.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
@@ -24,12 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 测试配置：基础配置
-var basicConfig = func() json.RawMessage {
+var monetaryConfig = func() json.RawMessage {
 	data, _ := json.Marshal(map[string]interface{}{
-		"admin_consumer":   "admin",
-		"redis_key_prefix": "chat_quota:",
-		"admin_path":       "/quota",
+		"quota_scope":            "global",
+		"provider":               "openai",
+		"tenant_header":          "x-tenant-id",
+		"consumer_header":        "x-consumer-id",
+		"balance_key_template":   "billing:balance:{tenant}:{quota_scope}:{consumer}",
+		"price_key_template":     "billing:effective_price:{tenant}:{provider}:{model}:{token_type}",
+		"missing_balance_policy": "deny",
+		"missing_price_policy":   "skip",
+		"missing_usage_policy":   "skip",
 		"enable_path_suffixes": []string{
 			"/v1/chat/completions",
 			"/v1/messages",
@@ -44,351 +37,233 @@ var basicConfig = func() json.RawMessage {
 	return data
 }()
 
-// 测试配置：缺少admin_consumer
-var missingAdminConsumerConfig = func() json.RawMessage {
-	data, _ := json.Marshal(map[string]interface{}{
-		"redis": map[string]interface{}{
-			"service_name": "redis.static",
-			"service_port": 6379,
-		},
-	})
+func quotaConfigWith(overrides map[string]interface{}) json.RawMessage {
+	var cfg map[string]interface{}
+	_ = json.Unmarshal(monetaryConfig, &cfg)
+	for k, v := range overrides {
+		cfg[k] = v
+	}
+	data, _ := json.Marshal(cfg)
 	return data
-}()
-
-var defaultPathSuffixesConfig = func() json.RawMessage {
-	data, _ := json.Marshal(map[string]interface{}{
-		"admin_consumer": "admin",
-		"redis": map[string]interface{}{
-			"service_name": "redis.static",
-			"service_port": 6379,
-		},
-	})
-	return data
-}()
+}
 
 func TestParseConfig(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
-		// 测试基础配置解析
-		t.Run("basic config", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
+		t.Run("default monetary config", func(t *testing.T) {
+			data, _ := json.Marshal(map[string]interface{}{
+				"redis": map[string]interface{}{
+					"service_name": "redis.static",
+				},
+			})
+			host, status := test.NewTestHost(data)
 			defer host.Reset()
+
 			require.Equal(t, types.OnPluginStartStatusOK, status)
 			config, err := host.GetMatchConfig()
 			require.NoError(t, err)
-			require.NotNil(t, config)
 
 			quotaConfig := config.(*QuotaConfig)
-			require.Equal(t, "admin", quotaConfig.AdminConsumer)
-			require.Equal(t, "chat_quota:", quotaConfig.RedisKeyPrefix)
-			require.Equal(t, "/quota", quotaConfig.AdminPath)
+			require.Equal(t, "global", quotaConfig.QuotaScope)
+			require.Equal(t, "default", quotaConfig.Provider)
+			require.Equal(t, "x-mse-tenant", quotaConfig.TenantHeader)
+			require.Equal(t, "x-mse-consumer", quotaConfig.ConsumerHeader)
+			require.Equal(t, "billing:balance:{tenant}:{quota_scope}:{consumer}", quotaConfig.BalanceKeyTemplate)
+			require.Equal(t, "billing:effective_price:{tenant}:{provider}:{model}:{token_type}", quotaConfig.PriceKeyTemplate)
+			require.Equal(t, int64(1000000), quotaConfig.AmountScale)
+			require.Equal(t, int64(1000000), quotaConfig.PriceUnitTokens)
+			require.Equal(t, MissingPolicyDeny, quotaConfig.MissingBalancePolicy)
+			require.Equal(t, MissingPolicySkip, quotaConfig.MissingPricePolicy)
+			require.Equal(t, MissingPolicySkip, quotaConfig.MissingUsagePolicy)
 			require.Equal(t, []string{"/v1/chat/completions", "/v1/messages"}, quotaConfig.EnablePathSuffixes)
 		})
 
-		// 测试缺少admin_consumer的配置
-		t.Run("missing admin_consumer", func(t *testing.T) {
-			host, status := test.NewTestHost(missingAdminConsumerConfig)
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusFailed, status)
-		})
-
-		t.Run("default path suffixes", func(t *testing.T) {
-			host, status := test.NewTestHost(defaultPathSuffixesConfig)
+		t.Run("admin config no longer required", func(t *testing.T) {
+			host, status := test.NewTestHost(quotaConfigWith(map[string]interface{}{
+				"admin_consumer": nil,
+				"admin_path":     nil,
+			}))
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
-			config, err := host.GetMatchConfig()
-			require.NoError(t, err)
-			require.NotNil(t, config)
-
-			quotaConfig := config.(*QuotaConfig)
-			require.Equal(t, []string{"/v1/chat/completions", "/v1/messages"}, quotaConfig.EnablePathSuffixes)
 		})
 	})
 }
 
-func TestOnHttpRequestHeaders(t *testing.T) {
+func TestRequestAdmission(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
-		// 测试聊天完成模式的请求头处理
-		t.Run("chat completion mode", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
+		t.Run("positive balance allows request", func(t *testing.T) {
+			host, status := test.NewTestHost(monetaryConfig)
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
 
-			// 设置请求头，包含consumer信息
 			action := host.CallOnHttpRequestHeaders([][2]string{
 				{":authority", "example.com"},
 				{":path", "/v1/chat/completions"},
 				{":method", "POST"},
-				{"x-mse-consumer", "consumer1"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
 			})
+			require.Equal(t, types.HeaderStopAllIterationAndWatermark, action)
+			require.Contains(t, string(host.GetRedisCalloutAttributes()[0].Query), "billing:balance:tenant-a:global:consumer-a")
 
-			// 由于需要调用Redis检查配额，应该返回HeaderStopAllIterationAndWatermark
+			host.CallOnRedisCall(0, test.CreateRedisRespString("100"))
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			host.CompleteHttp()
+		})
+
+		t.Run("non-positive balance denies request", func(t *testing.T) {
+			host, status := test.NewTestHost(monetaryConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
 			require.Equal(t, types.HeaderStopAllIterationAndWatermark, action)
 
-			// 模拟Redis调用响应（有足够配额）
-			resp := test.CreateRedisResp(1000)
-			host.CallOnRedisCall(0, resp)
-			action = host.GetHttpStreamAction()
-			require.Equal(t, types.ActionContinue, action)
-			host.CompleteHttp()
-		})
-
-		// 测试管理员查询模式的请求头处理
-		t.Run("admin query mode", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-
-			// 设置请求头，包含admin consumer信息
-			action := host.CallOnHttpRequestHeaders([][2]string{
-				{":authority", "example.com"},
-				{":path", "/v1/chat/completions/quota?consumer=consumer1"},
-				{":method", "GET"},
-				{"x-mse-consumer", "admin"},
-			})
-
-			// 管理员查询模式应该返回 ActionPause
-			require.Equal(t, types.ActionPause, action)
-
-			// 模拟Redis调用响应
-			resp := test.CreateRedisResp(500)
-			host.CallOnRedisCall(0, resp)
-
+			host.CallOnRedisCall(0, test.CreateRedisRespInt(0))
 			response := host.GetLocalResponse()
-			require.Equal(t, uint32(http.StatusOK), response.StatusCode)
-			require.Equal(t, "{\"consumer\":\"consumer1\",\"quota\":500}", string(response.Data))
+			require.Equal(t, uint32(http.StatusForbidden), response.StatusCode)
+			require.Contains(t, string(response.Data), "No monetary balance left")
 			host.CompleteHttp()
 		})
 
-		// 测试无consumer的情况
-		t.Run("no consumer", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
+		t.Run("missing balance follows allow policy", func(t *testing.T) {
+			host, status := test.NewTestHost(quotaConfigWith(map[string]interface{}{
+				"missing_balance_policy": "allow",
+			}))
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
 
-			// 设置请求头，不包含consumer信息
 			action := host.CallOnHttpRequestHeaders([][2]string{
 				{":authority", "example.com"},
 				{":path", "/v1/chat/completions"},
 				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
 			})
+			require.Equal(t, types.HeaderStopAllIterationAndWatermark, action)
 
-			// 无consumer应该返回ActionContinue
-			require.Equal(t, types.ActionContinue, action)
+			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			host.CompleteHttp()
 		})
-	})
-}
 
-func TestOnHttpRequestBody(t *testing.T) {
-	test.RunTest(t, func(t *testing.T) {
-		// 测试管理员刷新模式的请求体处理
-		t.Run("admin refresh mode", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
+		t.Run("missing identity denies request", func(t *testing.T) {
+			host, status := test.NewTestHost(monetaryConfig)
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
 
-			// 先设置请求头
-			host.CallOnHttpRequestHeaders([][2]string{
+			action := host.CallOnHttpRequestHeaders([][2]string{
 				{":authority", "example.com"},
-				{":path", "/v1/chat/completions/quota/refresh"},
+				{":path", "/v1/chat/completions"},
 				{":method", "POST"},
-				{"x-mse-consumer", "admin"},
+				{"x-tenant-id", "tenant-a"},
 			})
-
-			// 设置请求体
-			body := "consumer=consumer1&quota=1000"
-			action := host.CallOnHttpRequestBody([]byte(body))
-
-			// 管理员刷新模式应该返回ActionPause
-			require.Equal(t, types.ActionPause, action)
-
-			// 模拟Redis调用响应
-			resp := test.CreateRedisRespArray([]interface{}{"OK"})
-			host.CallOnRedisCall(0, resp)
-
+			require.Equal(t, types.ActionContinue, action)
 			response := host.GetLocalResponse()
-			require.Equal(t, uint32(http.StatusOK), response.StatusCode)
-			require.Equal(t, "refresh quota successful", string(response.Data))
-			host.CompleteHttp()
+			require.Equal(t, uint32(http.StatusForbidden), response.StatusCode)
+			require.Contains(t, string(response.Data), "Missing tenant or consumer identity")
 		})
 
-		// 测试聊天完成模式的请求体处理
-		t.Run("chat completion mode", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
+		t.Run("legacy admin paths are not handled", func(t *testing.T) {
+			host, status := test.NewTestHost(monetaryConfig)
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
 
-			// 先设置请求头
-			host.CallOnHttpRequestHeaders([][2]string{
+			action := host.CallOnHttpRequestHeaders([][2]string{
 				{":authority", "example.com"},
-				{":path", "/v1/chat/completions"},
-				{":method", "POST"},
-				{"x-mse-consumer", "consumer1"},
-			})
-
-			// 设置请求体
-			body := `{"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "Hello"}]}`
-			action := host.CallOnHttpRequestBody([]byte(body))
-
-			// 聊天完成模式应该返回ActionContinue
-			require.Equal(t, types.ActionContinue, action)
-		})
-	})
-}
-
-func TestOnHttpStreamingResponseBody(t *testing.T) {
-	test.RunTest(t, func(t *testing.T) {
-		// 测试聊天完成模式的流式响应体处理
-		t.Run("chat completion mode", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-
-			// 先设置请求头
-			host.CallOnHttpRequestHeaders([][2]string{
-				{":authority", "example.com"},
-				{":path", "/v1/chat/completions"},
-				{":method", "POST"},
-				{"x-mse-consumer", "consumer1"},
-			})
-
-			// 测试流式响应体处理
-			data := []byte(`{"choices": [{"delta": {"content": "Hello"}}]}`)
-			action := host.CallOnHttpStreamingResponseBody(data, false)
-
-			require.Equal(t, types.ActionContinue, action)
-			result := host.GetResponseBody()
-			// 非结束流应该返回原始数据
-			require.Equal(t, data, result)
-
-			// 测试结束流
-			action = host.CallOnHttpStreamingResponseBody(data, true)
-
-			require.Equal(t, types.ActionContinue, action)
-			result = host.GetResponseBody()
-			// 结束流应该返回原始数据
-			require.Equal(t, data, result)
-
-			// 模拟Redis调用响应（减少配额）
-			resp := test.CreateRedisRespArray([]interface{}{30})
-			host.CallOnRedisCall(0, resp)
-
-			host.CompleteHttp()
-		})
-
-		// 测试非聊天完成模式的流式响应体处理
-		t.Run("non-chat completion mode", func(t *testing.T) {
-			host, status := test.NewTestHost(basicConfig)
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-
-			// 先设置请求头
-			host.CallOnHttpRequestHeaders([][2]string{
-				{":authority", "example.com"},
-				{":path", "/other/path"},
+				{":path", "/v1/chat/completions/quota?consumer=consumer-a"},
 				{":method", "GET"},
-				{"x-mse-consumer", "consumer1"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
 			})
-
-			// 测试流式响应体处理
-			data := []byte("response data")
-			action := host.CallOnHttpStreamingResponseBody(data, false)
-
-			// 非聊天完成模式应该返回原始数据
 			require.Equal(t, types.ActionContinue, action)
-			result := host.GetResponseBody()
-			require.Equal(t, data, result)
+			require.Empty(t, host.GetRedisCalloutAttributes())
 		})
 	})
 }
 
-func TestGetOperationMode(t *testing.T) {
-	tests := []struct {
-		name      string
-		path      string
-		adminPath string
-		suffixes  []string
-		chatMode  ChatMode
-		adminMode AdminMode
-	}{
-		{
-			name:      "chat completion mode",
-			path:      "/v1/chat/completions",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeCompletion,
-			adminMode: AdminModeNone,
-		},
-		{
-			name:      "admin query mode",
-			path:      "/v1/chat/completions/quota",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeAdmin,
-			adminMode: AdminModeQuery,
-		},
-		{
-			name:      "admin refresh mode",
-			path:      "/v1/chat/completions/quota/refresh",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeAdmin,
-			adminMode: AdminModeRefresh,
-		},
-		{
-			name:      "admin delta mode",
-			path:      "/v1/chat/completions/quota/delta",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeAdmin,
-			adminMode: AdminModeDelta,
-		},
-		{
-			name:      "anthropic messages completion mode",
-			path:      "/v1/messages",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeCompletion,
-			adminMode: AdminModeNone,
-		},
-		{
-			name:      "custom suffix completion mode",
-			path:      "/llm/invoke",
-			adminPath: "/quota",
-			suffixes:  []string{"/invoke"},
-			chatMode:  ChatModeCompletion,
-			adminMode: AdminModeNone,
-		},
-		{
-			name:      "admin path fixed to chat completions",
-			path:      "/v1/chat/completions/quota",
-			adminPath: "/quota",
-			suffixes:  []string{"/invoke"},
-			chatMode:  ChatModeAdmin,
-			adminMode: AdminModeQuery,
-		},
-		{
-			name:      "messages admin path not supported",
-			path:      "/v1/messages/quota",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeNone,
-			adminMode: AdminModeNone,
-		},
-		{
-			name:      "none mode",
-			path:      "/other/path",
-			adminPath: "/quota",
-			suffixes:  []string{"/v1/chat/completions", "/v1/messages"},
-			chatMode:  ChatModeNone,
-			adminMode: AdminModeNone,
-		},
+func TestMonetaryDeduction(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		t.Run("usage and prices produce eval deduction", func(t *testing.T) {
+			host, status := test.NewTestHost(monetaryConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnRedisCall(0, test.CreateRedisRespInt(1000))
+
+			responseBody := []byte(`{"model":"gpt-4","usage":{"prompt_tokens":1001,"completion_tokens":2000,"total_tokens":3001}}`)
+			action := host.CallOnHttpStreamingResponseBody(responseBody, true)
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetRedisCalloutAttributes()
+			require.Len(t, attrs, 1)
+			query := string(attrs[0].Query)
+			require.Contains(t, query, "eval")
+			require.Contains(t, query, "billing:balance:tenant-a:global:consumer-a")
+			require.Contains(t, query, "billing:effective_price:tenant-a:openai:gpt-4:input")
+			require.Contains(t, query, "billing:effective_price:tenant-a:openai:gpt-4:output")
+			require.Contains(t, query, "1001")
+			require.Contains(t, query, "2000")
+			host.CallOnRedisCall(0, test.CreateRedisRespArray([]interface{}{5, 2, 3}))
+			host.CompleteHttp()
+		})
+
+		t.Run("missing usage skips deduction", func(t *testing.T) {
+			host, status := test.NewTestHost(monetaryConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnRedisCall(0, test.CreateRedisRespInt(1000))
+
+			action := host.CallOnHttpStreamingResponseBody([]byte(`{"choices":[{"message":{"content":"ok"}}]}`), true)
+			require.Equal(t, types.ActionContinue, action)
+			require.Empty(t, host.GetRedisCalloutAttributes())
+			host.CompleteHttp()
+		})
+	})
+}
+
+func TestCostCalculation(t *testing.T) {
+	require.Equal(t, int64(5), calculateCost(1001, 2000, 1000, 1500, 1000000))
+	require.Equal(t, int64(0), calculateCost(0, 0, 1000, 1500, 1000000))
+}
+
+func TestMissingPriceScriptResult(t *testing.T) {
+	require.True(t, isMissingPriceResult(test.CreateRedisRespArray([]interface{}{0, "missing_price"})))
+	require.False(t, isMissingPriceResult(test.CreateRedisRespArray([]interface{}{5, 2, 3})))
+	require.False(t, isMissingPriceResult(test.CreateRedisRespError(errors.New("redis failed").Error())))
+}
+
+func TestKeyBuilders(t *testing.T) {
+	config := QuotaConfig{
+		BalanceKeyTemplate: "billing:balance:{tenant}:{quota_scope}:{consumer}",
+		PriceKeyTemplate:   "billing:effective_price:{tenant}:{provider}:{model}:{token_type}",
+		QuotaScope:         "team-a",
+		Provider:           "openai",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			chatMode, adminMode := getOperationMode(tt.path, tt.adminPath, tt.suffixes)
-			require.Equal(t, tt.chatMode, chatMode)
-			require.Equal(t, tt.adminMode, adminMode)
-		})
-	}
+	require.Equal(t, "billing:balance:t1:team-a:c1", config.buildBalanceKey("t1", "c1"))
+	require.Equal(t, "billing:effective_price:t1:openai:gpt-4:input", config.buildPriceKey("t1", "gpt-4", "input"))
+	require.False(t, isAIPathEnabled("/v1/chat/completions/quota", []string{"/v1/chat/completions"}))
+	require.True(t, isAIPathEnabled("/proxy/v1/messages?debug=true", []string{"/v1/messages"}))
+	require.False(t, strings.Contains(MonetaryDeductionScript, "redis_key_prefix"))
 }

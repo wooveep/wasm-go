@@ -8,7 +8,12 @@ description: ai-quota 金额余额准入与响应后扣费插件配置参考
 
 `ai-quota` 在 AI 请求进入上游前读取 Redis 热余额，余额大于 0 时放行，余额缺失或非正余额按策略处理。响应结束后，插件通过 `pkg/tokenusage` 独立解析 token usage 和 model，读取 Redis 中租户生效价格，并用 Lua `EVAL` 原子计算费用和扣减余额。
 
-插件不再提供 `/quota`、`/quota/refresh`、`/quota/delta` 等网关内管理接口，也不再支持 `admin_consumer`、`admin_path`、`redis_key_prefix`。账户、余额、价格、账单流水和 Redis 重建由 Console 或 billing-service 负责。
+插件不再承担网关内 quota 管理职责。账户、余额、价格、账单流水、Redis 重建、幂等和对账由 Console 或 billing-service 负责。
+
+## 运行属性
+
+插件执行阶段：`默认阶段`
+插件执行优先级：`280`
 
 ## Redis Key
 
@@ -59,12 +64,16 @@ ceil(input_tokens * input_price / price_unit_tokens)
 redis:
   service_name: redis-service.default.svc.cluster.local
   service_port: 6379
-quota_scope: route:qwen
-provider: dashscope
+  timeout: 1000
 tenant_header: x-mse-tenant
 consumer_header: x-mse-consumer
 balance_key_template: "billing:balance:{tenant}:{quota_scope}:{consumer}"
 price_key_template: "billing:effective_price:{tenant}:{provider}:{model}:{token_type}"
+amount_scale: 1000000
+price_unit_tokens: 1000000
+enable_path_suffixes:
+  - /v1/chat/completions
+  - /v1/messages
 missing_balance_policy: deny
 missing_price_policy: skip
 missing_usage_policy: skip

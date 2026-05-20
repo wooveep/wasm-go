@@ -4,58 +4,32 @@ metadata:
   name: ai-quota
   namespace: higress-system
 spec:
-  defaultConfig: {}
-  defaultConfigDisable: true
+  defaultConfig:
+    redis:
+      service_name: redis-service.default.svc.cluster.local
+      service_port: 6379
+      timeout: 1000
+    tenant_header: x-mse-tenant
+    consumer_header: x-mse-consumer
+    balance_key_template: "billing:balance:{tenant}:{quota_scope}:{consumer}"
+    price_key_template: "billing:effective_price:{tenant}:{provider}:{model}:{token_type}"
+    amount_scale: 1000000
+    price_unit_tokens: 1000000
+    missing_balance_policy: deny
+    missing_price_policy: skip
+    missing_usage_policy: skip
+  defaultConfigDisable: false
   matchRules:
-  - config:
-      redis_key_prefix: "chat_quota:"
-      admin_consumer: consumer3
-      admin_path: /quota
-      redis:
-        service_name: redis-service.default.svc.cluster.local
-        service_port: 6379
-        timeout: 2000
-    configDisable: false
-    ingress:
+  - ingress:
     - qwen
+    config:
+      quota_scope: route:qwen
+      provider: dashscope
+  - ingress:
+    - deepseek
+    config:
+      quota_scope: route:deepseek
+      provider: deepseek
   phase: UNSPECIFIED_PHASE
   priority: 280
-  url: oci://registry.cn-hangzhou.aliyuncs.com/2456868764/ai-quota:1.0.8
-
----
-apiVersion: extensions.higress.io/v1alpha1
-kind: WasmPlugin
-metadata:
-  name: ai-statistics
-  namespace: higress-system
-spec:
-  defaultConfig:
-    enable: true
-  defaultConfigDisable: false
-  phase: UNSPECIFIED_PHASE
-  priority: 250
-  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-statistics:1.0.0
-
----
-apiVersion: extensions.higress.io/v1alpha1
-kind: WasmPlugin
-metadata:
-  name: wasm-keyauth
-  namespace: higress-system
-spec:
-  defaultConfig:
-    consumers:
-      - credential: "Bearer credential1"
-        name: consumer1
-      - credential: "Bearer credential2"
-        name: consumer2
-      - credential: "Bearer credential3"
-        name: consumer3
-    global_auth: true
-    keys:
-      - authorization
-    in_header: true
-  defaultConfigDisable: false
-  priority: 300
-  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/key-auth:1.0.0
-  imagePullPolicy: Always
+  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-quota:latest
