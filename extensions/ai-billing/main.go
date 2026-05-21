@@ -47,6 +47,8 @@ const (
 	ctxInputToken     = "ai-billing-input-token"
 	ctxOutputToken    = "ai-billing-output-token"
 	ctxTotalToken     = "ai-billing-total-token"
+	ctxInputDetails   = "ai-billing-input-details"
+	ctxOutputDetails  = "ai-billing-output-details"
 	ctxModel          = "ai-billing-model"
 )
 
@@ -253,6 +255,12 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	ctx.SetContext(ctxInputToken, usage.InputToken)
 	ctx.SetContext(ctxOutputToken, usage.OutputToken)
 	ctx.SetContext(ctxTotalToken, usage.TotalToken)
+	if len(usage.InputTokenDetails) > 0 {
+		ctx.SetContext(ctxInputDetails, usage.InputTokenDetails)
+	}
+	if len(usage.OutputTokenDetails) > 0 {
+		ctx.SetContext(ctxOutputDetails, usage.OutputTokenDetails)
+	}
 	ctx.SetContext(ctxModel, usage.Model)
 }
 
@@ -299,7 +307,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 			Input:   inputTokens,
 			Output:  outputTokens,
 			Total:   totalTokens,
-			Details: map[string]any{},
+			Details: billingUsageDetails(ctx),
 		},
 		StartTimeMs:  int64FromContext(ctx.GetContext(ctxStartTime)),
 		EndTimeMs:    time.Now().UnixMilli(),
@@ -309,6 +317,24 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
 	}
 	return event
+}
+
+func billingUsageDetails(ctx wrapper.HttpContext) map[string]any {
+	details := map[string]any{}
+	if inputDetails := tokenDetailsFromContext(ctx.GetContext(ctxInputDetails)); len(inputDetails) > 0 {
+		details["input"] = inputDetails
+	}
+	if outputDetails := tokenDetailsFromContext(ctx.GetContext(ctxOutputDetails)); len(outputDetails) > 0 {
+		details["output"] = outputDetails
+	}
+	return details
+}
+
+func tokenDetailsFromContext(value any) map[string]int64 {
+	if details, ok := value.(map[string]int64); ok {
+		return details
+	}
+	return nil
 }
 
 func isAIPathEnabled(requestPath string, enabledSuffixes []string) bool {

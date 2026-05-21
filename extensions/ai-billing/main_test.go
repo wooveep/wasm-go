@@ -153,7 +153,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 5, usage["input"])
 			require.EqualValues(t, 8, usage["output"])
 			require.EqualValues(t, 13, usage["total"])
-			require.NotNil(t, usage["details"])
+			require.Equal(t, map[string]interface{}{}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, false, event["is_stream"])
 			require.Equal(t, "pv-7", event["price_version"])
@@ -386,6 +386,48 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotContains(t, string(attrs[0].Body), `"input_tokens":`)
 			require.NotContains(t, string(attrs[0].Body), `"output_tokens":`)
 			require.NotContains(t, string(attrs[0].Body), `"total_tokens":`)
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
+		t.Run("structured token usage maps details and total fallback", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":5,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":3}}}`))
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 5, usage["input"])
+			require.EqualValues(t, 8, usage["output"])
+			require.EqualValues(t, 13, usage["total"])
+			require.Equal(t, map[string]interface{}{
+				"input": map[string]interface{}{
+					"cached_tokens": float64(2),
+				},
+				"output": map[string]interface{}{
+					"reasoning_tokens": float64(3),
+				},
+			}, usage["details"])
+			require.Equal(t, false, event["usage_missing"])
+
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
 			host.CompleteHttp()
 		})
