@@ -33,7 +33,7 @@
 - [x] 5.1 Update config parsing tests for `billing_service.auth_token` and default `consumer_header`.
 - [x] 5.2 Add event identity tests proving each AI request gets a new UUIDv7/ULID and `idempotency_key` defaults to `event_id`.
 - [x] 5.3 Update delivery tests to assert JSON content type and Bearer authorization headers.
-- [ ] 5.4 Add payload tests for `X-Mse-Consumer`, structured usage, total fallback, missing usage, and excluded credential/identity fields.
+- [x] 5.4 Add payload tests for `X-Mse-Consumer`, structured usage, total fallback, missing usage, and excluded credential/identity fields.
 - [ ] 5.5 Add delivery result tests for 401, 403, 408, 429, 5xx, and dispatch/network errors.
 - [ ] 5.6 Update `ai-billing` documentation and examples to include `auth_token: <shared-secret>` placeholders only.
 - [ ] 5.7 Verify plugin logs and test assertions do not expose `auth_token` or raw API-key values.
