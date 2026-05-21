@@ -78,6 +78,19 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, "x-consumer-id", billingConfig.ConsumerHeader)
 			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
 		})
+
+		t.Run("default consumer header", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfigDefaultConsumer)
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, defaultConsumerHeader, billingConfig.ConsumerHeader)
+		})
 	})
 }
 
