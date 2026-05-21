@@ -45,4 +45,5 @@
 - [x] 6.3 Run `graphify update .` after code changes.
 - [x] 6.4 Run `gitnexus_detect_changes()` before committing to confirm affected symbols and execution flows match the expected `ai-billing` scope.
   - Result: staged scope touched only the `tasks.md` verification section, risk `low`, affected execution flows `[]`.
-- [ ] 6.5 Run `openspec status --change ai-billing-console-events` and confirm all required artifacts are complete.
+- [x] 6.5 Run `openspec status --change ai-billing-console-events` and confirm all required artifacts are complete.
+  - Result: `openspec status --change ai-billing-console-events` reported schema `spec-driven`, progress `4/4 artifacts complete`, and all proposal/design/specs/tasks artifacts checked.
