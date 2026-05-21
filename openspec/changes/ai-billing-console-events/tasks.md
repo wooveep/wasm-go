@@ -2,7 +2,7 @@
 
 - [x] 1.1 Run GitNexus impact analysis for each `ai-billing` symbol that will be edited, including `parseConfig`, request-header handling, response-completion handling, event delivery, and `recordUsage`.
 - [x] 1.2 Review `extensions/ai-billing/main.go`, `extensions/ai-billing/main_test.go`, `pkg/tokenusage`, and existing `ai-billing` docs to confirm exact edit points.
-- [ ] 1.3 Decide whether to implement UUIDv7 or ULID based on existing dependencies and WASM plugin dependency constraints.
+- [x] 1.3 Decide whether to implement UUIDv7 or ULID based on existing dependencies and WASM plugin dependency constraints.
 
 ## 2. Configuration And Event State
 
