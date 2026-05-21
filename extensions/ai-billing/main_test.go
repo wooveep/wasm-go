@@ -242,10 +242,10 @@ func TestBillingEventDelivery(t *testing.T) {
 				{"x-request-id", "req-sensitive"},
 				{"x-tenant-id", "tenant-id-should-not-leak"},
 				{"x-consumer-id", "consumer-a"},
-				{"authorization", "Bearer sk-live-cred"},
-				{"x-api-key", "api-key-sample"},
+				{"authorization", "Bearer <raw-api-key>"},
+				{"x-api-key", "<raw-api-key>"},
 				{"x-user-id", "user-id-sample"},
-				{"x-api-key-id", "api-key-id-sample"},
+				{"x-api-key-id", "<api-key-id>"},
 				{"x-ai-price-version", "pv-secure"},
 			})
 			require.Equal(t, types.ActionContinue, action)
@@ -277,9 +277,8 @@ func TestBillingEventDelivery(t *testing.T) {
 			}
 			require.NotContains(t, body, "tenant-id-should-not-leak")
 			require.NotContains(t, body, "user-id-sample")
-			require.NotContains(t, body, "api-key-sample")
-			require.NotContains(t, body, "api-key-id-sample")
-			require.NotContains(t, body, "sk-live-cred")
+			require.NotContains(t, body, "<raw-api-key>")
+			require.NotContains(t, body, "<api-key-id>")
 
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
 			host.CompleteHttp()

@@ -36,7 +36,7 @@
 - [x] 5.4 Add payload tests for `X-Mse-Consumer`, structured usage, total fallback, missing usage, and excluded credential/identity fields.
 - [x] 5.5 Add delivery result tests for 401, 403, 408, 429, 5xx, and dispatch/network errors.
 - [x] 5.6 Update `ai-billing` documentation and examples to include `auth_token: <shared-secret>` placeholders only.
-- [ ] 5.7 Verify plugin logs and test assertions do not expose `auth_token` or raw API-key values.
+- [x] 5.7 Verify plugin logs and test assertions do not expose `auth_token` or raw API-key values.
 
 ## 6. Verification
 

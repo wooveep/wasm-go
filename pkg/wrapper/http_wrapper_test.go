@@ -8,9 +8,9 @@ import (
 
 func TestRedactSensitiveRequestHeaders(t *testing.T) {
 	headers := [][2]string{
-		{"Authorization", "Bearer secret"},
-		{"x-api-key", "api-key-secret"},
-		{"X-API-Key", "api-key-secret-2"},
+		{"Authorization", "Bearer <token>"},
+		{"x-api-key", "<api-key>"},
+		{"X-API-Key", "<api-key-2>"},
 		{"content-type", "application/json"},
 	}
 
@@ -22,6 +22,6 @@ func TestRedactSensitiveRequestHeaders(t *testing.T) {
 		{"X-API-Key", "[REDACTED]"},
 		{"content-type", "application/json"},
 	}, redacted)
-	require.Equal(t, "Bearer secret", headers[0][1])
-	require.Equal(t, "api-key-secret", headers[1][1])
+	require.Equal(t, "Bearer <token>", headers[0][1])
+	require.Equal(t, "<api-key>", headers[1][1])
 }
