@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/iface"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
@@ -58,6 +60,29 @@ func TestParseConfig(t *testing.T) {
 
 func TestBillingEventDelivery(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
+		t.Run("non-ai path does not dispatch", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/healthz"},
+				{":method", "GET"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseBody([]byte(`{"ok":true}`))
+			require.Equal(t, types.ActionContinue, action)
+			require.Empty(t, host.GetHttpCalloutAttributes())
+		})
+
 		t.Run("successful event includes request facts", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -202,3 +227,77 @@ func TestStatusCodeFromHeaders(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, statusCodeFromHeaders([][2]string{{":status", "202"}}))
 	require.Equal(t, http.StatusBadGateway, statusCodeFromHeaders(nil))
 }
+
+func TestInitBillingRequestContextSetsEventID(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+
+	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-1", "tenant-a", "consumer-a", "pv-7")
+
+	require.NoError(t, err)
+	require.NotEmpty(t, eventID)
+	require.Equal(t, eventID, ctx.values[ctxEventID])
+	parsed, err := uuid.Parse(eventID)
+	require.NoError(t, err)
+	require.Equal(t, uuid.Version(7), parsed.Version())
+}
+
+type mockBillingHttpContext struct {
+	values map[string]interface{}
+}
+
+func (m *mockBillingHttpContext) Scheme() string { return "" }
+func (m *mockBillingHttpContext) Host() string   { return "" }
+func (m *mockBillingHttpContext) Path() string   { return "" }
+func (m *mockBillingHttpContext) Method() string { return "" }
+func (m *mockBillingHttpContext) SetContext(key string, value interface{}) {
+	m.values[key] = value
+}
+func (m *mockBillingHttpContext) GetContext(key string) interface{} { return m.values[key] }
+func (m *mockBillingHttpContext) GetBoolContext(key string, defaultValue bool) bool {
+	if v, ok := m.values[key].(bool); ok {
+		return v
+	}
+	return defaultValue
+}
+func (m *mockBillingHttpContext) GetStringContext(key, defaultValue string) string {
+	if v, ok := m.values[key].(string); ok {
+		return v
+	}
+	return defaultValue
+}
+func (m *mockBillingHttpContext) GetByteSliceContext(key string, defaultValue []byte) []byte {
+	if v, ok := m.values[key].([]byte); ok {
+		return v
+	}
+	return defaultValue
+}
+func (m *mockBillingHttpContext) GetUserAttribute(key string) interface{} { return nil }
+func (m *mockBillingHttpContext) SetUserAttribute(key string, value interface{}) {
+}
+func (m *mockBillingHttpContext) SetUserAttributeMap(kvmap map[string]interface{}) {}
+func (m *mockBillingHttpContext) GetUserAttributeMap() map[string]interface{}      { return nil }
+func (m *mockBillingHttpContext) WriteUserAttributeToLog() error                   { return nil }
+func (m *mockBillingHttpContext) WriteUserAttributeToLogWithKey(key string) error  { return nil }
+func (m *mockBillingHttpContext) WriteUserAttributeToTrace() error                 { return nil }
+func (m *mockBillingHttpContext) DontReadRequestBody()                             {}
+func (m *mockBillingHttpContext) DontReadResponseBody()                            {}
+func (m *mockBillingHttpContext) BufferRequestBody()                               {}
+func (m *mockBillingHttpContext) BufferResponseBody()                              {}
+func (m *mockBillingHttpContext) NeedPauseStreamingResponse()                      {}
+func (m *mockBillingHttpContext) PushBuffer(buffer []byte)                         {}
+func (m *mockBillingHttpContext) PopBuffer() []byte                                { return nil }
+func (m *mockBillingHttpContext) BufferQueueSize() int                             { return 0 }
+func (m *mockBillingHttpContext) DisableReroute()                                  {}
+func (m *mockBillingHttpContext) SetRequestBodyBufferLimit(byteSize uint32)        {}
+func (m *mockBillingHttpContext) SetResponseBodyBufferLimit(byteSize uint32)       {}
+func (m *mockBillingHttpContext) RouteCall(method, url string, headers [][2]string, body []byte, callback iface.RouteResponseCallback) error {
+	return nil
+}
+func (m *mockBillingHttpContext) GetExecutionPhase() iface.HTTPExecutionPhase {
+	return iface.DecodeHeader
+}
+func (m *mockBillingHttpContext) HasRequestBody() bool       { return false }
+func (m *mockBillingHttpContext) HasResponseBody() bool      { return false }
+func (m *mockBillingHttpContext) IsWebsocket() bool          { return false }
+func (m *mockBillingHttpContext) IsBinaryRequestBody() bool  { return false }
+func (m *mockBillingHttpContext) IsBinaryResponseBody() bool { return false }

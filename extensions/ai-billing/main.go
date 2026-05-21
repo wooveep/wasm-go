@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/log"
@@ -32,6 +33,7 @@ const (
 
 	ctxBillingEnabled = "ai-billing-enabled"
 	ctxStartTime      = "ai-billing-start-time"
+	ctxEventID        = "ai-billing-event-id"
 	ctxRequestPath    = "ai-billing-request-path"
 	ctxRequestID      = "ai-billing-request-id"
 	ctxTenant         = "ai-billing-tenant"
@@ -155,27 +157,42 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 		return types.ActionContinue
 	}
 	ctx.SetContext(ctxBillingEnabled, true)
-	ctx.SetContext(ctxStartTime, time.Now().UnixMilli())
-	ctx.SetContext(ctxRequestPath, requestPath)
-
 	requestID, _ := proxywasm.GetHttpRequestHeader("x-request-id")
 	if requestID == "" {
 		requestID = stringProperty([]string{"x_request_id"}, "")
 	}
-	ctx.SetContext(ctxRequestID, requestID)
+	tenant, _ := proxywasm.GetHttpRequestHeader(config.TenantHeader)
+	consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader)
+	priceVersion, _ := proxywasm.GetHttpRequestHeader("x-ai-price-version")
+	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, priceVersion); err != nil {
+		log.Warnf("ai-billing event id generation failed open, request_id:%s err:%v", requestID, err)
+		ctx.SetContext(ctxBillingEnabled, false)
+		ctx.DontReadResponseBody()
+	}
+	return types.ActionContinue
+}
 
-	if tenant, _ := proxywasm.GetHttpRequestHeader(config.TenantHeader); tenant != "" {
+func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, tenant, consumer, priceVersion string) (string, error) {
+	eventID, err := newEventID()
+	if err != nil {
+		return "", err
+	}
+	ctx.SetContext(ctxStartTime, time.Now().UnixMilli())
+	ctx.SetContext(ctxEventID, eventID)
+	ctx.SetContext(ctxRequestPath, requestPath)
+	ctx.SetContext(ctxRequestID, requestID)
+	if tenant != "" {
 		ctx.SetContext(ctxTenant, tenant)
 	}
-	if consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader); consumer != "" {
+	if consumer != "" {
 		ctx.SetContext(ctxConsumer, consumer)
 	}
-	if priceVersion, _ := proxywasm.GetHttpRequestHeader("x-ai-price-version"); priceVersion != "" {
+	if priceVersion != "" {
 		ctx.SetContext(ctxPriceVersion, priceVersion)
 	}
 	ctx.SetContext(ctxRoute, stringProperty([]string{"route_name"}, "-"))
 	ctx.SetContext(ctxCluster, stringProperty([]string{"cluster_name"}, "-"))
-	return types.ActionContinue
+	return eventID, nil
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, config BillingConfig) types.Action {
@@ -336,6 +353,14 @@ func stringProperty(path []string, fallback string) string {
 		return fallback
 	}
 	return string(raw)
+}
+
+func newEventID() (string, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
 }
 
 func stringDefault(value, fallback string) string {
