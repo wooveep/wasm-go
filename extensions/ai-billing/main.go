@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -84,26 +83,30 @@ type BillingService struct {
 }
 
 type BillingEvent struct {
-	RequestID             string `json:"request_id"`
-	IdempotencyKey        string `json:"idempotency_key"`
-	Tenant                string `json:"tenant"`
-	Consumer              string `json:"consumer"`
-	QuotaScope            string `json:"quota_scope"`
-	Provider              string `json:"provider"`
-	Model                 string `json:"model"`
-	Route                 string `json:"route"`
-	Cluster               string `json:"cluster"`
-	RequestPath           string `json:"request_path"`
-	StatusCode            int    `json:"status_code"`
-	StartTimeMs           int64  `json:"start_time_ms"`
-	EndTimeMs             int64  `json:"end_time_ms"`
-	IsStream              bool   `json:"is_stream"`
-	InputTokens           int64  `json:"input_tokens"`
-	OutputTokens          int64  `json:"output_tokens"`
-	TotalTokens           int64  `json:"total_tokens"`
-	UsageMissing          bool   `json:"usage_missing"`
-	PriceVersion          string `json:"price_version,omitempty"`
-	GatewayCalculatedCost *int64 `json:"gateway_calculated_cost,omitempty"`
+	EventID        string       `json:"event_id"`
+	IdempotencyKey string       `json:"idempotency_key"`
+	RequestID      string       `json:"request_id"`
+	Consumer       string       `json:"consumer"`
+	Route          string       `json:"route"`
+	Provider       string       `json:"provider"`
+	Model          string       `json:"model"`
+	RequestPath    string       `json:"request_path"`
+	StatusCode     int          `json:"status_code"`
+	Usage          BillingUsage `json:"usage"`
+	UsageMissing   bool         `json:"usage_missing"`
+	StartTimeMs    int64        `json:"start_time_ms"`
+	EndTimeMs      int64        `json:"end_time_ms"`
+	IsStream       bool         `json:"is_stream"`
+	Cluster        string       `json:"cluster"`
+	PriceVersion   string       `json:"price_version,omitempty"`
+}
+
+type BillingUsage struct {
+	Unit    string         `json:"unit"`
+	Input   int64          `json:"input"`
+	Output  int64          `json:"output"`
+	Total   int64          `json:"total"`
+	Details map[string]any `json:"details"`
 }
 
 func parseConfig(configJson gjson.Result, config *BillingConfig) error {
@@ -279,30 +282,31 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	totalTokens := int64FromContext(ctx.GetContext(ctxTotalToken))
 	usageMissing := totalTokens <= 0
 	requestID := ctx.GetStringContext(ctxRequestID, "")
-	if requestID == "" {
-		requestID = fmt.Sprintf("%s:%s:%d", ctx.GetStringContext(ctxTenant, ""), ctx.GetStringContext(ctxConsumer, ""), intFromContext(ctx.GetContext(ctxStatusCode)))
-	}
-	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, ctx.GetStringContext(ctxEventID, requestID))
+	eventID := ctx.GetStringContext(ctxEventID, "")
+	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, eventID)
 	event := BillingEvent{
-		RequestID:      requestID,
+		EventID:        eventID,
 		IdempotencyKey: idempotencyKey,
-		Tenant:         ctx.GetStringContext(ctxTenant, ""),
+		RequestID:      requestID,
 		Consumer:       ctx.GetStringContext(ctxConsumer, ""),
-		QuotaScope:     config.QuotaScope,
+		Route:          ctx.GetStringContext(ctxRoute, "-"),
 		Provider:       ctx.GetStringContext(ctxProvider, config.Provider),
 		Model:          ctx.GetStringContext(ctxModel, tokenusage.ModelUnknown),
-		Route:          ctx.GetStringContext(ctxRoute, "-"),
-		Cluster:        ctx.GetStringContext(ctxCluster, "-"),
 		RequestPath:    ctx.GetStringContext(ctxRequestPath, ""),
 		StatusCode:     intDefault(intFromContext(ctx.GetContext(ctxStatusCode)), http.StatusBadGateway),
-		StartTimeMs:    int64FromContext(ctx.GetContext(ctxStartTime)),
-		EndTimeMs:      time.Now().UnixMilli(),
-		IsStream:       ctx.GetBoolContext(ctxIsStream, isStream),
-		InputTokens:    inputTokens,
-		OutputTokens:   outputTokens,
-		TotalTokens:    totalTokens,
-		UsageMissing:   usageMissing,
-		PriceVersion:   ctx.GetStringContext(ctxPriceVersion, ""),
+		Usage: BillingUsage{
+			Unit:    "token",
+			Input:   inputTokens,
+			Output:  outputTokens,
+			Total:   totalTokens,
+			Details: map[string]any{},
+		},
+		StartTimeMs:  int64FromContext(ctx.GetContext(ctxStartTime)),
+		EndTimeMs:    time.Now().UnixMilli(),
+		IsStream:     ctx.GetBoolContext(ctxIsStream, isStream),
+		UsageMissing: usageMissing,
+		Cluster:      ctx.GetStringContext(ctxCluster, "-"),
+		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
 	}
 	return event
 }
