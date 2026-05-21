@@ -33,6 +33,26 @@ var billingConfig = func() json.RawMessage {
 	return data
 }()
 
+var billingConfigDefaultConsumer = func() json.RawMessage {
+	data, _ := json.Marshal(map[string]interface{}{
+		"quota_scope":   "global",
+		"provider":      "openai",
+		"tenant_header": "x-tenant-id",
+		"billing_service": map[string]interface{}{
+			"service_name": "billing.static",
+			"service_port": 8080,
+			"path":         "/internal/billing/events",
+			"timeout":      750,
+			"auth_token":   "<shared-secret>",
+		},
+		"enable_path_suffixes": []string{
+			"/v1/chat/completions",
+			"/v1/messages",
+		},
+	})
+	return data
+}()
+
 func TestParseConfig(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		t.Run("billing service target and default fail policy", func(t *testing.T) {
@@ -144,6 +164,37 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotContains(t, event, "total_tokens")
 			require.NotContains(t, event, "gateway_calculated_cost")
 
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			host.CompleteHttp()
+		})
+
+		t.Run("default consumer header uses x-mse-consumer", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfigDefaultConsumer)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"X-Mse-Consumer", "consumer-a"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, "consumer-a", event["consumer"])
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
 			host.CompleteHttp()
 		})
