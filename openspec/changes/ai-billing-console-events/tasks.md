@@ -42,6 +42,6 @@
 
 - [x] 6.1 Run targeted `ai-billing` tests.
 - [x] 6.2 Run broader affected package tests for `pkg/tokenusage` and shared HTTP/test helpers if touched.
-- [ ] 6.3 Run `graphify update .` after code changes.
+- [x] 6.3 Run `graphify update .` after code changes.
 - [ ] 6.4 Run `gitnexus_detect_changes()` before committing to confirm affected symbols and execution flows match the expected `ai-billing` scope.
 - [ ] 6.5 Run `openspec status --change ai-billing-console-events` and confirm all required artifacts are complete.
