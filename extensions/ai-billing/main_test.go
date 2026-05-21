@@ -508,6 +508,33 @@ func TestStatusCodeFromHeaders(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, statusCodeFromHeaders(nil))
 }
 
+func TestBillingDeliveryFailureStatusClassification(t *testing.T) {
+	failureStatuses := []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusRequestTimeout,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+	}
+	for _, statusCode := range failureStatuses {
+		require.True(t, isBillingDeliveryFailureStatus(statusCode), "status %d", statusCode)
+	}
+
+	acceptedStatuses := []int{
+		http.StatusOK,
+		http.StatusCreated,
+		http.StatusAccepted,
+		http.StatusBadRequest,
+		http.StatusNotFound,
+	}
+	for _, statusCode := range acceptedStatuses {
+		require.False(t, isBillingDeliveryFailureStatus(statusCode), "status %d", statusCode)
+	}
+}
+
 func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 
