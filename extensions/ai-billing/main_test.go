@@ -168,6 +168,75 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("x-request-id header takes precedence over x_request_id property", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			require.NoError(t, host.SetRequestId("property-request-id"))
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-request-id", "header-request-id"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, "header-request-id", event["request_id"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			host.CompleteHttp()
+		})
+
+		t.Run("x_request_id property is fallback request_id source when header is absent", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			require.NoError(t, host.SetRequestId("property-request-id"))
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, "property-request-id", event["request_id"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			host.CompleteHttp()
+		})
+
 		t.Run("default consumer header uses x-mse-consumer", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfigDefaultConsumer)
 			defer host.Reset()
@@ -346,6 +415,22 @@ func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	parsed, err := uuid.Parse(eventID)
 	require.NoError(t, err)
 	require.Equal(t, uuid.Version(7), parsed.Version())
+}
+
+func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "", "tenant-a", "consumer-a", "openai", "pv-7")
+	require.NoError(t, err)
+
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+	event := buildBillingEvent(ctx, BillingConfig{Provider: "openai"}, false)
+	require.Equal(t, eventID, event.EventID)
+	require.Equal(t, "", event.RequestID)
+	require.Equal(t, "consumer-a", event.Consumer)
+	require.NotEqual(t, event.RequestID, "tenant-a")
+	require.NotEqual(t, event.RequestID, "consumer-a")
+	require.NotEqual(t, event.RequestID, "200")
 }
 
 type mockBillingHttpContext struct {

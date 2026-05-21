@@ -15,7 +15,7 @@
 
 - [x] 3.1 Replace the current billing event payload fields with the Console event schema: `event_id`, `idempotency_key`, `request_id`, `consumer`, `route`, `provider`, `model`, `request_path`, `status_code`, `usage`, `usage_missing`, `start_time_ms`, `end_time_ms`, `is_stream`, `cluster`, and optional `price_version`.
 - [x] 3.2 Populate `consumer` from the configured consumer header, defaulting to `x-mse-consumer`, and verify `X-Mse-Consumer: consumer-a` produces `"consumer":"consumer-a"`.
-- [ ] 3.3 Keep `request_id` sourced from `x-request-id` or Higress `x_request_id` property only for correlation.
+- [x] 3.3 Keep `request_id` sourced from `x-request-id` or Higress `x_request_id` property only for correlation.
 - [ ] 3.4 Ensure the payload does not include raw API-key values, `tenant_id`, `user_id`, `api_key_id`, or `consumer_id` UUID fields.
 - [ ] 3.5 Map parsed token counts to `usage.unit`, `usage.input`, `usage.output`, `usage.total`, and `usage.details`, using `input + output` when total is missing.
 - [ ] 3.6 Emit `usage_missing=true` with zero token counts and empty `usage.details` when no usable token usage is parsed.
