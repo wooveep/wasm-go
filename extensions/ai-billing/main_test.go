@@ -2,13 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/iface"
 	"github.com/higress-group/wasm-go/pkg/test"
+	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -443,33 +446,46 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
-		t.Run("timeout and server error are fail open", func(t *testing.T) {
-			for _, headers := range [][][2]string{
-				nil,
-				{{":status", "503"}},
-			} {
-				host, status := test.NewTestHost(billingConfig)
-				require.Equal(t, types.OnPluginStartStatusOK, status)
+		t.Run("delivery failures are fail open", func(t *testing.T) {
+			cases := []struct {
+				name       string
+				statusCode int
+			}{
+				{name: "unauthorized", statusCode: http.StatusUnauthorized},
+				{name: "forbidden", statusCode: http.StatusForbidden},
+				{name: "request timeout", statusCode: http.StatusRequestTimeout},
+				{name: "too many requests", statusCode: http.StatusTooManyRequests},
+				{name: "internal server error", statusCode: http.StatusInternalServerError},
+				{name: "bad gateway", statusCode: http.StatusBadGateway},
+				{name: "service unavailable", statusCode: http.StatusServiceUnavailable},
+				{name: "gateway timeout", statusCode: http.StatusGatewayTimeout},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					require.False(t, isBillingDeliveryAcceptedStatus(tc.statusCode), "status %d", tc.statusCode)
+					host, status := test.NewTestHost(billingConfig)
+					defer host.Reset()
+					require.Equal(t, types.OnPluginStartStatusOK, status)
 
-				host.CallOnHttpRequestHeaders([][2]string{
-					{":authority", "example.com"},
-					{":path", "/v1/chat/completions"},
-					{":method", "POST"},
-					{"x-tenant-id", "tenant-a"},
-					{"x-consumer-id", "consumer-a"},
-				})
-				host.CallOnHttpResponseHeaders([][2]string{
-					{":status", "200"},
-					{"content-type", "application/json"},
-				})
-				action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
-				require.Equal(t, types.ActionContinue, action)
-				require.Len(t, host.GetHttpCalloutAttributes(), 1)
+					host.CallOnHttpRequestHeaders([][2]string{
+						{":authority", "example.com"},
+						{":path", "/v1/chat/completions"},
+						{":method", "POST"},
+						{"x-tenant-id", "tenant-a"},
+						{"x-consumer-id", "consumer-a"},
+					})
+					host.CallOnHttpResponseHeaders([][2]string{
+						{":status", "200"},
+						{"content-type", "application/json"},
+					})
+					action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+					require.Equal(t, types.ActionContinue, action)
+					require.Len(t, host.GetHttpCalloutAttributes(), 1)
 
-				host.CallOnHttpCall(headers, []byte(`{"error":"temporary"}`))
-				require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
-				host.CompleteHttp()
-				host.Reset()
+					host.CallOnHttpCall([][2]string{{":status", strconv.Itoa(tc.statusCode)}}, []byte(`{"error":"temporary"}`))
+					require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+					host.CompleteHttp()
+				})
 			}
 		})
 
@@ -545,6 +561,36 @@ func TestBillingDeliveryAcceptedStatusExcludesAuthFailures(t *testing.T) {
 	}
 }
 
+func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		host, status := test.NewTestHost(billingConfig)
+		defer host.Reset()
+		require.Equal(t, types.OnPluginStartStatusOK, status)
+
+		client := &failingBillingHTTPClient{err: errors.New("network unavailable")}
+		ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+		eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-dispatch", "tenant-a", "consumer-a", "openai", "")
+		require.NoError(t, err)
+		ctx.SetContext(ctxEventID, eventID)
+		ctx.SetContext(ctxStatusCode, http.StatusOK)
+		ctx.SetContext(ctxInputToken, int64(1))
+		ctx.SetContext(ctxOutputToken, int64(1))
+		ctx.SetContext(ctxTotalToken, int64(2))
+
+		deliverBillingEvent(ctx, BillingConfig{
+			Provider: "openai",
+			BillingService: BillingService{
+				Path:      "/internal/billing/events",
+				Timeout:   750,
+				AuthToken: "<shared-secret>",
+			},
+			httpClient: client,
+		}, false)
+
+		require.True(t, client.called)
+	})
+}
+
 func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 
@@ -580,6 +626,44 @@ func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
 	require.NotEqual(t, event.RequestID, "consumer-a")
 	require.NotEqual(t, event.RequestID, "200")
 }
+
+type failingBillingHTTPClient struct {
+	err    error
+	called bool
+}
+
+func (f *failingBillingHTTPClient) Get(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Head(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Options(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Post(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	f.called = true
+	return f.err
+}
+func (f *failingBillingHTTPClient) Put(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Patch(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Delete(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Connect(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Trace(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) Call(method, rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (f *failingBillingHTTPClient) ClusterName() string { return "billing.static" }
 
 type mockBillingHttpContext struct {
 	values map[string]interface{}
