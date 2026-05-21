@@ -276,7 +276,7 @@ func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream
 		{"Authorization", "Bearer " + config.BillingService.AuthToken},
 	}
 	err = config.httpClient.Post(config.BillingService.Path, headers, body, func(statusCode int, _ http.Header, _ []byte) {
-		if isBillingDeliveryFailureStatus(statusCode) {
+		if !isBillingDeliveryAcceptedStatus(statusCode) {
 			log.Warnf("ai-billing delivery failed open, status:%d request_id:%s", statusCode, event.RequestID)
 			return
 		}
@@ -376,6 +376,10 @@ func isBillingDeliveryFailureStatus(statusCode int) bool {
 	default:
 		return statusCode >= http.StatusInternalServerError
 	}
+}
+
+func isBillingDeliveryAcceptedStatus(statusCode int) bool {
+	return !isBillingDeliveryFailureStatus(statusCode)
 }
 
 func parsePathSuffixes(result gjson.Result) ([]string, error) {

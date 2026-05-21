@@ -535,6 +535,16 @@ func TestBillingDeliveryFailureStatusClassification(t *testing.T) {
 	}
 }
 
+func TestBillingDeliveryAcceptedStatusExcludesAuthFailures(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		require.False(t, isBillingDeliveryAcceptedStatus(statusCode), "status %d", statusCode)
+	}
+
+	for _, statusCode := range []int{http.StatusOK, http.StatusCreated, http.StatusAccepted} {
+		require.True(t, isBillingDeliveryAcceptedStatus(statusCode), "status %d", statusCode)
+	}
+}
+
 func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 
