@@ -168,6 +168,64 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("payload omits credentials and forbidden identity fields", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-secure"))
+			require.NoError(t, host.SetClusterName("cluster-secure"))
+			require.NoError(t, host.SetRequestId("req-sensitive"))
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-request-id", "req-sensitive"},
+				{"x-tenant-id", "tenant-id-should-not-leak"},
+				{"x-consumer-id", "consumer-a"},
+				{"authorization", "Bearer sk-live-cred"},
+				{"x-api-key", "api-key-sample"},
+				{"x-user-id", "user-id-sample"},
+				{"x-api-key-id", "api-key-id-sample"},
+				{"x-ai-price-version", "pv-secure"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			body := string(attrs[0].Body)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+
+			forbiddenFields := []string{
+				"tenant_id",
+				"user_id",
+				"api_key_id",
+				"consumer_id",
+			}
+			for _, key := range forbiddenFields {
+				_, hasKey := event[key]
+				require.False(t, hasKey)
+			}
+			require.NotContains(t, body, "tenant-id-should-not-leak")
+			require.NotContains(t, body, "user-id-sample")
+			require.NotContains(t, body, "api-key-sample")
+			require.NotContains(t, body, "api-key-id-sample")
+			require.NotContains(t, body, "sk-live-cred")
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			host.CompleteHttp()
+		})
+
 		t.Run("x-request-id header takes precedence over x_request_id property", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
