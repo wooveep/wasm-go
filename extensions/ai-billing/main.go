@@ -75,6 +75,7 @@ type BillingService struct {
 	ServicePort int    `yaml:"service_port" json:"service_port"`
 	Path        string `yaml:"path" json:"path"`
 	Timeout     uint32 `yaml:"timeout" json:"timeout"`
+	AuthToken   string `yaml:"auth_token" json:"auth_token"`
 }
 
 type BillingEvent struct {
@@ -137,6 +138,7 @@ func parseConfig(configJson gjson.Result, config *BillingConfig) error {
 		ServicePort: servicePort,
 		Path:        path,
 		Timeout:     timeout,
+		AuthToken:   service.Get("auth_token").String(),
 	}
 	config.httpClient = wrapper.NewClusterClient(wrapper.FQDNCluster{
 		FQDN: serviceName,

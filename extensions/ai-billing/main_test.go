@@ -21,6 +21,7 @@ var billingConfig = func() json.RawMessage {
 			"service_port": 8080,
 			"path":         "/internal/billing/events",
 			"timeout":      750,
+			"auth_token":   "<shared-secret>",
 		},
 		"enable_path_suffixes": []string{
 			"/v1/chat/completions",
@@ -45,6 +46,7 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, 8080, billingConfig.BillingService.ServicePort)
 			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
 			require.Equal(t, uint32(750), billingConfig.BillingService.Timeout)
+			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
 			require.Equal(t, "global", billingConfig.QuotaScope)
 			require.Equal(t, "openai", billingConfig.Provider)
 			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)

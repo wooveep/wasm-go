@@ -6,7 +6,7 @@
 
 ## 2. Configuration And Event State
 
-- [ ] 2.1 Add `billing_service.auth_token` to the `ai-billing` configuration model and parser without logging the configured value.
+- [x] 2.1 Add `billing_service.auth_token` to the `ai-billing` configuration model and parser without logging the configured value.
 - [ ] 2.2 Preserve defaults for `consumer_header`, `tenant_header`, `quota_scope`, `provider`, `enable_path_suffixes`, and `fail_policy`.
 - [ ] 2.3 Generate one UUIDv7 or ULID `event_id` at request start for enabled AI request paths.
 - [ ] 2.4 Store `event_id`, default `idempotency_key`, start time, request ID, consumer header value, request path, route, provider, cluster, and stream state in request context for response completion.
