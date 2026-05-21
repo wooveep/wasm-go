@@ -186,6 +186,47 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("each ai request gets new event identity", func(t *testing.T) {
+			buildEvent := func(requestID string) map[string]interface{} {
+				host, status := test.NewTestHost(billingConfig)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+
+				host.CallOnHttpRequestHeaders([][2]string{
+					{":authority", "example.com"},
+					{":path", "/v1/chat/completions"},
+					{":method", "POST"},
+					{"x-request-id", requestID},
+					{"x-tenant-id", "tenant-a"},
+					{"x-consumer-id", "consumer-a"},
+				})
+				host.CallOnHttpResponseHeaders([][2]string{
+					{":status", "200"},
+					{"content-type", "application/json"},
+				})
+				host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+
+				attrs := host.GetHttpCalloutAttributes()
+				require.Len(t, attrs, 1)
+				var event map[string]interface{}
+				require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+				eventID, ok := event["event_id"].(string)
+				require.True(t, ok)
+				require.NotEmpty(t, eventID)
+				require.Equal(t, eventID, event["idempotency_key"])
+				parsed, err := uuid.Parse(eventID)
+				require.NoError(t, err)
+				require.Equal(t, uuid.Version(7), parsed.Version())
+				return event
+			}
+
+			events := make([]map[string]interface{}, 0, 2)
+			for i := 0; i < 2; i++ {
+				events = append(events, buildEvent("req-"+strconv.Itoa(i+1)))
+			}
+			require.NotEqual(t, events[0]["event_id"], events[1]["event_id"])
+		})
+
 		t.Run("payload omits credentials and forbidden identity fields", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()

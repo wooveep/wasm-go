@@ -31,7 +31,7 @@
 ## 5. Tests And Documentation
 
 - [x] 5.1 Update config parsing tests for `billing_service.auth_token` and default `consumer_header`.
-- [ ] 5.2 Add event identity tests proving each AI request gets a new UUIDv7/ULID and `idempotency_key` defaults to `event_id`.
+- [x] 5.2 Add event identity tests proving each AI request gets a new UUIDv7/ULID and `idempotency_key` defaults to `event_id`.
 - [ ] 5.3 Update delivery tests to assert JSON content type and Bearer authorization headers.
 - [ ] 5.4 Add payload tests for `X-Mse-Consumer`, structured usage, total fallback, missing usage, and excluded credential/identity fields.
 - [ ] 5.5 Add delivery result tests for 401, 403, 408, 429, 5xx, and dispatch/network errors.
