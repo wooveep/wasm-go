@@ -114,22 +114,61 @@ func TestBillingEventDelivery(t *testing.T) {
 			attrs := host.GetHttpCalloutAttributes()
 			require.Len(t, attrs, 1)
 			require.Equal(t, "outbound|8080||billing.static", attrs[0].Upstream)
-			require.Contains(t, string(attrs[0].Body), `"request_id":"req-1"`)
-			require.Contains(t, string(attrs[0].Body), `"idempotency_key":"req-1"`)
-			require.Contains(t, string(attrs[0].Body), `"tenant":"tenant-a"`)
-			require.Contains(t, string(attrs[0].Body), `"consumer":"consumer-a"`)
-			require.Contains(t, string(attrs[0].Body), `"quota_scope":"global"`)
-			require.Contains(t, string(attrs[0].Body), `"provider":"openai"`)
-			require.Contains(t, string(attrs[0].Body), `"model":"gpt-4"`)
-			require.Contains(t, string(attrs[0].Body), `"route":"route-a"`)
-			require.Contains(t, string(attrs[0].Body), `"cluster":"cluster-a"`)
-			require.Contains(t, string(attrs[0].Body), `"request_path":"/v1/chat/completions"`)
-			require.Contains(t, string(attrs[0].Body), `"status_code":200`)
-			require.Contains(t, string(attrs[0].Body), `"input_tokens":5`)
-			require.Contains(t, string(attrs[0].Body), `"output_tokens":8`)
-			require.Contains(t, string(attrs[0].Body), `"total_tokens":13`)
-			require.Contains(t, string(attrs[0].Body), `"usage_missing":false`)
-			require.Contains(t, string(attrs[0].Body), `"price_version":"pv-7"`)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, "req-1", event["request_id"])
+			require.NotEmpty(t, event["idempotency_key"])
+			require.NotEqual(t, "req-1", event["idempotency_key"])
+			require.Equal(t, "tenant-a", event["tenant"])
+			require.Equal(t, "consumer-a", event["consumer"])
+			require.Equal(t, "global", event["quota_scope"])
+			require.Equal(t, "openai", event["provider"])
+			require.Equal(t, "gpt-4", event["model"])
+			require.Equal(t, "route-a", event["route"])
+			require.Equal(t, "cluster-a", event["cluster"])
+			require.Equal(t, "/v1/chat/completions", event["request_path"])
+			require.EqualValues(t, 200, event["status_code"])
+			require.EqualValues(t, 5, event["input_tokens"])
+			require.EqualValues(t, 8, event["output_tokens"])
+			require.EqualValues(t, 13, event["total_tokens"])
+			require.Equal(t, false, event["usage_missing"])
+			require.Equal(t, false, event["is_stream"])
+			require.Equal(t, "pv-7", event["price_version"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			host.CompleteHttp()
+		})
+
+		t.Run("streaming response sets stream state", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-a"))
+			require.NoError(t, host.SetClusterName("cluster-a"))
+			require.NoError(t, host.SetRequestId("req-2"))
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-request-id", "req-2"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+
+			action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\"}\n\n"), true)
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			require.Contains(t, string(attrs[0].Body), `"is_stream":true`)
 
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
 			host.CompleteHttp()
@@ -231,11 +270,18 @@ func TestStatusCodeFromHeaders(t *testing.T) {
 func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 
-	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-1", "tenant-a", "consumer-a", "pv-7")
+	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-1", "tenant-a", "consumer-a", "openai", "pv-7")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, eventID)
 	require.Equal(t, eventID, ctx.values[ctxEventID])
+	require.Equal(t, eventID, ctx.values[ctxIdempotencyKey])
+	require.Equal(t, "openai", ctx.values[ctxProvider])
+	require.Equal(t, "/v1/chat/completions", ctx.values[ctxRequestPath])
+	require.Equal(t, "req-1", ctx.values[ctxRequestID])
+	require.Equal(t, "tenant-a", ctx.values[ctxTenant])
+	require.Equal(t, "consumer-a", ctx.values[ctxConsumer])
+	require.NotZero(t, ctx.values[ctxStartTime])
 	parsed, err := uuid.Parse(eventID)
 	require.NoError(t, err)
 	require.Equal(t, uuid.Version(7), parsed.Version())

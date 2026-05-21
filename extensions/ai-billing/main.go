@@ -34,14 +34,17 @@ const (
 	ctxBillingEnabled = "ai-billing-enabled"
 	ctxStartTime      = "ai-billing-start-time"
 	ctxEventID        = "ai-billing-event-id"
+	ctxIdempotencyKey = "ai-billing-idempotency-key"
 	ctxRequestPath    = "ai-billing-request-path"
 	ctxRequestID      = "ai-billing-request-id"
 	ctxTenant         = "ai-billing-tenant"
 	ctxConsumer       = "ai-billing-consumer"
 	ctxRoute          = "ai-billing-route"
 	ctxCluster        = "ai-billing-cluster"
+	ctxProvider       = "ai-billing-provider"
 	ctxStatusCode     = "ai-billing-status-code"
 	ctxPriceVersion   = "ai-billing-price-version"
+	ctxIsStream       = "ai-billing-is-stream"
 	ctxInputToken     = "ai-billing-input-token"
 	ctxOutputToken    = "ai-billing-output-token"
 	ctxTotalToken     = "ai-billing-total-token"
@@ -164,7 +167,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	tenant, _ := proxywasm.GetHttpRequestHeader(config.TenantHeader)
 	consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader)
 	priceVersion, _ := proxywasm.GetHttpRequestHeader("x-ai-price-version")
-	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, priceVersion); err != nil {
+	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, config.Provider, priceVersion); err != nil {
 		log.Warnf("ai-billing event id generation failed open, request_id:%s err:%v", requestID, err)
 		ctx.SetContext(ctxBillingEnabled, false)
 		ctx.DontReadResponseBody()
@@ -172,15 +175,17 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	return types.ActionContinue
 }
 
-func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, tenant, consumer, priceVersion string) (string, error) {
+func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, tenant, consumer, provider, priceVersion string) (string, error) {
 	eventID, err := newEventID()
 	if err != nil {
 		return "", err
 	}
 	ctx.SetContext(ctxStartTime, time.Now().UnixMilli())
 	ctx.SetContext(ctxEventID, eventID)
+	ctx.SetContext(ctxIdempotencyKey, eventID)
 	ctx.SetContext(ctxRequestPath, requestPath)
 	ctx.SetContext(ctxRequestID, requestID)
+	ctx.SetContext(ctxProvider, provider)
 	if tenant != "" {
 		ctx.SetContext(ctxTenant, tenant)
 	}
@@ -207,7 +212,9 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, config BillingConfig) types.
 	ctx.SetContext(ctxStatusCode, statusCode)
 
 	contentType, _ := proxywasm.GetHttpResponseHeader("content-type")
-	if !strings.Contains(contentType, "text/event-stream") {
+	isStream := strings.Contains(contentType, "text/event-stream")
+	ctx.SetContext(ctxIsStream, isStream)
+	if !isStream {
 		ctx.BufferResponseBody()
 	}
 	return types.ActionContinue
@@ -217,6 +224,7 @@ func onHttpStreamingResponseBody(ctx wrapper.HttpContext, config BillingConfig, 
 	if !ctx.GetBoolContext(ctxBillingEnabled, false) {
 		return data
 	}
+	ctx.SetContext(ctxIsStream, true)
 	recordUsage(ctx, data)
 	if endOfStream {
 		deliverBillingEvent(ctx, config, true)
@@ -228,6 +236,7 @@ func onHttpResponseBody(ctx wrapper.HttpContext, config BillingConfig, body []by
 	if !ctx.GetBoolContext(ctxBillingEnabled, false) {
 		return types.ActionContinue
 	}
+	ctx.SetContext(ctxIsStream, false)
 	recordUsage(ctx, body)
 	deliverBillingEvent(ctx, config, false)
 	return types.ActionContinue
@@ -273,13 +282,14 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	if requestID == "" {
 		requestID = fmt.Sprintf("%s:%s:%d", ctx.GetStringContext(ctxTenant, ""), ctx.GetStringContext(ctxConsumer, ""), intFromContext(ctx.GetContext(ctxStatusCode)))
 	}
+	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, ctx.GetStringContext(ctxEventID, requestID))
 	event := BillingEvent{
 		RequestID:      requestID,
-		IdempotencyKey: requestID,
+		IdempotencyKey: idempotencyKey,
 		Tenant:         ctx.GetStringContext(ctxTenant, ""),
 		Consumer:       ctx.GetStringContext(ctxConsumer, ""),
 		QuotaScope:     config.QuotaScope,
-		Provider:       config.Provider,
+		Provider:       ctx.GetStringContext(ctxProvider, config.Provider),
 		Model:          ctx.GetStringContext(ctxModel, tokenusage.ModelUnknown),
 		Route:          ctx.GetStringContext(ctxRoute, "-"),
 		Cluster:        ctx.GetStringContext(ctxCluster, "-"),
@@ -287,7 +297,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		StatusCode:     intDefault(intFromContext(ctx.GetContext(ctxStatusCode)), http.StatusBadGateway),
 		StartTimeMs:    int64FromContext(ctx.GetContext(ctxStartTime)),
 		EndTimeMs:      time.Now().UnixMilli(),
-		IsStream:       isStream,
+		IsStream:       ctx.GetBoolContext(ctxIsStream, isStream),
 		InputTokens:    inputTokens,
 		OutputTokens:   outputTokens,
 		TotalTokens:    totalTokens,
