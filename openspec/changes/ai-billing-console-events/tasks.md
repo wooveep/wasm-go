@@ -22,7 +22,7 @@
 
 ## 4. Delivery And Failure Handling
 
-- [ ] 4.1 Add `content-type: application/json` and `Authorization: Bearer <billing_service.auth_token>` to billing-service callouts.
+- [x] 4.1 Add `content-type: application/json` and `Authorization: Bearer <billing_service.auth_token>` to billing-service callouts.
 - [ ] 4.2 Classify 401, 403, 408, 429, all 5xx responses, and dispatch/network errors as delivery failures.
 - [ ] 4.3 Ensure 401 and 403 responses are not recorded as accepted events.
 - [ ] 4.4 Preserve fail-open behavior for all delivery failures when `fail_policy` is `open`.

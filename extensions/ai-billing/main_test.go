@@ -134,6 +134,8 @@ func TestBillingEventDelivery(t *testing.T) {
 			attrs := host.GetHttpCalloutAttributes()
 			require.Len(t, attrs, 1)
 			require.Equal(t, "outbound|8080||billing.static", attrs[0].Upstream)
+			require.Contains(t, attrs[0].Headers, [2]string{"content-type", "application/json"})
+			require.Contains(t, attrs[0].Headers, [2]string{"Authorization", "Bearer <shared-secret>"})
 			var event map[string]interface{}
 			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
 			require.NotEmpty(t, event["event_id"])

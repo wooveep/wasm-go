@@ -271,7 +271,10 @@ func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream
 		log.Errorf("ai-billing marshal event failed: %v", err)
 		return
 	}
-	headers := [][2]string{{"content-type", "application/json"}}
+	headers := [][2]string{
+		{"content-type", "application/json"},
+		{"Authorization", "Bearer " + config.BillingService.AuthToken},
+	}
 	err = config.httpClient.Post(config.BillingService.Path, headers, body, func(statusCode int, _ http.Header, _ []byte) {
 		if statusCode >= 500 || statusCode == http.StatusBadGateway {
 			log.Warnf("ai-billing delivery failed open, status:%d request_id:%s", statusCode, event.RequestID)
