@@ -18,7 +18,7 @@
 - [x] 3.3 Keep `request_id` sourced from `x-request-id` or Higress `x_request_id` property only for correlation.
 - [x] 3.4 Ensure the payload does not include raw API-key values, `tenant_id`, `user_id`, `api_key_id`, or `consumer_id` UUID fields.
 - [x] 3.5 Map parsed token counts to `usage.unit`, `usage.input`, `usage.output`, `usage.total`, and `usage.details`, using `input + output` when total is missing.
-- [ ] 3.6 Emit `usage_missing=true` with zero token counts and empty `usage.details` when no usable token usage is parsed.
+- [x] 3.6 Emit `usage_missing=true` with zero token counts and empty `usage.details` when no usable token usage is parsed.
 
 ## 4. Delivery And Failure Handling
 

@@ -381,8 +381,17 @@ func TestBillingEventDelivery(t *testing.T) {
 
 			attrs := host.GetHttpCalloutAttributes()
 			require.Len(t, attrs, 1)
-			require.Contains(t, string(attrs[0].Body), `"usage_missing":true`)
-			require.Contains(t, string(attrs[0].Body), `"usage":{"unit":"token","input":0,"output":0,"total":0,"details":{}}`)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, true, event["usage_missing"])
+
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, "token", usage["unit"])
+			require.EqualValues(t, 0, usage["input"])
+			require.EqualValues(t, 0, usage["output"])
+			require.EqualValues(t, 0, usage["total"])
+			require.Equal(t, map[string]interface{}{}, usage["details"])
 			require.NotContains(t, string(attrs[0].Body), `"input_tokens":`)
 			require.NotContains(t, string(attrs[0].Body), `"output_tokens":`)
 			require.NotContains(t, string(attrs[0].Body), `"total_tokens":`)
