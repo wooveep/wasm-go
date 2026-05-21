@@ -591,6 +591,55 @@ func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
 	})
 }
 
+func TestSendBillingEventReusesEventIdempotencyKey(t *testing.T) {
+	client := &recordingBillingHTTPClient{}
+	event := BillingEvent{
+		EventID:        "018f4c7c-1111-7abc-8111-111111111111",
+		IdempotencyKey: "018f4c7c-1111-7abc-8111-111111111111",
+		RequestID:      "req-retry",
+		Consumer:       "consumer-a",
+		Provider:       "openai",
+		Model:          "gpt-4",
+		RequestPath:    "/v1/chat/completions",
+		StatusCode:     http.StatusOK,
+		Usage: BillingUsage{
+			Unit:    "token",
+			Input:   1,
+			Output:  2,
+			Total:   3,
+			Details: map[string]any{},
+		},
+		StartTimeMs: 1,
+		EndTimeMs:   2,
+		Cluster:     "cluster-a",
+	}
+	config := BillingConfig{
+		BillingService: BillingService{
+			Path:      "/internal/billing/events",
+			Timeout:   750,
+			AuthToken: "<shared-secret>",
+		},
+		httpClient: client,
+	}
+
+	sendBillingEvent(config, event)
+	sendBillingEvent(config, event)
+
+	require.Len(t, client.bodies, 2)
+	require.Equal(t, []string{"/internal/billing/events", "/internal/billing/events"}, client.paths)
+	require.Len(t, client.headers, 2)
+	for _, body := range client.bodies {
+		var sent BillingEvent
+		require.NoError(t, json.Unmarshal(body, &sent))
+		require.Equal(t, event.IdempotencyKey, sent.IdempotencyKey)
+		require.Equal(t, event.EventID, sent.EventID)
+	}
+	for _, headers := range client.headers {
+		require.Contains(t, headers, [2]string{"content-type", "application/json"})
+		require.Contains(t, headers, [2]string{"Authorization", "Bearer <shared-secret>"})
+	}
+}
+
 func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 
@@ -664,6 +713,47 @@ func (f *failingBillingHTTPClient) Call(method, rawURL string, headers [][2]stri
 	return nil
 }
 func (f *failingBillingHTTPClient) ClusterName() string { return "billing.static" }
+
+type recordingBillingHTTPClient struct {
+	paths   []string
+	headers [][][2]string
+	bodies  [][]byte
+}
+
+func (r *recordingBillingHTTPClient) Get(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Head(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Options(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Post(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	r.paths = append(r.paths, rawURL)
+	r.headers = append(r.headers, append([][2]string(nil), headers...))
+	r.bodies = append(r.bodies, append([]byte(nil), body...))
+	return nil
+}
+func (r *recordingBillingHTTPClient) Put(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Patch(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Delete(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Connect(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Trace(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) Call(method, rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
+	return nil
+}
+func (r *recordingBillingHTTPClient) ClusterName() string { return "billing.static" }
 
 type mockBillingHttpContext struct {
 	values map[string]interface{}

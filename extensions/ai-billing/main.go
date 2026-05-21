@@ -266,6 +266,10 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 
 func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream bool) {
 	event := buildBillingEvent(ctx, config, isStream)
+	sendBillingEvent(config, event)
+}
+
+func sendBillingEvent(config BillingConfig, event BillingEvent) {
 	body, err := json.Marshal(event)
 	if err != nil {
 		log.Errorf("ai-billing marshal event failed: %v", err)

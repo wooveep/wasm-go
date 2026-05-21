@@ -26,7 +26,7 @@
 - [x] 4.2 Classify 401, 403, 408, 429, all 5xx responses, and dispatch/network errors as delivery failures.
 - [x] 4.3 Ensure 401 and 403 responses are not recorded as accepted events.
 - [x] 4.4 Preserve fail-open behavior for all delivery failures when `fail_policy` is `open`.
-- [ ] 4.5 Structure any future retry helper so the same event reuses the original `idempotency_key`.
+- [x] 4.5 Structure any future retry helper so the same event reuses the original `idempotency_key`.
 
 ## 5. Tests And Documentation
 
