@@ -71,6 +71,14 @@ spec:
               x-description-i18n:
                 en-US: HTTP callout timeout in milliseconds
               default: 500
+            auth_token:
+              type: string
+              title: 鉴权密钥
+              x-title-i18n:
+                en-US: Auth Token
+              description: billing-service 共享鉴权密钥，示例使用占位符
+              x-description-i18n:
+                en-US: Shared secret for billing-service authorization; examples use a placeholder
         quota_scope:
           type: string
           title: 额度作用域
@@ -135,6 +143,7 @@ spec:
           service_port: 8080
           path: /internal/billing/events
           timeout: 750
+          auth_token: <shared-secret>
         quota_scope: route:qwen
         provider: dashscope
         tenant_header: x-mse-tenant

@@ -41,6 +41,7 @@ description: ai-billing 请求级账单事件插件配置参考
 | `service_port` | int | 否 | 80 | billing-service 服务端口 |
 | `path` | string | 否 | `/billing/events` | billing event 上报路径 |
 | `timeout` | int | 否 | 500 | HTTP callout 超时时间，单位毫秒 |
+| `auth_token` | string | 否 | 无 | billing-service 共享鉴权密钥；示例必须使用 `<shared-secret>` 占位符 |
 
 ## 配置示例
 
@@ -50,6 +51,7 @@ billing_service:
   service_port: 8080
   path: /internal/billing/events
   timeout: 750
+  auth_token: <shared-secret>
 quota_scope: route:qwen
 provider: dashscope
 tenant_header: x-mse-tenant

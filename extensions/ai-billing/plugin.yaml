@@ -10,6 +10,7 @@ spec:
       service_port: 8080
       path: /internal/billing/events
       timeout: 750
+      auth_token: <shared-secret>
     quota_scope: global
     provider: default
     tenant_header: x-mse-tenant

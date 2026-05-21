@@ -41,6 +41,7 @@ Events include `request_id`, `idempotency_key`, `tenant`, `consumer`, `quota_sco
 | `service_port` | int | no | 80 | billing-service service port |
 | `path` | string | no | `/billing/events` | Billing event delivery path |
 | `timeout` | int | no | 500 | HTTP callout timeout in milliseconds |
+| `auth_token` | string | no | none | Shared secret for billing-service authorization; examples must use the `<shared-secret>` placeholder |
 
 ## Example
 
@@ -50,6 +51,7 @@ billing_service:
   service_port: 8080
   path: /internal/billing/events
   timeout: 750
+  auth_token: <shared-secret>
 quota_scope: route:qwen
 provider: dashscope
 tenant_header: x-mse-tenant
