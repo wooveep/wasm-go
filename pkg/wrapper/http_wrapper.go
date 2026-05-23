@@ -29,6 +29,8 @@ import (
 
 type ResponseCallback func(statusCode int, responseHeaders http.Header, responseBody []byte)
 
+const redactedHeaderValue = "[REDACTED]"
+
 type HttpClient interface {
 	Get(rawURL string, headers [][2]string, cb ResponseCallback, timeoutMillisecond ...uint32) error
 	Head(rawURL string, headers [][2]string, cb ResponseCallback, timeoutMillisecond ...uint32) error
@@ -148,7 +150,20 @@ func HttpCall(cluster Cluster, method, rawURL string, headers [][2]string, body 
 	})
 	if err == nil {
 		log.UnsafeInfof("http call start, id: %s, cluster: %s, method: %s, url: %s, headers: %#v, body: %s, timeout: %d",
-			requestID, cluster.ClusterName(), method, rawURL, headers, strings.ReplaceAll(string(body), "\n", `\n`), timeout)
+			requestID, cluster.ClusterName(), method, rawURL, redactSensitiveRequestHeaders(headers),
+			strings.ReplaceAll(string(body), "\n", `\n`), timeout)
 	}
 	return err
+}
+
+func redactSensitiveRequestHeaders(headers [][2]string) [][2]string {
+	redacted := make([][2]string, len(headers))
+	copy(redacted, headers)
+	for i := range redacted {
+		switch strings.ToLower(redacted[i][0]) {
+		case "authorization", "x-api-key":
+			redacted[i][1] = redactedHeaderValue
+		}
+	}
+	return redacted
 }

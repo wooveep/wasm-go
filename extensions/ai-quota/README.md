@@ -1,70 +1,73 @@
 ---
-title: AI 配额管理
-keywords: [ AI网关, AI配额 ]
-description: AI 配额管理插件配置参考
+title: AI 金额配额
+keywords: [AI网关, AI配额, 金额配额]
+description: ai-quota 金额余额准入与响应后扣费插件配置参考
 ---
 
 ## 功能说明
 
-`ai-quota` 插件实现给特定 consumer 根据分配固定的 quota 进行 quota 策略限流，同时支持 quota 管理能力，包括查询 quota 、刷新 quota、增减 quota。
+`ai-quota` 在 AI 请求进入上游前读取 Redis 热余额，余额大于 0 时放行，余额缺失或非正余额按策略处理。响应结束后，插件通过 `pkg/tokenusage` 独立解析 token usage 和 model，读取 Redis 中租户生效价格，并用 Lua `EVAL` 原子计算费用和扣减余额。
 
-`ai-quota` 插件需要配合 认证插件比如 `key-auth`、`jwt-auth` 等插件获取认证身份的 consumer 名称，同时需要配合 `ai-statistics` 插件获取 AI Token 统计信息。
+插件不再提供 `/quota`、`/quota/refresh`、`/quota/delta` 等网关内管理接口，也不再支持 `admin_consumer`、`admin_path`、`redis_key_prefix`。账户、余额、价格、账单流水和 Redis 重建由 Console 或 billing-service 负责。
 
-## 运行属性
+## Redis Key
 
-插件执行阶段：`默认阶段`
-插件执行优先级：`750`
+- 余额默认 key：`billing:balance:{tenant}:{quota_scope}:{consumer}`
+- 价格默认 key：`billing:effective_price:{tenant}:{provider}:{model}:{token_type}`
+- `token_type` 为 `input` 或 `output`
+- 金额和价格均为整数，默认按 `amount_scale: 1000000`、`price_unit_tokens: 1000000` 表示
+
+费用计算：
+
+```text
+ceil(input_tokens * input_price / price_unit_tokens)
++ ceil(output_tokens * output_price / price_unit_tokens)
+```
 
 ## 配置说明
 
-| 名称                 | 数据类型            | 填写要求                                 | 默认值 | 描述                                         |
-|--------------------|-----------------|--------------------------------------| ---- |--------------------------------------------|
-| `redis_key_prefix` | string          |  选填                                     |   chat_quota:   | qutoa redis key 前缀                         |
-| `admin_consumer`   | string          | 必填                                   |      | 管理 quota 管理身份的 consumer 名称                 |
-| `admin_path`       | string          | 选填                                   |   /quota   | 管理 quota 请求 path 前缀                        |
-| `enable_path_suffixes` | []string     | 选填                                   |  ["/v1/chat/completions", "/v1/messages"] | 启用配额校验的请求路径后缀（仅用于 completion 请求，不影响管理接口路径） |
-| `redis`            | object          | 是                                    |      | redis相关配置                                  |
+| 名称 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `redis` | object | 无 | Redis 连接配置 |
+| `quota_scope` | string | `global` | 当前路由或规则的额度作用域 |
+| `provider` | string | `default` | AI provider 标识，用于价格 key |
+| `tenant_header` | string | `x-mse-tenant` | 租户身份请求头 |
+| `consumer_header` | string | `x-mse-consumer` | consumer 身份请求头 |
+| `balance_key_template` | string | `billing:balance:{tenant}:{quota_scope}:{consumer}` | 余额 key 模板 |
+| `price_key_template` | string | `billing:effective_price:{tenant}:{provider}:{model}:{token_type}` | 价格 key 模板 |
+| `amount_scale` | int | `1000000` | 金额缩放比例 |
+| `price_unit_tokens` | int | `1000000` | 价格单位 token 数 |
+| `enable_path_suffixes` | []string | `/v1/chat/completions`, `/v1/messages` | 生效路径后缀 |
+| `missing_balance_policy` | string | `deny` | 余额缺失策略：`deny` 或 `allow` |
+| `missing_price_policy` | string | `skip` | 价格缺失时跳过扣减 |
+| `missing_usage_policy` | string | `skip` | usage 缺失时跳过扣减 |
 
-`redis`中每一项的配置字段说明
+`redis` 字段：
 
-| 配置项       | 类型   | 必填 | 默认值                                                     | 说明                                                                                         |
-| ------------ | ------ | ---- | ---------------------------------------------------------- | ---------------------------                                                                  |
-| service_name | string | 必填 | -                                                          | redis 服务名称，带服务类型的完整 FQDN 名称，例如 my-redis.dns、redis.my-ns.svc.cluster.local |
-| service_port | int    | 否   | 服务类型为固定地址（static service）默认值为80，其他为6379 | 输入redis服务的服务端口                                                                      |
-| username     | string | 否   | -                                                          | redis用户名                                                                                  |
-| password     | string | 否   | -                                                          | redis密码                                                                                    |
-| timeout      | int    | 否   | 1000                                                       | redis连接超时时间，单位毫秒                                                                  |
-| database     | int    | 否   | 0                                                          | 使用的数据库id，例如配置为1，对应`SELECT 1`                                                  |
-
+| 配置项 | 类型 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `service_name` | string | 是 | - | Redis 服务名称 |
+| `service_port` | int | 否 | static 服务为 80，其他为 6379 | Redis 端口 |
+| `username` | string | 否 | - | Redis 用户名 |
+| `password` | string | 否 | - | Redis 密码 |
+| `timeout` | int | 否 | 1000 | 连接超时，单位毫秒 |
+| `database` | int | 否 | 0 | Redis database |
 
 ## 配置示例
 
-### 识别请求参数 apikey，进行区别限流
 ```yaml
-redis_key_prefix: "chat_quota:"
-admin_consumer: consumer3
-admin_path: /quota
 redis:
   service_name: redis-service.default.svc.cluster.local
   service_port: 6379
-  timeout: 2000
+quota_scope: route:qwen
+provider: dashscope
+tenant_header: x-mse-tenant
+consumer_header: x-mse-consumer
+balance_key_template: "billing:balance:{tenant}:{quota_scope}:{consumer}"
+price_key_template: "billing:effective_price:{tenant}:{provider}:{model}:{token_type}"
+missing_balance_policy: deny
+missing_price_policy: skip
+missing_usage_policy: skip
 ```
 
-
-###  刷新 quota
-
-如果当前请求 url 的后缀符合 admin_path，例如插件在 example.com/v1/chat/completions 这个路由上生效，那么更新 quota 可以通过
-curl https://example.com/v1/chat/completions/quota/refresh -H "Authorization: Bearer credential3" -d "consumer=consumer1&quota=10000" 
-
-Redis 中 key 为 chat_quota:consumer1 的值就会被刷新为 10000
-
-### 查询 quota
-
-查询特定用户的 quota 可以通过 curl https://example.com/v1/chat/completions/quota?consumer=consumer1 -H "Authorization: Bearer credential3"
-将返回： {"quota": 10000, "consumer": "consumer1"}
-
-### 增减 quota 
-
-增减特定用户的 quota 可以通过 curl https://example.com/v1/chat/completions/quota/delta -d "consumer=consumer1&value=100" -H "Authorization: Bearer credential3"
-这样 Redis 中 Key 为 chat_quota:consumer1 的值就会增加100，可以支持负数，则减去对应值。
-
+不同 AI 路由建议通过 Higress WasmPlugin `matchRules` 配置不同 `quota_scope` 和 `provider`。`ai-quota` 与 `ai-statistics`、`ai-billing` 相互独立，可以单独启用。

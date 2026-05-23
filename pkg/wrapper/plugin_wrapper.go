@@ -687,7 +687,7 @@ func (ctx *CommonPluginCtx[PluginConfig]) OnPluginStart(int) types.OnPluginStart
 		}
 	} else {
 		if !gjson.ValidBytes(data) {
-			ctx.vm.log.Warnf("the plugin configuration is not a valid json: %s", string(data))
+			ctx.vm.log.Warn("the plugin configuration is not a valid json")
 			return types.OnPluginStartStatusFailed
 		}
 		pluginID := gjson.GetBytes(data, PluginIDKey).String()

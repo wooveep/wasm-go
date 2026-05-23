@@ -313,7 +313,7 @@ Redis 生效价格：
 
 ```yaml
 billing_service:
-  service_name: billing-service.default.svc.cluster.local
+  service_name: modelfusion-console.higress-system.svc.cluster.local
   service_port: 8080
   path: /v1/billing/events
   timeout: 300

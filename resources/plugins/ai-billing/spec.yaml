@@ -1,0 +1,218 @@
+apiVersion: 1.0.0
+info:
+  gatewayMinVersion: ""
+  type: oss
+  category: ai
+  image: platform_wasm/ai-billing
+  name: ai-billing
+  title: AI Billing Events
+  x-title-i18n:
+    zh-CN: AI 账单事件
+  description: Generate request-level AI billing events after responses complete and deliver them to billing-service through fail-open HTTP callouts.
+  x-description-i18n:
+    zh-CN: 在 AI 响应完成后生成请求级账单事件，并通过默认 fail-open 的 HTTP callout 上报给 billing-service。
+  iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
+  readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-billing/README.md
+  x-readmeUrl-i18n:
+    en-US: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-billing/README_EN.md
+  version: 1.0.0
+  contact:
+    name: 2456868764
+spec:
+  phase: default
+  priority: 270
+  configSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        billing_service:
+          type: object
+          title: Billing Service配置
+          x-title-i18n:
+            en-US: Billing Service Configuration
+          description: billing-service HTTP callout 目标
+          x-description-i18n:
+            en-US: billing-service HTTP callout target
+          required: [service_name]
+          properties:
+            service_name:
+              type: string
+              title: 服务名称
+              x-title-i18n:
+                en-US: Service Name
+              description: billing-service 服务名称
+              x-description-i18n:
+                en-US: billing-service service name
+              default: modelfusion-console.higress-system.svc.cluster.local
+            service_port:
+              type: integer
+              title: 服务端口
+              x-title-i18n:
+                en-US: Service Port
+              description: billing-service 服务端口
+              x-description-i18n:
+                en-US: billing-service service port
+              default: 80
+            path:
+              type: string
+              title: 上报路径
+              x-title-i18n:
+                en-US: Delivery Path
+              description: billing event 上报路径
+              x-description-i18n:
+                en-US: Billing event delivery path
+              default: /billing/events
+            timeout:
+              type: integer
+              title: Callout超时
+              x-title-i18n:
+                en-US: Callout Timeout
+              description: HTTP callout 超时时间，单位毫秒
+              x-description-i18n:
+                en-US: HTTP callout timeout in milliseconds
+              default: 500
+            auth_token:
+              type: string
+              title: 鉴权密钥
+              x-title-i18n:
+                en-US: Auth Token
+              description: billing-service 共享鉴权密钥，示例使用占位符
+              x-description-i18n:
+                en-US: Shared secret for billing-service authorization; examples use a placeholder
+        quota_scope:
+          type: string
+          title: 额度作用域
+          x-title-i18n:
+            en-US: Quota Scope
+          description: 当前路由或规则的额度作用域
+          x-description-i18n:
+            en-US: Quota scope for the current route or rule
+          default: global
+        provider:
+          type: string
+          title: AI Provider
+          description: AI provider 标识
+          x-description-i18n:
+            en-US: AI provider identifier
+          default: default
+        tenant_header:
+          type: string
+          title: 租户请求头
+          x-title-i18n:
+            en-US: Tenant Header
+          description: 租户身份请求头
+          x-description-i18n:
+            en-US: Request header containing tenant identity
+          default: x-mse-tenant
+        consumer_header:
+          type: string
+          title: Consumer请求头
+          x-title-i18n:
+            en-US: Consumer Header
+          description: Consumer 身份请求头
+          x-description-i18n:
+            en-US: Request header containing consumer identity
+          default: x-mse-consumer
+        enable_path_suffixes:
+          type: array
+          title: 生效路径后缀
+          x-title-i18n:
+            en-US: Enabled Path Suffixes
+          description: 插件生效的 AI 请求路径后缀
+          x-description-i18n:
+            en-US: AI request path suffixes enabled for this plugin
+          items:
+            type: string
+          default:
+          - /v1/chat/completions
+          - /v1/messages
+        fail_policy:
+          type: string
+          title: 投递失败策略
+          x-title-i18n:
+            en-US: Failure Policy
+          description: 投递失败策略，当前支持 open
+          x-description-i18n:
+            en-US: Delivery failure policy. Currently supports open
+          enum: [open]
+          default: open
+      required: [billing_service]
+      example:
+        billing_service:
+          service_name: modelfusion-console.higress-system.svc.cluster.local
+          service_port: 8080
+          path: /internal/billing/events
+          timeout: 750
+          auth_token: <shared-secret>
+        quota_scope: route:qwen
+        provider: dashscope
+        tenant_header: x-mse-tenant
+        consumer_header: x-mse-consumer
+        enable_path_suffixes:
+        - /v1/chat/completions
+        - /v1/messages
+        fail_policy: open
+  routeConfigSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        quota_scope:
+          type: string
+          title: 额度作用域
+          x-title-i18n:
+            en-US: Quota Scope
+          description: 当前路由或规则的额度作用域
+          x-description-i18n:
+            en-US: Quota scope for the current route or rule
+          default: global
+        provider:
+          type: string
+          title: AI Provider
+          description: AI provider 标识
+          x-description-i18n:
+            en-US: AI provider identifier
+          default: default
+        tenant_header:
+          type: string
+          title: 租户请求头
+          x-title-i18n:
+            en-US: Tenant Header
+          description: 租户身份请求头
+          x-description-i18n:
+            en-US: Request header containing tenant identity
+          default: x-mse-tenant
+        consumer_header:
+          type: string
+          title: Consumer请求头
+          x-title-i18n:
+            en-US: Consumer Header
+          description: Consumer 身份请求头
+          x-description-i18n:
+            en-US: Request header containing consumer identity
+          default: x-mse-consumer
+        enable_path_suffixes:
+          type: array
+          title: 生效路径后缀
+          x-title-i18n:
+            en-US: Enabled Path Suffixes
+          description: 插件生效的 AI 请求路径后缀
+          x-description-i18n:
+            en-US: AI request path suffixes enabled for this plugin
+          items:
+            type: string
+          default:
+          - /v1/chat/completions
+          - /v1/messages
+        fail_policy:
+          type: string
+          title: 投递失败策略
+          x-title-i18n:
+            en-US: Failure Policy
+          description: 投递失败策略，当前支持 open
+          x-description-i18n:
+            en-US: Delivery failure policy. Currently supports open
+          enum: [open]
+          default: open
+      example:
+        quota_scope: route:qwen
+        provider: dashscope
