@@ -8,9 +8,9 @@ info:
   title: AI Billing Events
   x-title-i18n:
     zh-CN: AI 账单事件
-  description: Generate request-level AI billing events after responses complete and deliver them to billing-service through fail-open HTTP callouts.
+  description: Generate request-level AI billing events after responses complete and deliver them to billing-service through fail-open Bearer-authenticated HTTP callouts.
   x-description-i18n:
-    zh-CN: 在 AI 响应完成后生成请求级账单事件，并通过默认 fail-open 的 HTTP callout 上报给 billing-service。
+    zh-CN: 在 AI 响应完成后生成请求级账单事件，并通过默认 fail-open、Bearer 鉴权的 HTTP callout 上报给 billing-service。
   iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
   readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-billing/README.md
   x-readmeUrl-i18n:
@@ -76,9 +76,9 @@ spec:
               title: 鉴权密钥
               x-title-i18n:
                 en-US: Auth Token
-              description: billing-service 共享鉴权密钥，示例使用占位符
+              description: billing-service 共享鉴权密钥，用于生成 Authorization Bearer 鉴权头；示例使用占位符
               x-description-i18n:
-                en-US: Shared secret for billing-service authorization; examples use a placeholder
+                en-US: Shared secret used to generate the Authorization Bearer header for billing-service authorization; examples use a placeholder
         quota_scope:
           type: string
           title: 额度作用域
@@ -216,3 +216,9 @@ spec:
       example:
         quota_scope: route:qwen
         provider: dashscope
+        tenant_header: x-mse-tenant
+        consumer_header: x-mse-consumer
+        enable_path_suffixes:
+        - /v1/chat/completions
+        - /v1/messages
+        fail_policy: open
