@@ -1,10 +1,10 @@
 ## 1. Pre-Change Analysis
 
-- [ ] 1.1 Read `docs/requirements/key-auth-local-yaml-enhancement.md`, this change's `proposal.md`, `design.md`, and `specs/key-auth-local-yaml/spec.md` to confirm scope before editing.
-- [ ] 1.2 Read `extensions/key-auth/main.go`, `extensions/key-auth/main_test.go`, `extensions/key-auth/README.md`, `extensions/key-auth/README_EN.md`, and `extensions/key-auth/keyauth.yaml` to identify exact edit points.
-- [ ] 1.3 Run GitNexus impact analysis for each key-auth symbol planned for edits, including `Consumer`, `KeyAuthConfig`, `parseGlobalConfig`, `parseOverrideRuleConfig`, `onHttpRequestHeaders`, `WWWAuthenticateHeader`, and any new helper symbols if GitNexus can resolve them.
-- [ ] 1.4 If GitNexus cannot resolve `extensions/key-auth/main.go` symbols, run `npx gitnexus analyze` or record the unresolved index limitation in the implementation notes before continuing.
-- [ ] 1.5 Review proxy-wasm header APIs available in the current dependency to decide whether identity headers should be removed before add, replaced, or otherwise overwritten.
+- [x] 1.1 Read `docs/requirements/key-auth-local-yaml-enhancement.md`, this change's `proposal.md`, `design.md`, and `specs/key-auth-local-yaml/spec.md` to confirm scope before editing.
+- [x] 1.2 Read `extensions/key-auth/main.go`, `extensions/key-auth/main_test.go`, `extensions/key-auth/README.md`, `extensions/key-auth/README_EN.md`, and `extensions/key-auth/keyauth.yaml` to identify exact edit points.
+- [x] 1.3 Run GitNexus impact analysis for each key-auth symbol planned for edits, including `Consumer`, `KeyAuthConfig`, `parseGlobalConfig`, `parseOverrideRuleConfig`, `onHttpRequestHeaders`, `WWWAuthenticateHeader`, and any new helper symbols if GitNexus can resolve them.
+- [x] 1.4 If GitNexus cannot resolve `extensions/key-auth/main.go` symbols, run `npx gitnexus analyze` or record the unresolved index limitation in the implementation notes before continuing.
+- [x] 1.5 Review proxy-wasm header APIs available in the current dependency to decide whether identity headers should be removed before add, replaced, or otherwise overwritten.
 
 ## 2. Configuration Model
 
