@@ -17,23 +17,31 @@ description: Key 认证插件配置参考
 **注意：**
 
 - 在一个规则里，鉴权配置和认证配置不可同时存在
-- 对于通过认证鉴权的请求，请求的header会被添加一个`X-Mse-Consumer`字段，用以标识调用者的名称。
+- 对于通过 consumer 认证鉴权的请求，请求的 header 会被添加可信的 `X-Mse-Consumer` 字段；如果 consumer 配置了 `tenant`，还会添加可信的 `X-Mse-Tenant` 字段。客户端请求中自带的同名字段不会被作为可信身份。
+- 本地 YAML 模式直接从 WasmPlugin 配置读取凭证并在解析后保存在内存中，不需要 Redis、数据库或 HTTP 服务作为外部凭证存储。
 
 ### 认证配置
 | 名称          | 数据类型        | 填写要求                                    | 默认值 | 描述                                                                                                                                                                            |
 | -----------   | --------------- | ------------------------------------------- | ------ | -----------------------------------------------------------                                                                                                                     |
 | `global_auth` | bool            | 选填（**仅实例级别配置**）                  | -      | 只能在实例级别配置，若配置为true，则全局生效认证机制; 若配置为false，则只对做了配置的域名和路由生效认证机制，若不配置则仅当没有域名和路由配置时全局生效（兼容老用户使用习惯）。 |
-| `consumers`   | array of object | 必填                                        | -      | 配置服务的调用者，用于对请求进行认证                                                                                                                                            |
-| `keys`        | array of string | 必填                                        | -      | API Key 的来源字段名称，可以是 URL 参数或者 HTTP 请求头名称                                                                                                                     |
+| `consumers`   | array of object | 与 `credentials` 二选一                     | -      | 配置服务的调用者，用于对请求进行认证。使用 consumer 模式时会传播 `X-Mse-Consumer` 和可选 `X-Mse-Tenant`。                                                                       |
+| `credentials` | array of string | 与 `consumers` 二选一                       | -      | 顶层凭证列表，只做认证，不绑定 consumer 名称或 tenant，也不会注入身份 header。                                                                                                   |
+| `keys`        | array of string | 使用顶层 `credentials` 或 consumer 未配置 `keys` 时必填 | - | API Key 的来源字段名称，可以是 URL 参数或者 HTTP 请求头名称。配置 `Authorization` 时支持从 `Authorization: Bearer <api-key>` 中提取 API Key。                                  |
 | `in_query`    | bool            | `in_query` 和 `in_header` 至少有一个为 true | true   | 配置 true 时，网关会尝试从 URL 参数中解析 API Key                                                                                                                               |
 | `in_header`   | bool            | `in_query` 和 `in_header` 至少有一个为 true | true   | 配置 true 时，网关会尝试从 HTTP 请求头中解析 API Key                                                                                                                            |
+| `realm`       | string          | 选填                                        | `MSE Gateway` | 认证失败时 `WWW-Authenticate` 响应头中的 realm。                                                                                                                               |
 
 `consumers`中每一项的配置字段说明如下：
 
-| 名称         | 数据类型 | 填写要求 | 默认值 | 描述                     |
-| ------------ | -------- | -------- | ------ | ------------------------ |
-| `credential` | string   | 必填     | -      | 配置该consumer的访问凭证 |
-| `name`       | string   | 必填     | -      | 配置该consumer的名称     |
+| 名称          | 数据类型        | 填写要求                                    | 默认值 | 描述 |
+| ------------- | --------------- | ------------------------------------------- | ------ | ---- |
+| `name`        | string          | 必填                                        | -      | 配置该 consumer 的名称 |
+| `credential`  | string          | 与 `credentials` 二选一                     | -      | 配置该 consumer 的单个访问凭证，兼容已有配置 |
+| `credentials` | array of string | 与 `credential` 二选一                      | -      | 配置该 consumer 的多个访问凭证，不能为空，且凭证值不能重复 |
+| `tenant`      | string          | 选填                                        | -      | 配置该 consumer 的租户。认证成功后会作为 `X-Mse-Tenant` 传递给后端 |
+| `keys`        | array of string | 选填                                        | -      | 覆盖全局 `keys`，只使用当前 consumer 的来源字段 |
+| `in_query`    | bool            | 选填，解析后至少启用一个来源                | -      | 覆盖全局 `in_query` |
+| `in_header`   | bool            | 选填，解析后至少启用一个来源                | -      | 覆盖全局 `in_header` |
 
 ### 鉴权配置（非必需）
 
@@ -115,7 +123,7 @@ curl  http://xxx.hello.com/test?apikey=c8c8e9ca-558e-4a2d-bb62-e700dcc40e35
 
 ### 网关实例级别开启
 
-以下配置将对网关实例级别开启 Basic Auth 认证，所有请求均需要经过认证后才能访问。
+以下配置将对网关实例级别开启 Key Auth 认证，所有请求均需要经过认证后才能访问。
 
 ```yaml
 global_auth: true
@@ -128,6 +136,55 @@ keys:
 - apikey
 - x-api-key
 ```
+
+### 多凭证 Consumer 和租户透传
+
+以下配置允许一个 consumer 拥有多个本地 YAML API Key，并通过 `Authorization` 请求头认证。认证成功后，后端会收到可信的 `X-Mse-Consumer: consumer1` 和 `X-Mse-Tenant: tenant-a`。
+
+```yaml
+global_auth: true
+consumers:
+- name: consumer1
+  tenant: tenant-a
+  credentials:
+  - real-api-key-1
+  - real-api-key-2
+  keys:
+  - Authorization
+  in_header: true
+  in_query: false
+keys:
+- apikey
+- x-api-key
+in_header: true
+in_query: true
+realm: MSE Gateway
+```
+
+请求示例：
+
+```bash
+curl http://xxx.hello.com/test -H 'Authorization: Bearer real-api-key-1'
+```
+
+当 `Authorization` 配置在 `keys` 中时，`Authorization: Bearer <api-key>` 会使用 Bearer 后面的 `<api-key>` 进行匹配；非 Bearer 的 `Authorization` 值会按原始值匹配。Bearer 前缀剥离只适用于 `Authorization` 来源，不会应用到其他请求头。
+
+### 顶层 Credentials 认证模式
+
+如果只需要认证 API Key，不需要 consumer 身份和租户透传，可以使用顶层 `credentials`：
+
+```yaml
+global_auth: true
+credentials:
+- real-api-key-1
+- real-api-key-2
+keys:
+- Authorization
+in_header: true
+in_query: false
+```
+
+顶层 `credentials` 模式不会注入 `X-Mse-Consumer` 或 `X-Mse-Tenant`，也不会作为 `allow` 中的命名 consumer 使用。如需按 consumer 做细粒度授权，请使用 `consumers` 配置。
 
 
 ## 相关错误码

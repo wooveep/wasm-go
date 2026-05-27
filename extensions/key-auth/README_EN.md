@@ -13,22 +13,30 @@ Plugin Execution Priority: `310`
 ## Configuration Fields
 **Note:**
 - Authentication and authorization configurations cannot coexist within a single rule.
-- For requests that are authenticated, a header field `X-Mse-Consumer` will be added to identify the caller's name.
+- For requests authenticated as a consumer, trusted `X-Mse-Consumer` is added. If the consumer has `tenant`, trusted `X-Mse-Tenant` is also added. Client-supplied headers with the same names are not treated as trusted identity.
+- Local YAML mode reads credentials from the WasmPlugin configuration and keeps them in memory after parsing. It does not require Redis, a database, or an HTTP service as an external credential store.
 
 ### Authentication Configuration
 | Name          | Data Type        | Requirements                                    | Default Value | Description                                                                                                                                                                            |
 | ------------- | ---------------- | ----------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `global_auth` | bool             | Optional (**Instance-Level Configuration Only**) | -             | Can only be configured at the instance level; if set to true, the authentication mechanism takes effect globally; if set to false, it only applies to the configured hostnames and routes. If not configured, it will only take effect globally when no hostname and route configurations are present (to maintain compatibility with older user habits). |
-| `consumers`   | array of object  | Required                                        | -             | Configures the service callers for request authentication.                                                                                                                                  |
-| `keys`        | array of string  | Required                                        | -             | Source field names for the API Key, which can be URL parameters or HTTP request header names.                                                                                           |
+| `consumers`   | array of object  | Required unless top-level `credentials` is used | -             | Configures service callers for request authentication. Consumer mode propagates `X-Mse-Consumer` and optional `X-Mse-Tenant`.                                                            |
+| `credentials` | array of string  | Required unless `consumers` is used             | -             | Top-level credential list for authentication-only mode. It does not bind credentials to a consumer or tenant and does not inject identity headers.                                      |
+| `keys`        | array of string  | Required for top-level `credentials` or consumers without consumer-level `keys` | - | Source field names for the API Key, which can be URL parameters or HTTP request header names. When `Authorization` is configured, `Authorization: Bearer <api-key>` is supported. |
 | `in_query`    | bool             | At least one of `in_query` and `in_header` must be true | true          | When configured as true, the gateway will attempt to parse the API Key from URL parameters.                                                                                             |
 | `in_header`   | bool             | At least one of `in_query` and `in_header` must be true | true          | When configured as true, the gateway will attempt to parse the API Key from HTTP request headers.                                                                                      |
+| `realm`       | string           | Optional                                        | `MSE Gateway` | Realm used in `WWW-Authenticate` response headers when authentication fails.                                                                                                            |
 
 The configuration field descriptions for each item in `consumers` are as follows:
-| Name         | Data Type | Requirements | Default Value | Description                   |
-| ------------ | --------- | ------------ | ------------- | ------------------------------ |
-| `credential` | string    | Required     | -             | Configures the access credential for this consumer. |
-| `name`       | string    | Required     | -             | Configures the name for this consumer.     |
+| Name          | Data Type       | Requirements                               | Default Value | Description |
+| ------------- | --------------- | ------------------------------------------ | ------------- | ----------- |
+| `name`        | string          | Required                                   | -             | Consumer name. |
+| `credential`  | string          | Required unless `credentials` is used      | -             | Single access credential for this consumer. This preserves existing configurations. |
+| `credentials` | array of string | Required unless `credential` is used       | -             | Multiple access credentials for this consumer. The list cannot be empty, and credential values cannot be duplicated. |
+| `tenant`      | string          | Optional                                   | -             | Tenant for this consumer. On successful authentication, it is propagated as `X-Mse-Tenant`. |
+| `keys`        | array of string | Optional                                   | -             | Overrides global `keys` for this consumer. |
+| `in_query`    | bool            | Optional, with at least one resolved source enabled | - | Overrides global `in_query`. |
+| `in_header`   | bool            | Optional, with at least one resolved source enabled | - | Overrides global `in_header`. |
 
 ### Authorization Configuration (Optional)
 | Name        | Data Type        | Requirements                                    | Default Value | Description                                                                                                                                                           |
@@ -102,7 +110,7 @@ curl  http://xxx.hello.com/test?apikey=c8c8e9ca-558e-4a2d-bb62-e700dcc40e35
 ```
 
 ### Enabling at the Instance Level
-The following configuration will enable Basic Auth authentication at the instance level for the gateway, requiring all requests to pass authentication before accessing.
+The following configuration will enable Key Auth authentication at the instance level for the gateway, requiring all requests to pass authentication before accessing.
 
 ```yaml
 global_auth: true
@@ -115,6 +123,53 @@ keys:
 - apikey
 - x-api-key
 ```
+
+### Multiple Credentials And Tenant Propagation
+The following configuration lets one consumer have multiple local YAML API keys and authenticate through the `Authorization` request header. After successful authentication, upstream services receive trusted `X-Mse-Consumer: consumer1` and `X-Mse-Tenant: tenant-a`.
+
+```yaml
+global_auth: true
+consumers:
+- name: consumer1
+  tenant: tenant-a
+  credentials:
+  - real-api-key-1
+  - real-api-key-2
+  keys:
+  - Authorization
+  in_header: true
+  in_query: false
+keys:
+- apikey
+- x-api-key
+in_header: true
+in_query: true
+realm: MSE Gateway
+```
+
+Request example:
+
+```bash
+curl http://xxx.hello.com/test -H 'Authorization: Bearer real-api-key-1'
+```
+
+When `Authorization` is configured in `keys`, `Authorization: Bearer <api-key>` matches on the token after `Bearer `. Non-Bearer `Authorization` values are matched as raw values. Bearer stripping only applies to the `Authorization` source and is not applied to other headers.
+
+### Top-Level Credentials Mode
+Use top-level `credentials` when you only need API key authentication and do not need consumer identity or tenant propagation:
+
+```yaml
+global_auth: true
+credentials:
+- real-api-key-1
+- real-api-key-2
+keys:
+- Authorization
+in_header: true
+in_query: false
+```
+
+Top-level `credentials` mode does not inject `X-Mse-Consumer` or `X-Mse-Tenant`, and it is not treated as a named consumer for `allow`. Use `consumers` when fine-grained consumer authorization is required.
 
 ## Related Error Codes
 | HTTP Status Code | Error Message                                              | Reason Explanation                |

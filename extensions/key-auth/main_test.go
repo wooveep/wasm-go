@@ -16,6 +16,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
@@ -237,6 +238,45 @@ var invalidRuleConfig = func() json.RawMessage {
 	return data
 }()
 
+func mustJSON(value map[string]interface{}) json.RawMessage {
+	data, _ := json.Marshal(value)
+	return data
+}
+
+func requestHeaders(extra ...[2]string) [][2]string {
+	headers := [][2]string{
+		{":authority", "example.com"},
+		{":path", "/test"},
+		{":method", "GET"},
+	}
+	return append(headers, extra...)
+}
+
+func headerValues(headers [][2]string, name string) []string {
+	var values []string
+	for _, header := range headers {
+		if strings.EqualFold(header[0], name) {
+			values = append(values, header[1])
+		}
+	}
+	return values
+}
+
+func requireHeaderValue(t *testing.T, headers [][2]string, name string, value string) {
+	t.Helper()
+	require.Equal(t, []string{value}, headerValues(headers, name))
+}
+
+func requireNoHeader(t *testing.T, headers [][2]string, name string) {
+	t.Helper()
+	require.Empty(t, headerValues(headers, name))
+}
+
+func requireLocalResponseHeader(t *testing.T, headers [][2]string, name string, value string) {
+	t.Helper()
+	require.Contains(t, headerValues(headers, name), value)
+}
+
 func TestParseGlobalConfig(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		// 测试基本 key-auth 配置解析
@@ -382,6 +422,193 @@ func TestParseRuleConfig(t *testing.T) {
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusFailed, status)
 		})
+	})
+}
+
+func TestParseGlobalConfigLocalYAMLEnhancement(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		tests := []struct {
+			name   string
+			config json.RawMessage
+			status types.OnPluginStartStatus
+		}{
+			{
+				name: "multiple credentials with tenant and realm",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":        "consumer1",
+							"tenant":      "tenant-a",
+							"credentials": []string{"token1", "token1-alt"},
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+					"realm":       "Custom Gateway",
+				}),
+				status: types.OnPluginStartStatusOK,
+			},
+			{
+				name: "top-level credentials mode",
+				config: mustJSON(map[string]interface{}{
+					"credentials": []string{"token1", "token2"},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusOK,
+			},
+			{
+				name: "consumer keys allow missing global keys",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":       "consumer1",
+							"credential": "token1",
+							"keys":       []string{"consumer-key"},
+							"in_header":  true,
+						},
+					},
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusOK,
+			},
+			{
+				name: "consumers conflict with top-level credentials",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":       "consumer1",
+							"credential": "token1",
+						},
+					},
+					"credentials": []string{"token2"},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "consumer credential conflicts with credentials",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":        "consumer1",
+							"credential":  "token1",
+							"credentials": []string{"token2"},
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "empty consumer credentials rejected",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":        "consumer1",
+							"credentials": []string{},
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "empty credential string rejected",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":        "consumer1",
+							"credentials": []string{"token1", ""},
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "duplicate credential in same consumer rejected",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":        "consumer1",
+							"credentials": []string{"token1", "token1"},
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "duplicate credential across consumers rejected",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":       "consumer1",
+							"credential": "token1",
+						},
+						{
+							"name":        "consumer2",
+							"credentials": []string{"token1"},
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "missing global keys for fallback consumer rejected",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":       "consumer1",
+							"credential": "token1",
+						},
+					},
+					"in_header":   true,
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+			{
+				name: "consumer with no enabled source rejected",
+				config: mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":       "consumer1",
+							"credential": "token1",
+							"keys":       []string{"x-api-key"},
+							"in_header":  false,
+							"in_query":   false,
+						},
+					},
+					"global_auth": true,
+				}),
+				status: types.OnPluginStartStatusFailed,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				host, status := test.NewTestHost(tt.config)
+				defer host.Reset()
+				require.Equal(t, tt.status, status)
+			})
+		}
 	})
 }
 
@@ -574,6 +801,402 @@ func TestOnHTTPRequestHeaders(t *testing.T) {
 			require.NotNil(t, localResponse, "Missing API key in query should be rejected")
 			require.Equal(t, uint32(401), localResponse.StatusCode) // Unauthorized
 
+			host.CompleteHttp()
+		})
+	})
+}
+
+func TestOnHTTPRequestHeadersLocalYAMLEnhancement(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		t.Run("first and second credentials authenticate same consumer with tenant", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":        "consumer1",
+						"tenant":      "tenant-a",
+						"credentials": []string{"token1", "token1-alt"},
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+			})
+
+			for _, credential := range []string{"token1", "token1-alt"} {
+				func() {
+					host, status := test.NewTestHost(config)
+					defer host.Reset()
+					require.Equal(t, types.OnPluginStartStatusOK, status)
+
+					action := host.CallOnHttpRequestHeaders(requestHeaders([2]string{"x-api-key", credential}))
+
+					require.Equal(t, types.ActionContinue, action)
+					require.Nil(t, host.GetLocalResponse())
+					headers := host.GetRequestHeaders()
+					requireHeaderValue(t, headers, "x-mse-consumer", "consumer1")
+					requireHeaderValue(t, headers, "x-mse-tenant", "tenant-a")
+					host.CompleteHttp()
+				}()
+			}
+		})
+
+		t.Run("consumer keys override global keys", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+						"keys":       []string{"consumer-key"},
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+			})
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders(requestHeaders([2]string{"consumer-key", "token1"}))
+				require.Nil(t, host.GetLocalResponse())
+				requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders(requestHeaders([2]string{"x-api-key", "token1"}))
+				localResponse := host.GetLocalResponse()
+				require.NotNil(t, localResponse)
+				require.Equal(t, uint32(401), localResponse.StatusCode)
+				host.CompleteHttp()
+			}()
+		})
+
+		t.Run("consumer without keys uses global keys", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders(requestHeaders([2]string{"x-api-key", "token1"}))
+
+			require.Nil(t, host.GetLocalResponse())
+			requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+			host.CompleteHttp()
+		})
+
+		t.Run("consumer source override authenticates query", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+						"in_header":  false,
+						"in_query":   true,
+					},
+				},
+				"keys":        []string{"apikey"},
+				"in_header":   true,
+				"in_query":    false,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/test?apikey=token1"},
+				{":method", "GET"},
+			})
+
+			require.Nil(t, host.GetLocalResponse())
+			requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+			host.CompleteHttp()
+		})
+
+		t.Run("query is checked when header and query are enabled", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+					},
+				},
+				"keys":        []string{"apikey"},
+				"in_header":   true,
+				"in_query":    true,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/test?apikey=token1"},
+				{":method", "GET"},
+			})
+
+			require.Nil(t, host.GetLocalResponse())
+			requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+			host.CompleteHttp()
+		})
+
+		t.Run("authorization bearer and raw values authenticate", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "real-api-key",
+					},
+				},
+				"keys":        []string{"Authorization"},
+				"in_header":   true,
+				"global_auth": true,
+			})
+
+			for _, value := range []string{"Bearer real-api-key", "real-api-key"} {
+				func() {
+					host, status := test.NewTestHost(config)
+					defer host.Reset()
+					require.Equal(t, types.OnPluginStartStatusOK, status)
+
+					host.CallOnHttpRequestHeaders(requestHeaders([2]string{"Authorization", value}))
+
+					require.Nil(t, host.GetLocalResponse())
+					requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+					host.CompleteHttp()
+				}()
+			}
+		})
+
+		t.Run("bearer prefix is not stripped from non-authorization headers", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "real-api-key",
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders(requestHeaders([2]string{"x-api-key", "Bearer real-api-key"}))
+
+			localResponse := host.GetLocalResponse()
+			require.NotNil(t, localResponse)
+			require.Equal(t, uint32(403), localResponse.StatusCode)
+			host.CompleteHttp()
+		})
+
+		t.Run("multiple credentials across header query and repeated query are rejected", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":        "consumer1",
+						"credentials": []string{"token1", "token2"},
+					},
+				},
+				"keys":        []string{"apikey"},
+				"in_header":   true,
+				"in_query":    true,
+				"global_auth": true,
+			})
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders([][2]string{
+					{":authority", "example.com"},
+					{":path", "/test?apikey=token2"},
+					{":method", "GET"},
+					{"apikey", "token1"},
+				})
+				localResponse := host.GetLocalResponse()
+				require.NotNil(t, localResponse)
+				require.Equal(t, uint32(401), localResponse.StatusCode)
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders([][2]string{
+					{":authority", "example.com"},
+					{":path", "/test?apikey=token1&apikey=token1"},
+					{":method", "GET"},
+				})
+				localResponse := host.GetLocalResponse()
+				require.NotNil(t, localResponse)
+				require.Equal(t, uint32(401), localResponse.StatusCode)
+				host.CompleteHttp()
+			}()
+		})
+
+		t.Run("allow list uses authenticated consumer name", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":        "consumer1",
+						"credentials": []string{"token1", "token1-alt"},
+					},
+					{
+						"name":       "consumer2",
+						"credential": "token2",
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"test-route"},
+						"allow":         []string{"consumer1"},
+					},
+				},
+			})
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				require.NoError(t, host.SetRouteName("test-route"))
+				host.CallOnHttpRequestHeaders(requestHeaders([2]string{"x-api-key", "token1-alt"}))
+				require.Nil(t, host.GetLocalResponse())
+				requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				require.NoError(t, host.SetRouteName("test-route"))
+				host.CallOnHttpRequestHeaders(requestHeaders([2]string{"x-api-key", "token2"}))
+				localResponse := host.GetLocalResponse()
+				require.NotNil(t, localResponse)
+				require.Equal(t, uint32(403), localResponse.StatusCode)
+				host.CompleteHttp()
+			}()
+		})
+
+		t.Run("top-level credentials authenticate without identity headers", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"credentials": []string{"token1"},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders(requestHeaders(
+				[2]string{"x-api-key", "token1"},
+				[2]string{"X-Mse-Consumer", "spoofed"},
+				[2]string{"X-Mse-Tenant", "spoofed"},
+			))
+
+			require.Nil(t, host.GetLocalResponse())
+			headers := host.GetRequestHeaders()
+			requireNoHeader(t, headers, "x-mse-consumer")
+			requireNoHeader(t, headers, "x-mse-tenant")
+			host.CompleteHttp()
+		})
+
+		t.Run("spoofed identity headers are overwritten or removed", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":        "consumer1",
+						"tenant":      "tenant-a",
+						"credentials": []string{"token1"},
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+			})
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders(requestHeaders(
+					[2]string{"x-api-key", "token1"},
+					[2]string{"X-Mse-Consumer", "spoofed"},
+					[2]string{"X-Mse-Tenant", "spoofed"},
+				))
+				headers := host.GetRequestHeaders()
+				requireHeaderValue(t, headers, "x-mse-consumer", "consumer1")
+				requireHeaderValue(t, headers, "x-mse-tenant", "tenant-a")
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+					"consumers": []map[string]interface{}{
+						{
+							"name":       "consumer1",
+							"credential": "token1",
+						},
+					},
+					"keys":        []string{"x-api-key"},
+					"in_header":   true,
+					"global_auth": true,
+				}))
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders(requestHeaders(
+					[2]string{"x-api-key", "token1"},
+					[2]string{"X-Mse-Tenant", "spoofed"},
+				))
+				headers := host.GetRequestHeaders()
+				requireHeaderValue(t, headers, "x-mse-consumer", "consumer1")
+				requireNoHeader(t, headers, "x-mse-tenant")
+				host.CompleteHttp()
+			}()
+		})
+
+		t.Run("configured realm appears in failure response", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+					},
+				},
+				"keys":        []string{"x-api-key"},
+				"in_header":   true,
+				"global_auth": true,
+				"realm":       "Custom Gateway",
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders(requestHeaders())
+
+			localResponse := host.GetLocalResponse()
+			require.NotNil(t, localResponse)
+			require.Equal(t, uint32(401), localResponse.StatusCode)
+			requireLocalResponseHeader(t, localResponse.Headers, "WWW-Authenticate", "Key realm=Custom Gateway")
 			host.CompleteHttp()
 		})
 	})

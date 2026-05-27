@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
@@ -28,11 +29,16 @@ import (
 )
 
 var (
-	ruleSet         bool            // 插件是否至少在一个 domain 或 route 上生效
-	protectionSpace = "MSE Gateway" // 认证失败时，返回响应头 WWW-Authenticate: Key realm=MSE Gateway
+	ruleSet bool // 插件是否至少在一个 domain 或 route 上生效
 )
 
 func main() {}
+
+const (
+	defaultProtectionSpace = "MSE Gateway"
+	consumerHeaderName     = "X-Mse-Consumer"
+	tenantHeaderName       = "X-Mse-Tenant"
+)
 
 func init() {
 	wrapper.SetCtx(
@@ -55,6 +61,61 @@ type Consumer struct {
 	// @Description en-US The credential of the consumer.
 	// @Scope GLOBAL
 	Credential string `yaml:"credential"`
+
+	// @Title 访问凭证列表
+	// @Title en-US Credentials
+	// @Description 该调用方的访问凭证列表。
+	// @Description en-US The credentials of the consumer.
+	// @Scope GLOBAL
+	Credentials []string `yaml:"credentials,omitempty"`
+
+	// @Title 租户
+	// @Title en-US Tenant
+	// @Description 该调用方所属租户。
+	// @Description en-US The tenant of the consumer.
+	// @Scope GLOBAL
+	Tenant string `yaml:"tenant,omitempty"`
+
+	// @Title API Key 的来源字段名称列表
+	// @Title en-US The name of the source field of the API Key
+	// @Description 当前调用方覆盖全局配置的 API Key 来源字段名称。
+	// @Description en-US Consumer-level API Key source field names overriding the global config.
+	// @Scope GLOBAL
+	Keys []string `yaml:"keys,omitempty"`
+
+	// @Title key是否来源于URL参数
+	// @Title en-US the API Key from the URL parameters.
+	// @Description 当前调用方覆盖全局配置的 URL 参数来源开关。
+	// @Description en-US Consumer-level URL parameter source switch overriding the global config.
+	// @Scope GLOBAL
+	InQuery *bool `yaml:"in_query,omitempty"`
+
+	// @Title key是否来源于Header
+	// @Title en-US the API Key from the HTTP request header name.
+	// @Description 当前调用方覆盖全局配置的 HTTP 请求头来源开关。
+	// @Description en-US Consumer-level HTTP header source switch overriding the global config.
+	// @Scope GLOBAL
+	InHeader *bool `yaml:"in_header,omitempty"`
+}
+
+type extractionPlan struct {
+	Keys     []string
+	InHeader bool
+	InQuery  bool
+}
+
+type credentialIdentity struct {
+	Name     string
+	Tenant   string
+	Consumer bool
+	Plan     extractionPlan
+}
+
+type credentialCandidate struct {
+	Value   string
+	Source  string
+	Key     string
+	Ordinal int
 }
 
 // @Name key-auth
@@ -114,6 +175,9 @@ type KeyAuthConfig struct {
 	// @Scope GLOBAL
 	InHeader bool `yaml:"in_header,omitempty"`
 
+	inQuerySet  bool
+	inHeaderSet bool
+
 	// @Title 调用方列表
 	// @Title en-US Consumer List
 	// @Description 服务调用方列表，用于对请求进行认证。
@@ -127,7 +191,14 @@ type KeyAuthConfig struct {
 	// @Description en-US Consumers to be allowed for matched requests.
 	allow []string `yaml:"allow"`
 
-	credential2Name map[string]string `yaml:"-"`
+	// @Title 认证失败响应 Realm
+	// @Title en-US Authentication Failure Response Realm
+	// @Description 认证失败时 WWW-Authenticate 响应头中的 realm。
+	// @Description en-US The realm in WWW-Authenticate response headers when authentication fails.
+	// @Scope GLOBAL
+	Realm string `yaml:"realm,omitempty"`
+
+	credentialIdentities map[string]credentialIdentity `yaml:"-"`
 }
 
 func parseGlobalConfig(json gjson.Result, global *KeyAuthConfig, log log.Log) error {
@@ -135,7 +206,8 @@ func parseGlobalConfig(json gjson.Result, global *KeyAuthConfig, log log.Log) er
 
 	// init
 	ruleSet = false
-	global.credential2Name = make(map[string]string)
+	global.Realm = defaultProtectionSpace
+	global.credentialIdentities = make(map[string]credentialIdentity)
 
 	// global_auth
 	globalAuth := json.Get("global_auth")
@@ -144,38 +216,62 @@ func parseGlobalConfig(json gjson.Result, global *KeyAuthConfig, log log.Log) er
 		global.globalAuth = &ga
 	}
 
-	// keys
-	names := json.Get("keys")
-	if !names.Exists() {
-		return errors.New("keys is required")
-	}
-	if len(names.Array()) == 0 {
-		return errors.New("keys cannot be empty")
+	realm := json.Get("realm")
+	if realm.Exists() && realm.String() != "" {
+		global.Realm = realm.String()
 	}
 
-	for _, name := range names.Array() {
-		global.Keys = append(global.Keys, name.String())
+	// keys
+	names := json.Get("keys")
+	if names.Exists() {
+		keys, err := parseStringArray(names, "keys")
+		if err != nil {
+			return err
+		}
+		global.Keys = keys
 	}
 
 	// in_query and in_header
 	in_query := json.Get("in_query")
 	in_header := json.Get("in_header")
-	if !in_query.Exists() && !in_header.Exists() {
-		return errors.New("must one of in_query/in_header required")
-	}
-
 	if in_query.Exists() {
 		global.InQuery = in_query.Bool()
+		global.inQuerySet = true
 	}
 	if in_header.Exists() {
 		global.InHeader = in_header.Bool()
+		global.inHeaderSet = true
 	}
 
-	// consumers
+	topLevelCredentials := json.Get("credentials")
 	consumers := json.Get("consumers")
-	if !consumers.Exists() {
-		return errors.New("consumers is required")
+	if consumers.Exists() && topLevelCredentials.Exists() {
+		return errors.New("consumers and credentials cannot both be configured")
 	}
+	if !consumers.Exists() && !topLevelCredentials.Exists() {
+		return errors.New("consumers or credentials is required")
+	}
+
+	if topLevelCredentials.Exists() {
+		plan, err := resolveTopLevelExtractionPlan(*global)
+		if err != nil {
+			return err
+		}
+		credentials, err := parseCredentials(topLevelCredentials, "credentials")
+		if err != nil {
+			return err
+		}
+		for _, credential := range credentials {
+			if err := addCredentialIdentity(global.credentialIdentities, credential, credentialIdentity{
+				Consumer: false,
+				Plan:     plan,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	if len(consumers.Array()) == 0 {
 		return errors.New("consumers cannot be empty")
 	}
@@ -185,20 +281,46 @@ func parseGlobalConfig(json gjson.Result, global *KeyAuthConfig, log log.Log) er
 		if !name.Exists() || name.String() == "" {
 			return errors.New("consumer name is required")
 		}
-		credential := item.Get("credential")
-		if !credential.Exists() || credential.String() == "" {
-			return errors.New("consumer credential is required")
-		}
-		if _, ok := global.credential2Name[credential.String()]; ok {
-			return errors.New("duplicate consumer credential: " + credential.String())
-		}
 
 		consumer := Consumer{
-			Name:       name.String(),
-			Credential: credential.String(),
+			Name:   name.String(),
+			Tenant: item.Get("tenant").String(),
 		}
+		if keys := item.Get("keys"); keys.Exists() {
+			parsedKeys, err := parseStringArray(keys, "consumer keys")
+			if err != nil {
+				return err
+			}
+			consumer.Keys = parsedKeys
+		}
+		if inHeader := item.Get("in_header"); inHeader.Exists() {
+			value := inHeader.Bool()
+			consumer.InHeader = &value
+		}
+		if inQuery := item.Get("in_query"); inQuery.Exists() {
+			value := inQuery.Bool()
+			consumer.InQuery = &value
+		}
+		credentials, err := parseConsumerCredentials(item, &consumer)
+		if err != nil {
+			return err
+		}
+		plan, err := resolveConsumerExtractionPlan(*global, consumer)
+		if err != nil {
+			return err
+		}
+
 		global.consumers = append(global.consumers, consumer)
-		global.credential2Name[credential.String()] = name.String()
+		for _, credential := range credentials {
+			if err := addCredentialIdentity(global.credentialIdentities, credential, credentialIdentity{
+				Name:     consumer.Name,
+				Tenant:   consumer.Tenant,
+				Consumer: true,
+				Plan:     plan,
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -256,42 +378,35 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config KeyAuthConfig, log log
 	// 以下需要认证：
 	// - 从 header 中获取 tokens 信息
 	// - 从 query 中获取 tokens 信息
-	var tokens []string
-	if config.InHeader {
-		// 匹配keys中的 keyname
-		for _, key := range config.Keys {
-			value, err := proxywasm.GetHttpRequestHeader(key)
-			if err == nil && value != "" {
-				tokens = append(tokens, value)
-			}
-		}
-	} else if config.InQuery {
-		requestUrl, _ := proxywasm.GetHttpRequestHeader(":path")
-		url, _ := url.Parse(requestUrl)
-		queryValues := url.Query()
-		for _, key := range config.Keys {
-			values, ok := queryValues[key]
-			if ok && len(values) > 0 {
-				tokens = append(tokens, values...)
-			}
-		}
-	}
+	tokens := extractCredentialCandidates(config)
 
 	// header/query
 	if len(tokens) > 1 {
-		return deniedMultiKeyAuthData()
+		return deniedMultiKeyAuthData(config.Realm)
 	} else if len(tokens) <= 0 {
-		return deniedNoKeyAuthData()
+		return deniedNoKeyAuthData(config.Realm)
 	}
 
 	// 验证token
-	name, ok := config.credential2Name[tokens[0]]
+	identity, ok := config.credentialIdentities[tokens[0].Value]
 	if !ok {
-		log.Warnf("credential %q is not configured", tokens[0])
-		return deniedUnauthorizedConsumer()
+		log.Warnf("credential %q is not configured", tokens[0].Value)
+		return deniedUnauthorizedConsumer(config.Realm)
+	}
+	if !candidateAllowedByPlan(tokens[0], identity.Plan) {
+		log.Warnf("credential %q is not allowed from %s %q", tokens[0].Value, tokens[0].Source, tokens[0].Key)
+		return deniedUnauthorizedConsumer(config.Realm)
+	}
+	if !identity.Consumer {
+		removeTrustedIdentityHeaders()
+		if !noAllow {
+			return deniedUnauthorizedConsumer(config.Realm)
+		}
+		return authenticated("")
 	}
 
-	proxywasm.AddHttpRequestHeader("X-Mse-Consumer", name)
+	name := identity.Name
+	propagateTrustedIdentity(identity)
 
 	// 全局生效：
 	// - global_auth == true 且 当前 domain/route 未配置该插件
@@ -305,7 +420,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config KeyAuthConfig, log log
 	if globalAuthSetTrue && !noAllow {
 		if !contains(config.allow, name) {
 			log.Warnf("consumer %q is not allowed", name)
-			return deniedUnauthorizedConsumer()
+			return deniedUnauthorizedConsumer(config.Realm)
 		}
 		log.Infof("consumer %q authenticated", name)
 		return authenticated(name)
@@ -316,7 +431,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config KeyAuthConfig, log log
 		if !noAllow { // 配置了 allow 列表
 			if !contains(config.allow, name) {
 				log.Warnf("consumer %q is not allowed", name)
-				return deniedUnauthorizedConsumer()
+				return deniedUnauthorizedConsumer(config.Realm)
 			}
 			log.Infof("consumer %q authenticated", name)
 			return authenticated(name)
@@ -326,20 +441,247 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config KeyAuthConfig, log log
 	return types.ActionContinue
 }
 
-func deniedMultiKeyAuthData() types.Action {
-	_ = proxywasm.SendHttpResponseWithDetail(http.StatusUnauthorized, "key-auth.multi_key", WWWAuthenticateHeader(protectionSpace),
+func parseStringArray(result gjson.Result, field string) ([]string, error) {
+	items := result.Array()
+	if len(items) == 0 {
+		return nil, errors.New(field + " cannot be empty")
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.String() == "" {
+			return nil, errors.New(field + " cannot contain empty item")
+		}
+		values = append(values, item.String())
+	}
+	return values, nil
+}
+
+func parseCredentials(result gjson.Result, field string) ([]string, error) {
+	values, err := parseStringArray(result, field)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			return nil, errors.New("duplicate consumer credential: " + value)
+		}
+		seen[value] = struct{}{}
+	}
+	return values, nil
+}
+
+func parseConsumerCredentials(item gjson.Result, consumer *Consumer) ([]string, error) {
+	credential := item.Get("credential")
+	credentials := item.Get("credentials")
+	if credential.Exists() && credentials.Exists() {
+		return nil, errors.New("consumer credential and credentials cannot both be configured")
+	}
+	if credential.Exists() {
+		if credential.String() == "" {
+			return nil, errors.New("consumer credential is required")
+		}
+		consumer.Credential = credential.String()
+		return []string{credential.String()}, nil
+	}
+	if credentials.Exists() {
+		parsedCredentials, err := parseCredentials(credentials, "consumer credentials")
+		if err != nil {
+			return nil, err
+		}
+		consumer.Credentials = parsedCredentials
+		return parsedCredentials, nil
+	}
+	return nil, errors.New("consumer credential is required")
+}
+
+func addCredentialIdentity(lookup map[string]credentialIdentity, credential string, identity credentialIdentity) error {
+	if _, ok := lookup[credential]; ok {
+		return errors.New("duplicate consumer credential: " + credential)
+	}
+	lookup[credential] = identity
+	return nil
+}
+
+func resolveTopLevelExtractionPlan(config KeyAuthConfig) (extractionPlan, error) {
+	if len(config.Keys) == 0 {
+		return extractionPlan{}, errors.New("keys is required")
+	}
+	plan := extractionPlan{
+		Keys:     append([]string(nil), config.Keys...),
+		InHeader: config.inHeaderSet && config.InHeader,
+		InQuery:  config.inQuerySet && config.InQuery,
+	}
+	if !plan.InHeader && !plan.InQuery {
+		return extractionPlan{}, errors.New("must one of in_query/in_header required")
+	}
+	return plan, nil
+}
+
+func resolveConsumerExtractionPlan(global KeyAuthConfig, consumer Consumer) (extractionPlan, error) {
+	keys := consumer.Keys
+	if len(keys) == 0 {
+		keys = global.Keys
+	}
+	if len(keys) == 0 {
+		return extractionPlan{}, errors.New("keys is required")
+	}
+
+	inHeader := global.inHeaderSet && global.InHeader
+	inQuery := global.inQuerySet && global.InQuery
+	if consumer.InHeader != nil {
+		inHeader = *consumer.InHeader
+	}
+	if consumer.InQuery != nil {
+		inQuery = *consumer.InQuery
+	}
+
+	if !inHeader && !inQuery {
+		return extractionPlan{}, errors.New("must one of in_query/in_header required")
+	}
+
+	return extractionPlan{
+		Keys:     append([]string(nil), keys...),
+		InHeader: inHeader,
+		InQuery:  inQuery,
+	}, nil
+}
+
+func extractCredentialCandidates(config KeyAuthConfig) []credentialCandidate {
+	plans := uniqueExtractionPlans(config)
+	seen := make(map[string]struct{})
+	var candidates []credentialCandidate
+	for _, plan := range plans {
+		if plan.InHeader {
+			candidates = append(candidates, extractHeaderCredentialCandidates(plan, seen)...)
+		}
+		if plan.InQuery {
+			candidates = append(candidates, extractQueryCredentialCandidates(plan, seen)...)
+		}
+	}
+	return candidates
+}
+
+func uniqueExtractionPlans(config KeyAuthConfig) []extractionPlan {
+	seen := make(map[string]struct{})
+	var plans []extractionPlan
+	for _, identity := range config.credentialIdentities {
+		key := identity.Plan.key()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		plans = append(plans, identity.Plan)
+	}
+	return plans
+}
+
+func (plan extractionPlan) key() string {
+	return fmt.Sprintf("%t|%t|%s", plan.InHeader, plan.InQuery, strings.Join(plan.Keys, "\x00"))
+}
+
+func extractHeaderCredentialCandidates(plan extractionPlan, seen map[string]struct{}) []credentialCandidate {
+	var candidates []credentialCandidate
+	for _, key := range plan.Keys {
+		value, err := proxywasm.GetHttpRequestHeader(key)
+		if err != nil || value == "" {
+			continue
+		}
+		value = normalizeHeaderCredential(key, value)
+		if value == "" {
+			continue
+		}
+		candidates = appendCredentialCandidate(candidates, seen, credentialCandidate{
+			Value:   value,
+			Source:  "header",
+			Key:     key,
+			Ordinal: 0,
+		})
+	}
+	return candidates
+}
+
+func extractQueryCredentialCandidates(plan extractionPlan, seen map[string]struct{}) []credentialCandidate {
+	requestUrl, _ := proxywasm.GetHttpRequestHeader(":path")
+	parsedURL, err := url.Parse(requestUrl)
+	if err != nil {
+		return nil
+	}
+	queryValues := parsedURL.Query()
+	var candidates []credentialCandidate
+	for _, key := range plan.Keys {
+		values, ok := queryValues[key]
+		if !ok {
+			continue
+		}
+		for index, value := range values {
+			if value == "" {
+				continue
+			}
+			candidates = appendCredentialCandidate(candidates, seen, credentialCandidate{
+				Value:   value,
+				Source:  "query",
+				Key:     key,
+				Ordinal: index,
+			})
+		}
+	}
+	return candidates
+}
+
+func appendCredentialCandidate(candidates []credentialCandidate, seen map[string]struct{}, candidate credentialCandidate) []credentialCandidate {
+	key := fmt.Sprintf("%s\x00%s\x00%d\x00%s", candidate.Source, candidate.Key, candidate.Ordinal, candidate.Value)
+	if _, ok := seen[key]; ok {
+		return candidates
+	}
+	seen[key] = struct{}{}
+	return append(candidates, candidate)
+}
+
+func normalizeHeaderCredential(key string, value string) string {
+	if strings.EqualFold(key, "Authorization") && strings.HasPrefix(value, "Bearer ") {
+		return strings.TrimPrefix(value, "Bearer ")
+	}
+	return value
+}
+
+func candidateAllowedByPlan(candidate credentialCandidate, plan extractionPlan) bool {
+	if candidate.Source == "header" && !plan.InHeader {
+		return false
+	}
+	if candidate.Source == "query" && !plan.InQuery {
+		return false
+	}
+	return contains(plan.Keys, candidate.Key)
+}
+
+func propagateTrustedIdentity(identity credentialIdentity) {
+	removeTrustedIdentityHeaders()
+	_ = proxywasm.AddHttpRequestHeader(consumerHeaderName, identity.Name)
+	if identity.Tenant != "" {
+		_ = proxywasm.AddHttpRequestHeader(tenantHeaderName, identity.Tenant)
+	}
+}
+
+func removeTrustedIdentityHeaders() {
+	_ = proxywasm.RemoveHttpRequestHeader(consumerHeaderName)
+	_ = proxywasm.RemoveHttpRequestHeader(tenantHeaderName)
+}
+
+func deniedMultiKeyAuthData(realm string) types.Action {
+	_ = proxywasm.SendHttpResponseWithDetail(http.StatusUnauthorized, "key-auth.multi_key", WWWAuthenticateHeader(realm),
 		[]byte("Request denied by Key Auth check. Multi Key Authentication information found."), -1)
 	return types.ActionContinue
 }
 
-func deniedNoKeyAuthData() types.Action {
-	_ = proxywasm.SendHttpResponseWithDetail(http.StatusUnauthorized, "key-auth.no_key", WWWAuthenticateHeader(protectionSpace),
+func deniedNoKeyAuthData(realm string) types.Action {
+	_ = proxywasm.SendHttpResponseWithDetail(http.StatusUnauthorized, "key-auth.no_key", WWWAuthenticateHeader(realm),
 		[]byte("Request denied by Key Auth check. No Key Authentication information found."), -1)
 	return types.ActionContinue
 }
 
-func deniedUnauthorizedConsumer() types.Action {
-	_ = proxywasm.SendHttpResponseWithDetail(http.StatusForbidden, "key-auth.unauthorized", WWWAuthenticateHeader(protectionSpace),
+func deniedUnauthorizedConsumer(realm string) types.Action {
+	_ = proxywasm.SendHttpResponseWithDetail(http.StatusForbidden, "key-auth.unauthorized", WWWAuthenticateHeader(realm),
 		[]byte("Request denied by Key Auth check. Unauthorized consumer."), -1)
 	return types.ActionContinue
 }
@@ -358,6 +700,9 @@ func contains(arr []string, item string) bool {
 }
 
 func WWWAuthenticateHeader(realm string) [][2]string {
+	if realm == "" {
+		realm = defaultProtectionSpace
+	}
 	return [][2]string{
 		{"WWW-Authenticate", fmt.Sprintf("Key realm=%s", realm)},
 	}
