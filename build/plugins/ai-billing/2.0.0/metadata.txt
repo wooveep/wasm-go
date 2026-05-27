@@ -1,5 +1,0 @@
-Plugin Name: ai-billing
-Size: 6341804 bytes
-Last Modified: 2026-05-21T23:38:10
-Created: 2026-05-21T23:38:10.957935
-MD5: 3d801c8bc87959045ec16927b9702717

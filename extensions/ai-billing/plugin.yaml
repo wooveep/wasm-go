@@ -28,4 +28,4 @@ spec:
       provider: dashscope
   phase: UNSPECIFIED_PHASE
   priority: 270
-  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-billing:latest
+  url: http://higress-plugin-server.higress-system.svc/plugins/ai-billing/0.1.0/plugin.wasm

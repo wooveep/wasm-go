@@ -32,4 +32,4 @@ spec:
       provider: deepseek
   phase: UNSPECIFIED_PHASE
   priority: 280
-  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-quota:latest
+  url: http://higress-plugin-server.higress-system.svc/plugins/ai-quota/1.0.1/plugin.wasm

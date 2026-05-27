@@ -67,5 +67,5 @@ spec:
       configDisable: false
       ingress:
         - ingress-keyauth-httpbin
-  url: oci://docker.io/dongjiang1989/keyauth:1.0.0
+  url: http://higress-plugin-server.higress-system.svc/plugins/key-auth/1.0.1/plugin.wasm
   imagePullPolicy: Always
