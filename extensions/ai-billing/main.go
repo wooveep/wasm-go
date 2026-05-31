@@ -25,7 +25,7 @@ const (
 	defaultProvider       = "default"
 	defaultTenantHeader   = "x-mse-tenant"
 	defaultConsumerHeader = "x-mse-consumer"
-	defaultBillingPath    = "/billing/events"
+	defaultBillingPath    = "/internal/billing/events"
 	defaultTimeout        = uint32(500)
 
 	FailPolicyOpen = "open"
@@ -89,9 +89,9 @@ type BillingEvent struct {
 	IdempotencyKey string       `json:"idempotency_key"`
 	RequestID      string       `json:"request_id"`
 	Consumer       string       `json:"consumer"`
-	Route          string       `json:"route"`
-	Provider       string       `json:"provider"`
-	Model          string       `json:"model"`
+	Route          BillingFact  `json:"route"`
+	Provider       BillingFact  `json:"provider"`
+	Model          BillingFact  `json:"model"`
 	RequestPath    string       `json:"request_path"`
 	StatusCode     int          `json:"status_code"`
 	Usage          BillingUsage `json:"usage"`
@@ -101,6 +101,11 @@ type BillingEvent struct {
 	IsStream       bool         `json:"is_stream"`
 	Cluster        string       `json:"cluster"`
 	PriceVersion   string       `json:"price_version,omitempty"`
+}
+
+type BillingFact struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type BillingUsage struct {
@@ -304,9 +309,9 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		IdempotencyKey: idempotencyKey,
 		RequestID:      requestID,
 		Consumer:       ctx.GetStringContext(ctxConsumer, ""),
-		Route:          ctx.GetStringContext(ctxRoute, "-"),
-		Provider:       ctx.GetStringContext(ctxProvider, config.Provider),
-		Model:          ctx.GetStringContext(ctxModel, tokenusage.ModelUnknown),
+		Route:          namedBillingFact(ctx.GetStringContext(ctxRoute, "-")),
+		Provider:       namedBillingFact(ctx.GetStringContext(ctxProvider, config.Provider)),
+		Model:          namedBillingFact(ctx.GetStringContext(ctxModel, tokenusage.ModelUnknown)),
 		RequestPath:    ctx.GetStringContext(ctxRequestPath, ""),
 		StatusCode:     intDefault(intFromContext(ctx.GetContext(ctxStatusCode)), http.StatusBadGateway),
 		Usage: BillingUsage{
@@ -324,6 +329,10 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
 	}
 	return event
+}
+
+func namedBillingFact(name string) BillingFact {
+	return BillingFact{Name: strings.TrimSpace(name)}
 }
 
 func billingUsageDetails(ctx wrapper.HttpContext) map[string]any {

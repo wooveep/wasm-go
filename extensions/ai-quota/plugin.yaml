@@ -5,6 +5,8 @@ metadata:
   namespace: higress-system
 spec:
   defaultConfig:
+    # ai-quota reads Console-derived Redis balance for admission only.
+    # It does not debit Redis after responses.
     redis:
       service_name: redis-service.default.svc.cluster.local
       service_port: 6379
@@ -12,24 +14,17 @@ spec:
     tenant_header: x-mse-tenant
     consumer_header: x-mse-consumer
     balance_key_template: "billing:balance:{tenant}:{quota_scope}:{consumer}"
-    price_key_template: "billing:effective_price:{tenant}:{provider}:{model}:{token_type}"
-    amount_scale: 1000000
-    price_unit_tokens: 1000000
     missing_balance_policy: deny
-    missing_price_policy: skip
-    missing_usage_policy: skip
   defaultConfigDisable: false
   matchRules:
   - ingress:
     - qwen
     config:
       quota_scope: route:qwen
-      provider: dashscope
   - ingress:
     - deepseek
     config:
       quota_scope: route:deepseek
-      provider: deepseek
   phase: UNSPECIFIED_PHASE
   priority: 280
   url: http://higress-plugin-server.higress-system.svc/plugins/ai-quota/1.0.1/plugin.wasm

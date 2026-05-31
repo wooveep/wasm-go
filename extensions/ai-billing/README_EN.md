@@ -6,7 +6,7 @@ description: Configuration reference for request-level AI billing event delivery
 
 ## Overview
 
-`ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and sends it to billing-service through an HTTP callout. Delivery is fail-open by default: timeouts, network failures, and 5xx responses are logged but do not block the user response.
+`ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and sends it to Console's internal billing-service through an HTTP callout. The callout uses `billing_service.auth_token` to send `Authorization: Bearer <token>`. Delivery is fail-open by default: timeouts, network failures, and 5xx responses are logged but do not block the user response.
 
 The plugin does not deduct Redis balances or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
 
@@ -29,6 +29,10 @@ enable_path_suffixes:
 fail_policy: open
 ```
 
-Events include request identity, tenant, consumer, quota scope, provider, model, route, cluster, request path, status code, timing, stream flag, token counts, `usage_missing`, optional price version, and optional gateway-calculated cost.
+Events include `event_id`, `idempotency_key`, `request_id`, `consumer`, `route`, `provider`, `model`, `cluster`, request path, status code, timing, stream flag, `usage`, `usage_missing`, and optional price version.
 
-`ai-billing`, `ai-quota`, and `ai-statistics` can be deployed independently.
+`route`, `provider`, and `model` use Console-native object facts: `{ "id"?: "...", "name"?: "..." }`. Gateways usually do not know Console UUIDs, so the plugin populates runtime `name` values by default.
+
+`billing_service.path` defaults to `/internal/billing/events` and uses the configured Bearer token for Console internal settlement authentication. Console validates that token against `CONSOLE_INTERNAL_BILLING_TOKEN`.
+
+`ai-billing`, `ai-quota`, and `ai-statistics` can be deployed independently. Balance debit and Redis projection refresh remain owned by Console/billing-service.

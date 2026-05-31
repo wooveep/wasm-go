@@ -2,11 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/proxytest"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
@@ -187,9 +187,9 @@ func TestRequestAdmission(t *testing.T) {
 	})
 }
 
-func TestMonetaryDeduction(t *testing.T) {
+func TestAdmissionOnlyDoesNotDeduct(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
-		t.Run("usage and prices produce eval deduction", func(t *testing.T) {
+		t.Run("response usage does not dispatch redis mutation", func(t *testing.T) {
 			host, status := test.NewTestHost(monetaryConfig)
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
@@ -208,19 +208,39 @@ func TestMonetaryDeduction(t *testing.T) {
 			require.Equal(t, types.ActionContinue, action)
 
 			attrs := host.GetRedisCalloutAttributes()
-			require.Len(t, attrs, 1)
-			query := string(attrs[0].Query)
-			require.Contains(t, query, "eval")
-			require.Contains(t, query, "billing:balance:tenant-a:global:consumer-a")
-			require.Contains(t, query, "billing:effective_price:tenant-a:openai:gpt-4:input")
-			require.Contains(t, query, "billing:effective_price:tenant-a:openai:gpt-4:output")
-			require.Contains(t, query, "1001")
-			require.Contains(t, query, "2000")
-			host.CallOnRedisCall(0, test.CreateRedisRespArray([]interface{}{5, 2, 3}))
+			require.Empty(t, attrs)
+			assertNoRedisMutationQueries(t, attrs)
 			host.CompleteHttp()
 		})
 
-		t.Run("missing usage skips deduction", func(t *testing.T) {
+		t.Run("legacy pricing config remains accepted but inert", func(t *testing.T) {
+			host, status := test.NewTestHost(quotaConfigWith(map[string]interface{}{
+				"missing_price_policy": "skip",
+				"missing_usage_policy": "skip",
+				"price_key_template":   "billing:effective_price:{tenant}:{provider}:{model}:{token_type}",
+				"price_unit_tokens":    1000000,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnRedisCall(0, test.CreateRedisRespInt(1000))
+
+			action := host.CallOnHttpStreamingResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), true)
+			require.Equal(t, types.ActionContinue, action)
+			attrs := host.GetRedisCalloutAttributes()
+			require.Empty(t, attrs)
+			assertNoRedisMutationQueries(t, attrs)
+			host.CompleteHttp()
+		})
+
+		t.Run("missing usage has no response redis callout", func(t *testing.T) {
 			host, status := test.NewTestHost(monetaryConfig)
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
@@ -242,17 +262,6 @@ func TestMonetaryDeduction(t *testing.T) {
 	})
 }
 
-func TestCostCalculation(t *testing.T) {
-	require.Equal(t, int64(5), calculateCost(1001, 2000, 1000, 1500, 1000000))
-	require.Equal(t, int64(0), calculateCost(0, 0, 1000, 1500, 1000000))
-}
-
-func TestMissingPriceScriptResult(t *testing.T) {
-	require.True(t, isMissingPriceResult(test.CreateRedisRespArray([]interface{}{0, "missing_price"})))
-	require.False(t, isMissingPriceResult(test.CreateRedisRespArray([]interface{}{5, 2, 3})))
-	require.False(t, isMissingPriceResult(test.CreateRedisRespError(errors.New("redis failed").Error())))
-}
-
 func TestKeyBuilders(t *testing.T) {
 	config := QuotaConfig{
 		BalanceKeyTemplate: "billing:balance:{tenant}:{quota_scope}:{consumer}",
@@ -265,5 +274,14 @@ func TestKeyBuilders(t *testing.T) {
 	require.Equal(t, "billing:effective_price:t1:openai:gpt-4:input", config.buildPriceKey("t1", "gpt-4", "input"))
 	require.False(t, isAIPathEnabled("/v1/chat/completions/quota", []string{"/v1/chat/completions"}))
 	require.True(t, isAIPathEnabled("/proxy/v1/messages?debug=true", []string{"/v1/messages"}))
-	require.False(t, strings.Contains(MonetaryDeductionScript, "redis_key_prefix"))
+}
+
+func assertNoRedisMutationQueries(t *testing.T, attrs []proxytest.RedisCalloutAttribute) {
+	t.Helper()
+	for _, attr := range attrs {
+		query := strings.ToLower(string(attr.Query))
+		for _, forbidden := range []string{"eval", "decrby", "incrby", " set ", " del "} {
+			require.NotContains(t, query, forbidden)
+		}
+	}
 }

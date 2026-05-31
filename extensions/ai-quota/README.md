@@ -1,28 +1,20 @@
 ---
 title: AI 金额配额
 keywords: [AI网关, AI配额, 金额配额]
-description: ai-quota 金额余额准入与响应后扣费插件配置参考
+description: ai-quota 金额余额准入插件配置参考
 ---
 
 ## 功能说明
 
-`ai-quota` 在 AI 请求进入上游前读取 Redis 热余额，余额大于 0 时放行，余额缺失或非正余额按策略处理。响应结束后，插件通过 `pkg/tokenusage` 独立解析 token usage 和 model，读取 Redis 中租户生效价格，并用 Lua `EVAL` 原子计算费用和扣减余额。
+`ai-quota` 在 AI 请求进入上游前读取 Console 派生的 Redis 热余额，余额大于 0 时放行，余额缺失或非正余额按策略处理。插件只做请求准入，不在响应结束后解析 usage，不执行 Lua `EVAL`，也不扣减 Redis 余额。
 
 插件不再提供 `/quota`、`/quota/refresh`、`/quota/delta` 等网关内管理接口，也不再支持 `admin_consumer`、`admin_path`、`redis_key_prefix`。账户、余额、价格、账单流水和 Redis 重建由 Console 或 billing-service 负责。
 
 ## Redis Key
 
 - 余额默认 key：`billing:balance:{tenant}:{quota_scope}:{consumer}`
-- 价格默认 key：`billing:effective_price:{tenant}:{provider}:{model}:{token_type}`
-- `token_type` 为 `input` 或 `output`
-- 金额和价格均为整数，默认按 `amount_scale: 1000000`、`price_unit_tokens: 1000000` 表示
-
-费用计算：
-
-```text
-ceil(input_tokens * input_price / price_unit_tokens)
-+ ceil(output_tokens * output_price / price_unit_tokens)
-```
+- 该 key 是 Console/billing-service 维护的派生缓存，网关插件只读取，不写入
+- 历史价格和扣减相关字段仍可被配置解析接受，但不会触发任何响应期扣费或 Redis 写入
 
 ## 配置说明
 
@@ -34,13 +26,8 @@ ceil(input_tokens * input_price / price_unit_tokens)
 | `tenant_header` | string | `x-mse-tenant` | 租户身份请求头 |
 | `consumer_header` | string | `x-mse-consumer` | consumer 身份请求头 |
 | `balance_key_template` | string | `billing:balance:{tenant}:{quota_scope}:{consumer}` | 余额 key 模板 |
-| `price_key_template` | string | `billing:effective_price:{tenant}:{provider}:{model}:{token_type}` | 价格 key 模板 |
-| `amount_scale` | int | `1000000` | 金额缩放比例 |
-| `price_unit_tokens` | int | `1000000` | 价格单位 token 数 |
 | `enable_path_suffixes` | []string | `/v1/chat/completions`, `/v1/messages` | 生效路径后缀 |
 | `missing_balance_policy` | string | `deny` | 余额缺失策略：`deny` 或 `allow` |
-| `missing_price_policy` | string | `skip` | 价格缺失时跳过扣减 |
-| `missing_usage_policy` | string | `skip` | usage 缺失时跳过扣减 |
 
 `redis` 字段：
 
@@ -64,10 +51,7 @@ provider: dashscope
 tenant_header: x-mse-tenant
 consumer_header: x-mse-consumer
 balance_key_template: "billing:balance:{tenant}:{quota_scope}:{consumer}"
-price_key_template: "billing:effective_price:{tenant}:{provider}:{model}:{token_type}"
 missing_balance_policy: deny
-missing_price_policy: skip
-missing_usage_policy: skip
 ```
 
-不同 AI 路由建议通过 Higress WasmPlugin `matchRules` 配置不同 `quota_scope` 和 `provider`。`ai-quota` 与 `ai-statistics`、`ai-billing` 相互独立，可以单独启用。
+不同 AI 路由建议通过 Higress WasmPlugin `matchRules` 配置不同 `quota_scope`。`ai-quota` 只做余额准入；实际计费需要 `ai-billing` 携带由 `CONSOLE_INTERNAL_BILLING_TOKEN` 配置的 Bearer token 将事件投递到 Console 内部结算接口。

@@ -1,12 +1,12 @@
 ---
 title: AI Monetary Quota
 keywords: [AI Gateway, AI Quota, Monetary Quota]
-description: Configuration reference for monetary balance admission and post-response deduction.
+description: Configuration reference for monetary balance admission.
 ---
 
 ## Overview
 
-`ai-quota` checks a Redis hot balance before forwarding enabled AI requests. Requests with a positive balance continue; missing or non-positive balances follow the configured policy. After the response completes, the plugin parses token usage and model with `pkg/tokenusage`, reads tenant effective prices from Redis, then uses one Lua `EVAL` call to calculate and deduct the monetary cost.
+`ai-quota` reads Console-derived Redis hot balance before forwarding enabled AI requests. Requests with a positive balance continue; missing or non-positive balances follow the configured policy. The plugin is admission-only: it does not parse response usage, does not run Lua `EVAL`, and does not deduct Redis balances after responses.
 
 The plugin no longer exposes gateway-hosted quota management APIs such as `/quota`, `/quota/refresh`, or `/quota/delta`. Account balances, prices, billing statements, and Redis rebuilds are owned by Console or billing-service.
 
@@ -21,23 +21,13 @@ provider: dashscope
 tenant_header: x-mse-tenant
 consumer_header: x-mse-consumer
 balance_key_template: "billing:balance:{tenant}:{quota_scope}:{consumer}"
-price_key_template: "billing:effective_price:{tenant}:{provider}:{model}:{token_type}"
-amount_scale: 1000000
-price_unit_tokens: 1000000
 missing_balance_policy: deny
-missing_price_policy: skip
-missing_usage_policy: skip
 ```
 
 Default balance key: `billing:balance:{tenant}:{quota_scope}:{consumer}`.
 
-Default price key: `billing:effective_price:{tenant}:{provider}:{model}:{token_type}`, where `token_type` is `input` or `output`.
+The balance key is a Console/billing-service-owned derived cache. The gateway plugin reads it for admission and never treats it as a mutable ledger.
 
-Cost is calculated as:
+Legacy price and deduction-related fields can still be accepted by the parser for compatibility, but they do not trigger response-phase billing or Redis writes.
 
-```text
-ceil(input_tokens * input_price / price_unit_tokens)
-+ ceil(output_tokens * output_price / price_unit_tokens)
-```
-
-Use Higress WasmPlugin `matchRules` to bind different `quota_scope` and `provider` values to different AI routes. `ai-quota`, `ai-billing`, and `ai-statistics` are independently deployable.
+Use Higress WasmPlugin `matchRules` to bind different `quota_scope` values to different AI routes. `ai-quota` only gates requests; charging requires `ai-billing` delivery to Console's internal settlement endpoint with the Bearer token configured from `CONSOLE_INTERNAL_BILLING_TOKEN`.

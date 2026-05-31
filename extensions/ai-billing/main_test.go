@@ -56,6 +56,22 @@ var billingConfigDefaultConsumer = func() json.RawMessage {
 	return data
 }()
 
+var billingConfigWithoutPath = func() json.RawMessage {
+	data, _ := json.Marshal(map[string]interface{}{
+		"quota_scope":     "global",
+		"provider":        "openai",
+		"tenant_header":   "x-tenant-id",
+		"consumer_header": "x-consumer-id",
+		"billing_service": map[string]interface{}{
+			"service_name": "billing.static",
+			"service_port": 8080,
+			"timeout":      750,
+			"auth_token":   "<shared-secret>",
+		},
+	})
+	return data
+}()
+
 func TestParseConfig(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		t.Run("billing service target and default fail policy", func(t *testing.T) {
@@ -77,6 +93,18 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)
 			require.Equal(t, "x-consumer-id", billingConfig.ConsumerHeader)
 			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
+		})
+
+		t.Run("billing service path defaults to internal endpoint", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfigWithoutPath)
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
 		})
 
 		t.Run("default consumer header", func(t *testing.T) {
@@ -159,9 +187,9 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotEmpty(t, event["idempotency_key"])
 			require.NotEqual(t, "req-1", event["idempotency_key"])
 			require.Equal(t, "consumer-a", event["consumer"])
-			require.Equal(t, "openai", event["provider"])
-			require.Equal(t, "gpt-4", event["model"])
-			require.Equal(t, "route-a", event["route"])
+			requireObjectFactName(t, event, "provider", "openai")
+			requireObjectFactName(t, event, "model", "gpt-4")
+			requireObjectFactName(t, event, "route", "route-a")
 			require.Equal(t, "cluster-a", event["cluster"])
 			require.Equal(t, "/v1/chat/completions", event["request_path"])
 			require.EqualValues(t, 200, event["status_code"])
@@ -567,6 +595,15 @@ func TestBillingEventDelivery(t *testing.T) {
 	})
 }
 
+func requireObjectFactName(t *testing.T, event map[string]interface{}, key, name string) {
+	t.Helper()
+	value, ok := event[key].(map[string]interface{})
+	require.True(t, ok, "%s must be serialized as an object", key)
+	require.Equal(t, name, value["name"])
+	_, hasID := value["id"]
+	require.False(t, hasID, "%s.id should be omitted when no stable Console id is available", key)
+}
+
 func TestPathFiltering(t *testing.T) {
 	require.True(t, isAIPathEnabled("/proxy/v1/chat/completions?x=1", []string{"/v1/chat/completions"}))
 	require.False(t, isAIPathEnabled("/proxy/not-ai", []string{"/v1/chat/completions"}))
@@ -651,8 +688,9 @@ func TestSendBillingEventReusesEventIdempotencyKey(t *testing.T) {
 		IdempotencyKey: "018f4c7c-1111-7abc-8111-111111111111",
 		RequestID:      "req-retry",
 		Consumer:       "consumer-a",
-		Provider:       "openai",
-		Model:          "gpt-4",
+		Route:          BillingFact{Name: "route-a"},
+		Provider:       BillingFact{Name: "openai"},
+		Model:          BillingFact{Name: "gpt-4"},
 		RequestPath:    "/v1/chat/completions",
 		StatusCode:     http.StatusOK,
 		Usage: BillingUsage{

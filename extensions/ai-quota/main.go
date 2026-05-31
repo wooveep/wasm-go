@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,7 +11,6 @@ import (
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/log"
-	"github.com/higress-group/wasm-go/pkg/tokenusage"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/resp"
@@ -37,9 +34,6 @@ const (
 	ctxTenant       = "ai-quota-tenant"
 	ctxConsumer     = "ai-quota-consumer"
 	ctxBalanceKey   = "ai-quota-balance-key"
-	ctxUsageModel   = "ai-quota-model"
-	ctxInputToken   = "ai-quota-input-token"
-	ctxOutputToken  = "ai-quota-output-token"
 )
 
 const (
@@ -47,31 +41,6 @@ const (
 	MissingPolicyAllow = "allow"
 	MissingPolicySkip  = "skip"
 )
-
-const MonetaryDeductionScript = `
-local input_price = redis.call('GET', KEYS[2])
-local output_price = redis.call('GET', KEYS[3])
-if not input_price or not output_price then
-  return {0, 'missing_price'}
-end
-local input_tokens = tonumber(ARGV[1]) or 0
-local output_tokens = tonumber(ARGV[2]) or 0
-local unit = tonumber(ARGV[3]) or 1
-local function ceil_cost(tokens, price)
-  price = tonumber(price) or 0
-  if tokens <= 0 or price <= 0 then
-    return 0
-  end
-  return math.floor(((tokens * price) + unit - 1) / unit)
-end
-local input_cost = ceil_cost(input_tokens, input_price)
-local output_cost = ceil_cost(output_tokens, output_price)
-local total_cost = input_cost + output_cost
-if total_cost > 0 then
-  redis.call('DECRBY', KEYS[1], total_cost)
-end
-return {total_cost, input_cost, output_cost}
-`
 
 type ChatMode string
 
@@ -87,7 +56,6 @@ func init() {
 		pluginName,
 		wrapper.ParseConfig(parseConfig),
 		wrapper.ProcessRequestHeaders(onHttpRequestHeaders),
-		wrapper.ProcessStreamingResponseBody(onHttpStreamingResponseBody),
 	)
 }
 
@@ -203,6 +171,7 @@ func onHttpRequestHeaders(context wrapper.HttpContext, config QuotaConfig) types
 	}
 	context.SetContext(ctxQuotaEnabled, true)
 	context.DontReadRequestBody()
+	context.DontReadResponseBody()
 
 	tenant, _ := proxywasm.GetHttpRequestHeader(config.TenantHeader)
 	consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader)
@@ -252,54 +221,6 @@ func onHttpRequestHeaders(context wrapper.HttpContext, config QuotaConfig) types
 }
 
 func onHttpStreamingResponseBody(ctx wrapper.HttpContext, config QuotaConfig, data []byte, endOfStream bool) []byte {
-	if !ctx.GetBoolContext(ctxQuotaEnabled, false) {
-		return data
-	}
-
-	if usage := tokenusage.GetTokenUsage(ctx, data); usage.TotalToken > 0 {
-		ctx.SetContext(ctxInputToken, usage.InputToken)
-		ctx.SetContext(ctxOutputToken, usage.OutputToken)
-		ctx.SetContext(ctxUsageModel, usage.Model)
-	}
-	if !endOfStream {
-		return data
-	}
-
-	inputTokens := int64FromContext(ctx.GetContext(ctxInputToken))
-	outputTokens := int64FromContext(ctx.GetContext(ctxOutputToken))
-	model, _ := ctx.GetContext(ctxUsageModel).(string)
-	if inputTokens+outputTokens <= 0 || model == "" || model == tokenusage.ModelUnknown {
-		if config.MissingUsagePolicy == MissingPolicySkip {
-			log.Warn("ai-quota usage missing, skipping monetary deduction")
-		}
-		return data
-	}
-
-	tenant, _ := ctx.GetContext(ctxTenant).(string)
-	balanceKey, _ := ctx.GetContext(ctxBalanceKey).(string)
-	if tenant == "" || balanceKey == "" {
-		log.Warn("ai-quota identity context missing at response, skipping monetary deduction")
-		return data
-	}
-
-	inputPriceKey := config.buildPriceKey(tenant, model, "input")
-	outputPriceKey := config.buildPriceKey(tenant, model, "output")
-	keys := []interface{}{balanceKey, inputPriceKey, outputPriceKey}
-	args := []interface{}{inputTokens, outputTokens, config.PriceUnitTokens}
-	log.Debugf("ai-quota deduction balance_key:%s input_price_key:%s output_price_key:%s input_tokens:%d output_tokens:%d",
-		balanceKey, inputPriceKey, outputPriceKey, inputTokens, outputTokens)
-	err := config.redisClient.Eval(MonetaryDeductionScript, 3, keys, args, func(response resp.Value) {
-		if err := response.Error(); err != nil {
-			log.Errorf("ai-quota monetary deduction failed: %v", err)
-			return
-		}
-		if strings.Contains(response.String(), "missing_price") {
-			log.Warn("ai-quota effective price missing, skipping monetary deduction")
-		}
-	})
-	if err != nil {
-		log.Errorf("ai-quota redis deduction dispatch failed: %v", err)
-	}
 	return data
 }
 
@@ -359,26 +280,6 @@ func (config QuotaConfig) buildPriceKey(tenant, model, tokenType string) string 
 	return replacer.Replace(config.PriceKeyTemplate)
 }
 
-func calculateCost(inputTokens, outputTokens, inputPrice, outputPrice, priceUnitTokens int64) int64 {
-	return ceilCost(inputTokens, inputPrice, priceUnitTokens) + ceilCost(outputTokens, outputPrice, priceUnitTokens)
-}
-
-func ceilCost(tokens, price, unit int64) int64 {
-	if tokens <= 0 || price <= 0 || unit <= 0 {
-		return 0
-	}
-	return (tokens*price + unit - 1) / unit
-}
-
-func isMissingPriceResult(raw []byte) bool {
-	reader := resp.NewReader(bytes.NewReader(raw))
-	value, _, err := reader.ReadValue()
-	if err != nil && err != io.EOF {
-		return false
-	}
-	return strings.Contains(value.String(), "missing_price")
-}
-
 func parsePathSuffixes(result gjson.Result) ([]string, error) {
 	if !result.Exists() {
 		return []string{"/v1/chat/completions", "/v1/messages"}, nil
@@ -414,17 +315,6 @@ func redisInteger(response resp.Value) (int64, error) {
 		return int64(response.Integer()), nil
 	}
 	return strconv.ParseInt(strings.TrimSpace(response.String()), 10, 64)
-}
-
-func int64FromContext(value interface{}) int64 {
-	switch v := value.(type) {
-	case int64:
-		return v
-	case int:
-		return int64(v)
-	default:
-		return 0
-	}
 }
 
 func stringDefault(value, fallback string) string {
