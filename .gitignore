@@ -12,5 +12,5 @@ coverage.xml
 .specify/
 .pr/
 specs/
-graphify-out/
+graphify-out/*
 build/

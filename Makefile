@@ -1,6 +1,6 @@
 EXTENSIONS_DIR ?= extensions
 BUILD_DIR ?= build/plugins
-PLUGIN_VERSION ?= 2.0.0
+PLUGIN_VERSION ?=
 PLUGIN ?=
 
 WASM_BUILDER ?= go
@@ -49,7 +49,20 @@ build-plugin:
 		echo "Unknown plugin '$(PLUGIN)'. Discovered plugins: $(PLUGINS)" >&2; \
 		exit 2; \
 	fi
-	@out_dir="$(abspath $(BUILD_DIR))/$(PLUGIN)/$(PLUGIN_VERSION)"; \
+	@plugin_version="$(PLUGIN_VERSION)"; \
+	if [ -z "$$plugin_version" ]; then \
+		version_file="$(EXTENSIONS_DIR)/$(PLUGIN)/VERSION"; \
+		if [ ! -f "$$version_file" ]; then \
+			echo "Missing version file: $$version_file" >&2; \
+			exit 2; \
+		fi; \
+		plugin_version=$$(tr -d '[:space:]' < "$$version_file"); \
+		if [ -z "$$plugin_version" ]; then \
+			echo "Empty version file: $$version_file" >&2; \
+			exit 2; \
+		fi; \
+	fi; \
+	out_dir="$(abspath $(BUILD_DIR))/$(PLUGIN)/$$plugin_version"; \
 	wasm="$$out_dir/plugin.wasm"; \
 	mkdir -p "$$out_dir"; \
 	echo "Building $(PLUGIN) -> $$wasm"; \
@@ -69,7 +82,20 @@ metadata:
 		echo "PLUGIN is required. Usage: make metadata PLUGIN=<name>" >&2; \
 		exit 2; \
 	fi
-	@wasm="$(abspath $(BUILD_DIR))/$(PLUGIN)/$(PLUGIN_VERSION)/plugin.wasm"; \
+	@plugin_version="$(PLUGIN_VERSION)"; \
+	if [ -z "$$plugin_version" ]; then \
+		version_file="$(EXTENSIONS_DIR)/$(PLUGIN)/VERSION"; \
+		if [ ! -f "$$version_file" ]; then \
+			echo "Missing version file: $$version_file" >&2; \
+			exit 2; \
+		fi; \
+		plugin_version=$$(tr -d '[:space:]' < "$$version_file"); \
+		if [ -z "$$plugin_version" ]; then \
+			echo "Empty version file: $$version_file" >&2; \
+			exit 2; \
+		fi; \
+	fi; \
+	wasm="$(abspath $(BUILD_DIR))/$(PLUGIN)/$$plugin_version/plugin.wasm"; \
 	out_dir=$$(dirname "$$wasm"); \
 	if [ ! -f "$$wasm" ]; then \
 		echo "Missing wasm artifact: $$wasm" >&2; \
