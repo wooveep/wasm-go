@@ -140,12 +140,12 @@
     "hash": "b5aa23e12709e8ace42ef458177041b4"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/main.go": {
-    "mtime": 1780240034.28592,
-    "hash": "80f8f53c57e393a80411447e325aec61"
+    "mtime": 1780395446.5584152,
+    "hash": "1c677a0b200f69078e0c6e84b2620170"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/main_test.go": {
-    "mtime": 1780240044.4702258,
-    "hash": "cf05ee147257d3af35b3bc99c2610dc8"
+    "mtime": 1780395469.0832658,
+    "hash": "4ad17715b2947d358ecc23aced561831"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-statistics/main.go": {
     "mtime": 1779087486.442425,

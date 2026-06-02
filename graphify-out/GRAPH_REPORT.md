@@ -1,16 +1,16 @@
-# Graph Report - wasm-go  (2026-05-31)
+# Graph Report - wasm-go  (2026-06-02)
 
 ## Corpus Check
-- 146 files · ~122,732 words
+- 146 files · ~122,738 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3084 nodes · 3784 edges · 227 communities (198 shown, 29 thin omitted)
+- 3084 nodes · 3784 edges · 230 communities (201 shown, 29 thin omitted)
 - Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 301 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ad1e61a2`
+- Built from commit: `e40a6133`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -242,6 +242,9 @@
 - [[_COMMUNITY_Community 224|Community 224]]
 - [[_COMMUNITY_Community 225|Community 225]]
 - [[_COMMUNITY_Community 226|Community 226]]
+- [[_COMMUNITY_Community 227|Community 227]]
+- [[_COMMUNITY_Community 228|Community 228]]
+- [[_COMMUNITY_Community 229|Community 229]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `redisCallInternal()` - 63 edges
@@ -281,7 +284,7 @@
 - **Plugin Runtime Lifecycle** — plugin_wrapper_common_vm_ctx, plugin_wrapper_common_plugin_ctx, plugin_wrapper_common_http_ctx, plugin_wrapper_context_options, rule_matcher_rule_matcher [EXTRACTED 1.00]
 - **Test Framework Surface** — README_test_framework, host_test_host, test_test_runners, redis_redis_resp_builder, utils_header_utilities [EXTRACTED 1.00]
 
-## Communities (227 total, 29 thin omitted)
+## Communities (230 total, 29 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.06
@@ -372,44 +375,44 @@ Cohesion: 0.1
 Nodes (24): ChatMode, calculateCost(), ceilCost(), deniedMissingBalance(), deniedMissingIdentity(), deniedNoBalance(), getOperationMode(), int64Default() (+16 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.16
-Nodes (28): TestBuiltinAttributesDefaultSource(), TestCompleteFlow(), TestConfigWithDefaultAttributes(), TestGetRouteAndClusterNameEdgeCases(), TestLegacyConfigCompatibility(), TestMetrics(), TestOnHttpRequestBody(), TestOnHttpRequestHeaders() (+20 more)
-
-### Community 25 - "Community 25"
 Cohesion: 0.12
 Nodes (27): Consumer, credentialCandidate, credentialIdentity, extractionPlan, KeyAuthConfig, addCredentialIdentity(), appendCredentialCandidate(), authenticated() (+19 more)
 
-### Community 26 - "Community 26"
+### Community 25 - "Community 25"
 Cohesion: 0.08
 Nodes (29): Authentication Configuration, Authorization Configuration, Authorization Configuration (Optional), code:yaml (global_auth: true), code:yaml (global_auth: true), code:bash (curl http://xxx.hello.com/test -H 'Authorization: Bearer rea), code:yaml (global_auth: true), code:bash (curl http://xxx.hello.com/test -H 'Authorization: Bearer rea) (+21 more)
 
-### Community 27 - "Community 27"
+### Community 26 - "Community 26"
 Cohesion: 0.07
 Nodes (29): Chroma, code:yaml (embedding:), code:yaml (redis:), Cohere, DashVector, ElasticSearch, Hugging Face, Milvus (+21 more)
 
-### Community 28 - "Community 28"
+### Community 27 - "Community 27"
 Cohesion: 0.11
 Nodes (14): HttpCallConfig, busyLoop(), init(), main(), onHttpRequestHeaders(), parseConfig(), ClusterClient, ClusterClient[C] (+6 more)
 
-### Community 29 - "Community 29"
+### Community 28 - "Community 28"
 Cohesion: 0.07
 Nodes (28): Apply WasmPlugin API, Build on local yourself, code:bash (cd examples/request-block), code:Dockerfile (FROM scratch), code:bash (docker build -t <your_registry_hub>/request-block:1.0.0 -f <), code:yaml (apiVersion: extensions.higress.io/v1alpha1), code:bash (curl <your_gateway_address>/api/user/swagger.html), code:text (HTTP/1.1 403 Forbidden) (+20 more)
 
-### Community 30 - "Community 30"
+### Community 29 - "Community 29"
 Cohesion: 0.07
 Nodes (28): code:yaml ('{"ai_log":"%FILTER_STATE(wasm.ai_log:PLAIN)%"}'), code:yaml (attributes:), code:block11 (ai_log:{"question":"用python计算2的3次方","answer":"你可以使用 Python 的), code:block12 (e_regex("ai_log", grok("%{EXTRACTJSON}"))), code:block13 (ai_log:{"question":"用python计算2的3次方","answer":"你可以使用 Python 的), code:block2 (# counter 类型，输入 token 数量的累加值), code:block3 (irate(route_upstream_model_consumer_metric_llm_first_token_d), code:block4 (irate(route_upstream_model_consumer_metric_llm_service_durat) (+20 more)
 
-### Community 31 - "Community 31"
+### Community 30 - "Community 30"
 Cohesion: 0.07
 Nodes (28): code:yaml (# 白名单模式配置，符合白名单规则的请求无需验证), code:yaml (http_service:), code:shell (curl -i http://localhost:8082/users?apikey=9a342114-ba8a-11e), code:block12 (POST /auth HTTP/1.1), code:block13 (HTTP/1.1 403 Forbidden), code:yaml (http_service:), code:shell (curl -i http://localhost:8082/users?apikey=9a342114-ba8a-11e), code:block16 (POST /auth HTTP/1.1) (+20 more)
 
-### Community 32 - "Community 32"
+### Community 31 - "Community 31"
 Cohesion: 0.1
 Nodes (26): code:yaml (global_auth: true), code:yaml (global_auth: true), code:bash (curl http://xxx.hello.com/test -H 'Authorization: Bearer rea), code:yaml (global_auth: true), code:bash (curl http://xxx.hello.com/test -H 'Authorization: Bearer rea), code:yaml (global_auth: true), code:yaml (global_auth: false), code:yaml (allow:) (+18 more)
 
-### Community 34 - "Community 34"
+### Community 33 - "Community 33"
 Cohesion: 0.1
 Nodes (9): Cluster, ConsulCluster, DnsCluster, FQDNCluster, K8sCluster, NacosCluster, RouteCluster, StaticIpCluster (+1 more)
+
+### Community 34 - "Community 34"
+Cohesion: 0.19
+Nodes (24): TestBuiltinAttributesDefaultSource(), TestCompleteFlow(), TestConfigWithDefaultAttributes(), TestGetRouteAndClusterNameEdgeCases(), TestLegacyConfigCompatibility(), TestMetrics(), TestOnHttpRequestBody(), TestOnHttpRequestHeaders() (+16 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.07
@@ -428,16 +431,16 @@ Cohesion: 0.09
 Nodes (23): ADDED Requirements, ai-monetary-quota Specification, Purpose, Requirement: Billing-service remains the account source of truth, Requirement: Legacy quota management is removed, Requirement: Monetary deduction uses token usage and effective prices, Requirement: Monetary quota configuration, Requirement: Request admission uses Redis monetary balance (+15 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.13
-Nodes (23): BillingConfig, BillingEvent, BillingFact, BillingService, BillingUsage, billingUsageDetails(), buildBillingEvent(), deliverBillingEvent() (+15 more)
-
-### Community 40 - "Community 40"
 Cohesion: 0.08
 Nodes (23): code:yaml (global_auth: false), code:shell (curl -X POST 'http://localhost:8082/foo' \), code:shell (curl -X POST 'http://localhost:8082/foo' \), code:shell (curl -X POST 'http://localhost:8082/foo' \), code:yaml (global_auth: true  # 开启全局认证), code:yaml (allow:), code:yaml (allow:), code:go (package main) (+15 more)
 
-### Community 41 - "Community 41"
+### Community 40 - "Community 40"
 Cohesion: 0.08
 Nodes (23): 1 Redis 调用, 2 令牌桶限流, 3.1  初始化工程目录, 3.1 插件配置和配置解析, 3.2  Makefile、Dockerfile、docker-compose.yaml、envoy.yaml 文件, 3.2 插件限流 Lua 脚本, 3.3 插件限流具体实现, 3 令牌桶限流插件开发 (+15 more)
+
+### Community 41 - "Community 41"
+Cohesion: 0.14
+Nodes (21): BillingConfig, BillingEvent, BillingFact, BillingService, BillingUsage, billingUsageDetails(), buildBillingEvent(), initBillingRequestContext() (+13 more)
 
 ### Community 42 - "Community 42"
 Cohesion: 0.09
@@ -448,20 +451,20 @@ Cohesion: 0.15
 Nodes (10): Category, HostMatcher, MatchType, init(), stripPortFromHost(), RuleConfig, RuleConfig[PluginConfig], RuleMatcher (+2 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.14
-Nodes (20): TestBillingEventDelivery(), code:block4 (# counter, cumulative count of input tokens), code:block5 (irate(route_upstream_model_consumer_metric_llm_first_token_d), code:block6 (irate(route_upstream_model_consumer_metric_llm_service_durat), code:json ({), code:json ({), Empty, Log (+12 more)
-
-### Community 45 - "Community 45"
 Cohesion: 0.23
 Nodes (18): assertNoRedisMutationQueries(), quotaConfigWith(), TestAdmissionOnlyDoesNotDeduct(), TestKeyBuilders(), TestMissingPriceScriptResult(), TestMonetaryDeduction(), TestParseConfig(), TestRequestAdmission() (+10 more)
 
-### Community 46 - "Community 46"
+### Community 45 - "Community 45"
 Cohesion: 0.1
 Nodes (20): code:yaml (block_urls:), code:bash (curl http://example.com -d 'Hello World'), code:bash (curl http://example.com?foo=Bar), code:yaml (block_exact_urls:), code:bash (curl http://exmaple.com/Swagger.html?foo=Bar), code:yaml (block_exact_urls:), code:bash (curl http://exmaple.com/Swagger.html?foo=Bar), code:yaml (block_headers:) (+12 more)
 
-### Community 47 - "Community 47"
+### Community 46 - "Community 46"
 Cohesion: 0.1
 Nodes (20): code:yaml (body_schema:), code:yaml (body_schema:), code:yaml (body_schema:), code:yaml (body_schema:), code:yaml (body_schema:), code:yaml (body_schema:), code:yaml (body_schema:), code:yaml (body_schema:) (+12 more)
+
+### Community 47 - "Community 47"
+Cohesion: 0.19
+Nodes (15): TestAllowValidRequest(), TestBlockByBody(), TestBlockByHeaders(), TestBlockUrlByExactMatch(), TestBlockUrlByKeyword(), TestBlockUrlByRegexp(), TestBlockUrlByRegexpEdgeCases(), TestCaseInsensitiveBlocking() (+7 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.1
@@ -484,108 +487,108 @@ Cohesion: 0.11
 Nodes (18): code:yaml (apiVersion: networking.higress.io/v1), code:shell (curl "http://localhost/api?owner=alibaba&name=higress" -H "A), code:shell (https://api.github.com/graphql), code:json ({), code:shell (query ($owner : String!, $name : String!) {), code:shell, code:shell (curl 'https://api.github.com/graphql' -X POST \), GitHub GraphQL 测试 (+10 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.14
-Nodes (15): initBillingRequestContext(), isBillingDeliveryAcceptedStatus(), isBillingDeliveryFailureStatus(), newEventID(), sendBillingEvent(), statusCodeFromHeaders(), requireObjectFactName(), TestBillingDeliveryAcceptedStatusExcludesAuthFailures() (+7 more)
-
-### Community 55 - "Community 55"
 Cohesion: 0.12
 Nodes (16): code:yaml (system_deny: true), code:sh (curl -X POST \), code:sh (curl -X POST \), 功能说明, 处理后请求大模型内容, 处理后返回用户内容, 处理数据范围, 大模型返回内容 (+8 more)
 
-### Community 56 - "Community 56"
+### Community 55 - "Community 55"
 Cohesion: 0.12
 Nodes (16): code:yaml (llm:), code:shell (curl 'http://<这里换成网关公网IP>/api/openai/v1/chat/completions' \), code:json ({"id":"65dcf12c-61ff-9e68-bffa-44fc9e6070d5","choices":[{"in), code:shell (curl 'http://<这里换成网关公网IP>/api/openai/v1/chat/completions' \), code:json ({"id":"139487e7-96a0-9b13-91b4-290fb79ac992","choices":[{"in), code:shell (curl 'http://<这里换成网关公网IP>/api/openai/v1/chat/completions' \), code:json ({"id":"ebd6ea91-8e38-9e14-9a5b-90178d2edea4","choices":[{"in), code:shell (curl 'http://<这里换成网关公网IP>/api/openai/v1/chat/completions' \) (+8 more)
 
-### Community 57 - "Community 57"
+### Community 56 - "Community 56"
 Cohesion: 0.12
 Nodes (16): code:yaml (rule_name: routeA-global-limit-rule), code:yaml (rule_name: routeA-request-param-limit-rule), code:yaml (rule_name: routeA-request-header-limit-rule), code:yaml (rule_name: routeA-client-ip-limit-rule), code:yaml (rule_name: routeA-consumer-limit-rule), code:yaml (rule_name: routeA-cookie-limit-rule), 功能说明, 根据请求头 x-forwarded-for 获取对端 IP，进行区别限流 (+8 more)
 
-### Community 58 - "Community 58"
+### Community 57 - "Community 57"
 Cohesion: 0.12
 Nodes (16): ADDED Requirements, Requirement: Build a single extension plugin artifact, Requirement: Build all extension plugin artifacts, Requirement: Discover extension plugins, Requirement: Generate plugin metadata, Requirement: Keep build automation non-runtime, Scenario: Build all plugins with default version, Scenario: Build all plugins with overridden version (+8 more)
 
-### Community 59 - "Community 59"
-Cohesion: 0.24
-Nodes (11): TestBlockByBody(), TestBlockByHeaders(), TestBlockUrlByExactMatch(), TestBlockUrlByKeyword(), TestBlockUrlByRegexp(), TestCaseInsensitiveBlocking(), TestCustomBlockedCode(), TestParseConfig() (+3 more)
-
-### Community 60 - "Community 60"
+### Community 58 - "Community 58"
 Cohesion: 0.12
 Nodes (15): code:yaml (consumers:), code:yaml (allow:), code:yaml (allow:), code:bash (# 假设以下请求将会匹配到route-a路由), code:bash (curl  http://xxx.hello.com/test), code:bash (curl -u admin:abc  http://xxx.hello.com/test), code:bash (# consumer2不在route-a的allow列表里), 全局配置认证和路由粒度进行鉴权 (+7 more)
 
-### Community 61 - "Community 61"
+### Community 59 - "Community 59"
 Cohesion: 0.12
 Nodes (15): 1 测试插件链结构, 2 全局/路由/域名/服务级生效原理, 3 Wasm插件的 phase 和 priority, 4 Wasm 插件分发的原理, code:yaml (apiVersion: extensions.higress.io/v1alpha1), code:shell (kubectl exec <higress-controller-pod> -c higress-core -n hig), code:yaml (kind: WasmPlugin), code:go (func (m *IngressConfig) convertIstioWasmPlugin(obj *higresse) (+7 more)
 
-### Community 62 - "Community 62"
+### Community 60 - "Community 60"
 Cohesion: 0.13
 Nodes (14): 14. 对账与补偿, 15. 安全要求, 16. 验收标准, 1. 背景, 2. 总体职责, 3. 数据归属, 4. 金额和价格单位, code:text (console UI) (+6 more)
 
-### Community 63 - "Community 63"
+### Community 61 - "Community 61"
 Cohesion: 0.14
 Nodes (10): Building, code:go (data, err := proxywasm.GetProperty([]string{"plugin_vm_memor), code:bash (tinygo build -o main.wasm -scheduler=none -target=wasi -gc=c), Configuration, Features, Memory Monitoring, Plugin Rebuild Example, Testing (+2 more)
 
-### Community 64 - "Community 64"
+### Community 62 - "Community 62"
 Cohesion: 0.14
 Nodes (13): Blocking Request Bodies, Blocking Request Headers, Blocking Request URL Paths, code:yaml (block_urls:), code:bash (curl http://example.com?foo=Bar), code:yaml (block_headers:), code:bash (curl http://example.com -H 'example-key: 123'), code:yaml (block_bodies:) (+5 more)
 
-### Community 65 - "Community 65"
+### Community 63 - "Community 63"
 Cohesion: 0.14
 Nodes (13): code:bash (go mod tidy), code:Dockerfile (FROM scratch), code:bash (docker build -t <your_registry_hub>/request-block:1.0.0 -f <), code:yaml (apiVersion: extensions.higress.io/v1alpha1), code:bash (curl <your_gateway_address>/api/user/swagger.html), code:text (HTTP/1.1 403 Forbidden), step1. 编译 wasm, step2. 构建并推送插件的 docker 镜像 (+5 more)
 
-### Community 66 - "Community 66"
+### Community 64 - "Community 64"
 Cohesion: 0.14
 Nodes (14): 5.1 余额, 5.2 价格, 5.3 幂等, 5.4 后续预冻结扩展, 5.5 Redis 重启恢复, 5. Redis key 规范, code:text (billing:idempotency:{request_id}), code:text (24h 到 72h) (+6 more)
 
-### Community 67 - "Community 67"
+### Community 65 - "Community 65"
 Cohesion: 0.14
 Nodes (13): code:yaml (ip_protocol: ipv4), code:bash (go run generateCidr/ipRange2Cidr.go), code:yaml (ipProtocal: "ipv4"), code:yaml (prepend:), code:bash (curl http://localhost/test \), code:bash (curl http://localhost/test \), property 的使用方式, 功能说明 (+5 more)
 
-### Community 68 - "Community 68"
+### Community 66 - "Community 66"
 Cohesion: 0.14
 Nodes (13): code:yaml (redis:), code:block2 (curl 'http://example.com/api/openai/v1/chat/completions?fill), code:json ({), code:block4 (curl 'http://example.com/api/openai/v1/chat/completions?fill), code:block5 (curl 'http://example.com/api/openai/v1/chat/completions?fill), code:block6 (curl 'http://example.com/api/openai/v1/chat/completions/ai-h), code:json ([), 功能说明 (+5 more)
 
-### Community 70 - "Community 70"
+### Community 68 - "Community 68"
+Cohesion: 0.18
+Nodes (11): isBillingDeliveryAcceptedStatus(), isBillingDeliveryFailureStatus(), sendBillingEvent(), statusCodeFromHeaders(), requireObjectFactName(), TestBillingDeliveryAcceptedStatusExcludesAuthFailures(), TestBillingDeliveryFailureStatusClassification(), TestInitBillingRequestContextSetsEventID() (+3 more)
+
+### Community 69 - "Community 69"
 Cohesion: 0.42
 Nodes (11): clearTestVMContext(), compileWasm(), getDefaultWasmPath(), getWasmInitVMContext(), init(), RunGoTest(), RunTestWithPath(), RunWasmTest() (+3 more)
 
-### Community 71 - "Community 71"
+### Community 70 - "Community 70"
 Cohesion: 0.15
 Nodes (12): code:yaml (prepend:), code:bash (curl http://localhost/test \), code:bash (curl http://localhost/test \), code:yaml (ipProtocal: "ipv4"), code:yaml (prepend:), code:bash (curl http://localhost/test \), code:bash (curl http://localhost/test \), 功能说明 (+4 more)
 
-### Community 72 - "Community 72"
+### Community 71 - "Community 71"
 Cohesion: 0.15
 Nodes (13): Auth0 配置示例, code:yaml (apiVersion: networking.k8s.io/v1), code:yaml (redirect_url: 'http://foo.bar.com/oauth2/callback'), code:block8 (http://foo.bar.com/oauth2/sign_out?rd=https%3A%2F%2Fdev-o43x), code:block9 (http://foo.bar.com/oauth2/sign_out?rd=https%3A%2F%2Fdev-o43x), Step 1: 配置 Auth0 账户, Step 2: Higress 配置服务来源, Step 3: OIDC 服务 HTTPS 配置 (+5 more)
 
-### Community 73 - "Community 73"
+### Community 72 - "Community 72"
 Cohesion: 0.15
 Nodes (12): code:yaml (serviceSource: k8s), code:shell (docker run -d --name opa -p 8181:8181 openpolicyagent/opa:0.), code:shell (curl -X PUT '127.0.0.1:8181/v1/policies/example1' \), code:shell (curl -X POST '127.0.0.1:8181/v1/data/example1/allow' \), OPA 服务安装参考, 创建 OPA 策略, 功能说明, 启动 OPA 服务 (+4 more)
 
-### Community 74 - "Community 74"
+### Community 73 - "Community 73"
 Cohesion: 0.15
 Nodes (12): code:yaml (force_nonce: true), code:bash (# Generate nonce), code:json ({), 使用示例, 使用说明, 功能说明, 请求头要求, 运行属性 (+4 more)
 
-### Community 75 - "Community 75"
+### Community 74 - "Community 74"
 Cohesion: 0.15
 Nodes (12): code:yml (grayKey: userid), code:yml (grayKey: appInfo), code:yml (grayKey: userid), fileRouting：文件路由配置, indexRouting：首页路由配置, rewrite重写配置, 功能说明, 基础配置 (+4 more)
 
-### Community 76 - "Community 76"
+### Community 75 - "Community 75"
 Cohesion: 0.15
 Nodes (13): 10.共享数据操作, 11.日志操作, 12.指标操作, 1.配置和初始化, 2.定时器设置, 3.2 Hostcall API, 3.上下文管理, 4.插件完成 (+5 more)
 
-### Community 77 - "Community 77"
+### Community 76 - "Community 76"
 Cohesion: 0.15
 Nodes (12): Always Do, CLI, GitNexus — Code Intelligence, graphify, Never Do, Resources, Always Do, CLI (+4 more)
 
-### Community 78 - "Community 78"
+### Community 77 - "Community 77"
 Cohesion: 0.24
 Nodes (4): file_inject_encoded_data_proto_init(), file_inject_encoded_data_proto_rawDescGZIP(), init(), InjectEncodedDataToFilterChainArguments
 
-### Community 81 - "Community 81"
+### Community 80 - "Community 80"
 Cohesion: 0.17
 Nodes (11): 1. 概述, 2. 镜像结构, 3. 元数据文件格式, 4. 镜像构建方式, 5.1 各插件类型的缺省图标, 5. 附录, code:yaml (apiVersion: 1.0.0  # 本文件所使用的格式版本。目前固定为 1.0.0), code:bash (GO_VERSION="1.19") (+3 more)
 
-### Community 82 - "Community 82"
+### Community 81 - "Community 81"
 Cohesion: 0.17
 Nodes (11): code:yaml (block_urls:), code:yaml (apiVersion: extensions.higress.io/v1alpha1), code:bash (curl http://example.com?foo=Bar), code:yaml (block_headers:), code:yaml (apiVersion: extensions.higress.io/v1alpha1), code:bash (curl http://example.com?foo=Bar), code:bash (curl http://exmaple.com/foo/Swagger.html), code:bash (curl http://exmaple.com/foo -H 'exmaple-key: 123') (+3 more)
+
+### Community 82 - "Community 82"
+Cohesion: 0.17
+Nodes (12): code:yaml (provider:), code:yaml (provider:), code:yaml (provider:), code:json ({), code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Together-AI 服务 (+4 more)
 
 ### Community 83 - "Community 83"
 Cohesion: 0.17
@@ -600,68 +603,68 @@ Cohesion: 0.29
 Nodes (11): init(), init(), init(), init(), ParseOverrideConfigBy(), ProcessRequestHeaders(), ProcessRequestHeadersBy(), ProcessResponseBody() (+3 more)
 
 ### Community 86 - "Community 86"
-Cohesion: 0.18
-Nodes (10): Build, code:json ({), code:go (func init() {), code:bash (cd examples/safe-log-http-call), Configuration, Features, How It Works, Safe Log HTTP Call Example (+2 more)
+Cohesion: 0.35
+Nodes (10): headerValues(), mustJSON(), requestHeaders(), requireHeaderValue(), requireLocalResponseHeader(), requireNoHeader(), TestOnHTTPRequestHeadersLocalYAMLEnhancement(), TestParseGlobalConfig() (+2 more)
 
 ### Community 87 - "Community 87"
 Cohesion: 0.18
-Nodes (11): 7.1 查询余额, 7.2 设置余额, 7.3 调整余额, 7. 账户与余额 API, code:text (GET /v1/billing/tenants/{tenant}/accounts/{consumer}/balance), code:json ({), code:text (PUT /v1/billing/tenants/{tenant}/accounts/{consumer}/balance), code:json ({) (+3 more)
+Nodes (10): Build, code:json ({), code:go (func init() {), code:bash (cd examples/safe-log-http-call), Configuration, Features, How It Works, Safe Log HTTP Call Example (+2 more)
 
 ### Community 88 - "Community 88"
 Cohesion: 0.18
-Nodes (11): code:yaml (redirect_url: 'http://foo.bar.com/oauth2/callback'), code:block11 (http://foo.bar.com/oauth2/sign_out?rd=http%3A%2F%2F127.0.0.1), code:block12 (http://foo.bar.com/oauth2/sign_out?rd=http%3A%2F%2F127.0.0.1), keycloak 配置示例, Step 1: Get started with keycloak on docker, Step 2: Higress 配置服务来源, Step 3: Wasm 插件配置, 登陆成功跳转到服务页面 (+3 more)
+Nodes (11): 7.1 查询余额, 7.2 设置余额, 7.3 调整余额, 7. 账户与余额 API, code:text (GET /v1/billing/tenants/{tenant}/accounts/{consumer}/balance), code:json ({), code:text (PUT /v1/billing/tenants/{tenant}/accounts/{consumer}/balance), code:json ({) (+3 more)
 
 ### Community 89 - "Community 89"
 Cohesion: 0.18
-Nodes (10): code:bash (# Bots General matcher 'name/0.0'), code:yaml (allow:), code:yaml (deny:), code:bash (curl http://example.com -H 'User-Agent: spd-tools/1.1'), 功能说明, 增加爬虫判断, 放行原本命中爬虫规则的请求, 运行属性 (+2 more)
+Nodes (11): code:yaml (redirect_url: 'http://foo.bar.com/oauth2/callback'), code:block11 (http://foo.bar.com/oauth2/sign_out?rd=http%3A%2F%2F127.0.0.1), code:block12 (http://foo.bar.com/oauth2/sign_out?rd=http%3A%2F%2F127.0.0.1), keycloak 配置示例, Step 1: Get started with keycloak on docker, Step 2: Higress 配置服务来源, Step 3: Wasm 插件配置, 登陆成功跳转到服务页面 (+3 more)
 
 ### Community 90 - "Community 90"
 Cohesion: 0.18
-Nodes (10): code:yaml (status_code: 200), code:text (HTTP/1.1 200 OK), code:yaml (enable_on_status:), code:text (HTTP/1.1 302 Found), Mock 应答场景, 功能说明, 触发限流时自定义响应, 运行属性 (+2 more)
+Nodes (10): code:bash (# Bots General matcher 'name/0.0'), code:yaml (allow:), code:yaml (deny:), code:bash (curl http://example.com -H 'User-Agent: spd-tools/1.1'), 功能说明, 增加爬虫判断, 放行原本命中爬虫规则的请求, 运行属性 (+2 more)
 
 ### Community 91 - "Community 91"
 Cohesion: 0.18
-Nodes (11): 2.1 Envoy 配置, 2.2 Http Filter 配置, 2.3 Network Filter 配置, 2.4 Wasm Service 配置, 2.5 每个线程中多个插件共享一个 VM, 2 Wasm VM、插件和 Envoy 配置, code:yaml (vm_config:), code:yaml (http_filters:) (+3 more)
+Nodes (10): code:yaml (status_code: 200), code:text (HTTP/1.1 200 OK), code:yaml (enable_on_status:), code:text (HTTP/1.1 302 Found), Mock 应答场景, 功能说明, 触发限流时自定义响应, 运行属性 (+2 more)
 
 ### Community 92 - "Community 92"
 Cohesion: 0.18
-Nodes (11): code:yaml (enable_path_suffixes:), code:yaml (enable_content_types:), code:yaml (enable_path_suffixes:), code:yaml (enable_content_types: []), code:yaml (enable_path_suffixes:), 只处理特定 AI 路径, 只处理特定内容类型, 处理所有内容类型（空数组） (+3 more)
+Nodes (11): 2.1 Envoy 配置, 2.2 Http Filter 配置, 2.3 Network Filter 配置, 2.4 Wasm Service 配置, 2.5 每个线程中多个插件共享一个 VM, 2 Wasm VM、插件和 Envoy 配置, code:yaml (vm_config:), code:yaml (http_filters:) (+3 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.18
-Nodes (10): Always Do, CLI, GitNexus — Code Intelligence, Never Do, Resources, Always Do, CLI, GitNexus — Code Intelligence (+2 more)
+Nodes (11): code:yaml (enable_path_suffixes:), code:yaml (enable_content_types:), code:yaml (enable_path_suffixes:), code:yaml (enable_content_types: []), code:yaml (enable_path_suffixes:), 只处理特定 AI 路径, 只处理特定内容类型, 处理所有内容类型（空数组） (+3 more)
 
 ### Community 94 - "Community 94"
-Cohesion: 0.2
-Nodes (10): 9.1 创建 quota_scope, 9.2 查询 quota_scope, 9.3 路由绑定, 9. quota_scope API, code:text (POST /v1/billing/quota-scopes), code:json ({), code:text (GET /v1/billing/quota-scopes/{quota_scope}), code:json ({) (+2 more)
+Cohesion: 0.18
+Nodes (10): Always Do, CLI, GitNexus — Code Intelligence, Never Do, Resources, Always Do, CLI, GitNexus — Code Intelligence (+2 more)
 
 ### Community 95 - "Community 95"
 Cohesion: 0.2
-Nodes (10): 13.1 手动刷新余额缓存, 13.2 手动刷新价格缓存, 13.3 全量重建缓存, 13. Redis 刷新 API, code:text (POST /v1/billing/cache/balances:refresh), code:json ({), code:text (POST /v1/billing/cache/effective-prices:refresh), code:json ({) (+2 more)
+Nodes (10): TestBillingEventDelivery(), code:block4 (# counter, cumulative count of input tokens), code:block5 (irate(route_upstream_model_consumer_metric_llm_first_token_d), code:block6 (irate(route_upstream_model_consumer_metric_llm_service_durat), code:json ({), code:json ({), Empty, Log (+2 more)
 
 ### Community 96 - "Community 96"
 Cohesion: 0.2
-Nodes (10): 10.1 查询价格列表, 10.2 查询单个模型价格, 10.3 创建或更新价格, 10. 基础价格 API, code:text (GET /v1/billing/prices), code:text (provider=dashscope), code:json ({), code:text (GET /v1/billing/prices/{provider}/{model}) (+2 more)
+Nodes (10): 13.1 手动刷新余额缓存, 13.2 手动刷新价格缓存, 13.3 全量重建缓存, 13. Redis 刷新 API, code:text (POST /v1/billing/cache/balances:refresh), code:json ({), code:text (POST /v1/billing/cache/effective-prices:refresh), code:json ({) (+2 more)
 
 ### Community 97 - "Community 97"
 Cohesion: 0.2
-Nodes (10): 8.1 查询租户生效价格, 8.2 配置租户折扣, 8.3 配置租户覆盖价格, 8. 租户价格策略 API, code:text (GET /v1/billing/tenants/{tenant}/effective-prices/{provider}), code:json ({), code:text (PUT /v1/billing/tenants/{tenant}/price-rules/{provider}/{mod), code:json ({) (+2 more)
+Nodes (10): 10.1 查询价格列表, 10.2 查询单个模型价格, 10.3 创建或更新价格, 10. 基础价格 API, code:text (GET /v1/billing/prices), code:text (provider=dashscope), code:json ({), code:text (GET /v1/billing/prices/{provider}/{model}) (+2 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.2
-Nodes (9): code:shell (curl --url "foo.bar.com/headers"), code:shell (curl -X POST \), OIDC 流程图, OIDC 流程解析, 功能说明, 用户令牌刷新, 运行属性, 配置字段 (+1 more)
+Nodes (10): 9.1 创建 quota_scope, 9.2 查询 quota_scope, 9.3 路由绑定, 9. quota_scope API, code:text (POST /v1/billing/quota-scopes), code:json ({), code:text (GET /v1/billing/quota-scopes/{quota_scope}), code:json ({) (+2 more)
 
 ### Community 99 - "Community 99"
 Cohesion: 0.2
-Nodes (9): code:yaml (match_type: 'whitelist'), code:yaml (match_type: 'blacklist'), code:block4 (/oauth2/sign_out?rd=https%3A%2F%2Fmy-oidc-provider.example.c), code:block5 (GET /oauth2/sign_out HTTP/1.1), OIDC 服务 HTTPS 协议, 使用方式, 注销用户, 生成 Cookie 密钥 (+1 more)
+Nodes (10): 8.1 查询租户生效价格, 8.2 配置租户折扣, 8.3 配置租户覆盖价格, 8. 租户价格策略 API, code:text (GET /v1/billing/tenants/{tenant}/effective-prices/{provider}), code:json ({), code:text (PUT /v1/billing/tenants/{tenant}/price-rules/{provider}/{mod), code:json ({) (+2 more)
 
 ### Community 100 - "Community 100"
 Cohesion: 0.2
-Nodes (9): code:yaml (defaultTagKey: x-mse-tag), code:yaml (# 权重总和为100，下例中未配置的40权重将不添加header), 功能说明, 操作符说明, 权重组配置, 条件组配置, 运行属性, 配置字段 (+1 more)
+Nodes (9): code:yaml (match_type: 'whitelist'), code:yaml (match_type: 'blacklist'), code:block4 (/oauth2/sign_out?rd=https%3A%2F%2Fmy-oidc-provider.example.c), code:block5 (GET /oauth2/sign_out HTTP/1.1), OIDC 服务 HTTPS 协议, 使用方式, 注销用户, 生成 Cookie 密钥 (+1 more)
 
 ### Community 101 - "Community 101"
 Cohesion: 0.2
-Nodes (9): 5.1 一些标准库不可用, 5.2 由于垃圾回收导致的性能开销, 5.3 `recover` 未实现, 5.4 Goroutine 不支持, 5 限制和注意事项, 6 插件开发样例, code:go (package main), Wasm 插件原理 (+1 more)
+Nodes (9): code:yaml (defaultTagKey: x-mse-tag), code:yaml (# 权重总和为100，下例中未配置的40权重将不添加header), 功能说明, 操作符说明, 权重组配置, 条件组配置, 运行属性, 配置字段 (+1 more)
 
 ### Community 102 - "Community 102"
 Cohesion: 0.2
@@ -705,7 +708,7 @@ Nodes (9): code:block4 (# counter 类型，输入 token 数量的累加值), cod
 
 ### Community 112 - "Community 112"
 Cohesion: 0.22
-Nodes (8): ADDED Requirements, Requirement: Allow authorization compatibility, Requirement: Credential uniqueness, Scenario: Allowed consumer continues, Scenario: Disallowed consumer is rejected, Scenario: Duplicate credential across consumers is rejected, Scenario: Duplicate credential in same consumer is rejected, Scenario: Top-level credentials are not consumer authorization
+Nodes (8): ADDED Requirements, Requirement: Error behavior compatibility, Requirement: Local YAML credential source, Scenario: External credential storage is absent, Scenario: Local credentials are parsed, Scenario: Missing credential is rejected, Scenario: Unauthorized consumer is rejected, Scenario: Unknown credential is rejected
 
 ### Community 113 - "Community 113"
 Cohesion: 0.25
@@ -717,39 +720,39 @@ Nodes (8): code:json ({), code:yaml (provider:), code:json ({), code:json ({), c
 
 ### Community 115 - "Community 115"
 Cohesion: 0.25
-Nodes (8): code:yaml (provider:), code:yaml (provider:), code:yaml (provider:), code:json ({), 使用 OpenAI 协议代理豆包大模型服务, 使用 original 协议代理 Coze 应用, 使用智能协议转换, 用法示例
+Nodes (7): code:yaml (request:), code:block2 (<?xml version='1.0' encoding='us-ascii'?>), code:block3 ({), 功能说明, 运行属性, 配置示例, 配置说明
 
 ### Community 116 - "Community 116"
 Cohesion: 0.25
-Nodes (7): code:yaml (request:), code:block2 (<?xml version='1.0' encoding='us-ascii'?>), code:block3 ({), 功能说明, 运行属性, 配置示例, 配置说明
-
-### Community 117 - "Community 117"
-Cohesion: 0.25
 Nodes (7): code:yaml (suffix: jpg|png|jpeg), code:bash (curl http://example.com/test.png), code:yaml (expires: max), 功能说明, 运行属性, 配置字段, 配置示例
 
-### Community 118 - "Community 118"
+### Community 117 - "Community 117"
 Cohesion: 0.29
 Nodes (6): code:yaml (billing_service:), Configuration, Event Fields, Example, Overview, Runtime Properties
 
-### Community 119 - "Community 119"
+### Community 118 - "Community 118"
 Cohesion: 0.25
 Nodes (8): code:block18 (data: {"choices":[{"delta":{"content":"Hello"}}]}), code:json ({), code:json ({), code:promql (# 平均首字延迟), 流式响应的挑战, 流式响应观测能力, 流式日志示例, 流式特有指标
 
-### Community 120 - "Community 120"
+### Community 119 - "Community 119"
 Cohesion: 0.25
 Nodes (7): code:text (credential -> {), Context, Decisions, Goals / Non-Goals, Migration Plan, Open Questions, Risks / Trade-offs
 
-### Community 121 - "Community 121"
+### Community 120 - "Community 120"
 Cohesion: 0.52
-Nodes (5): init(), main(), onHttpRequestHeaders(), parseConfig(), RebuildConfig
+Nodes (5): init(), main(), onHttpRequestHeaders(), parseConfig(), SafeLogHttpCallConfig
 
-### Community 122 - "Community 122"
+### Community 121 - "Community 121"
 Cohesion: 0.52
 Nodes (5): HttpCallConfig, init(), main(), onHttpRequestHeaders(), parseConfig()
 
-### Community 123 - "Community 123"
+### Community 122 - "Community 122"
 Cohesion: 0.52
-Nodes (5): init(), main(), onHttpRequestHeaders(), parseConfig(), SafeLogHttpCallConfig
+Nodes (5): init(), main(), onHttpRequestHeaders(), parseConfig(), RebuildConfig
+
+### Community 123 - "Community 123"
+Cohesion: 0.33
+Nodes (6): deliverBillingEvent(), onHttpResponseBody(), onHttpStreamingResponseBody(), recordUsage(), TestBuildBillingEventUsesOnlyRequestIdSources(), TestDeliverBillingEventDispatchErrorIsFailOpen()
 
 ### Community 124 - "Community 124"
 Cohesion: 0.29
@@ -765,11 +768,11 @@ Nodes (7): Aliyun 配置示例, code:yaml (redirect_url: 'http://foo.bar.com/oau
 
 ### Community 127 - "Community 127"
 Cohesion: 0.29
-Nodes (7): 3.1 Contexts, 3.3 插件调用入口 Entrypoint, 3 Proxy-Wasm Go SDK API, code:block6 (Wasm Virtual Machine), code:go (type VMContext interface {), code:go (type PluginContext interface {), code:go (func main() {)
+Nodes (7): 1.1.1 什么是 Wasm ？, 1.1.2 Wasm 模块, 1.1.3  Wasm 指令集, 1.1 Wasm, 1.2 TinyGo, 1.3 Proxy-Wasm Go SDK, 1 Wasm、TinyGo、Proxy-Wasm Go SDK
 
 ### Community 128 - "Community 128"
 Cohesion: 0.29
-Nodes (7): 1.1.1 什么是 Wasm ？, 1.1.2 Wasm 模块, 1.1.3  Wasm 指令集, 1.1 Wasm, 1.2 TinyGo, 1.3 Proxy-Wasm Go SDK, 1 Wasm、TinyGo、Proxy-Wasm Go SDK
+Nodes (7): 3.1 Contexts, 3.3 插件调用入口 Entrypoint, 3 Proxy-Wasm Go SDK API, code:block6 (Wasm Virtual Machine), code:go (type VMContext interface {), code:go (type PluginContext interface {), code:go (func main() {)
 
 ### Community 129 - "Community 129"
 Cohesion: 0.29
@@ -845,11 +848,11 @@ Nodes (5): code:yaml (templates:), code:json ({), 功能说明, 运行属性, �
 
 ### Community 147 - "Community 147"
 Cohesion: 0.33
-Nodes (6): code:yaml (provider:), code:json ({), code:json ({), code:json ({), code:json ({), 使用 OpenAI 协议代理 GitHub 模型服务
+Nodes (6): code:yaml (provider:), code:json ({), code:json ({), code:json ({), code:json ({), 使用 OpenAI 协议代理 360 智脑服务
 
 ### Community 148 - "Community 148"
 Cohesion: 0.33
-Nodes (6): code:yaml (provider:), code:json ({), code:json ({), code:json ({), code:json ({), 使用 OpenAI 协议代理 360 智脑服务
+Nodes (6): code:yaml (provider:), code:json ({), code:json ({), code:json ({), code:json ({), 使用 OpenAI 协议代理 GitHub 模型服务
 
 ### Community 149 - "Community 149"
 Cohesion: 0.33
@@ -857,67 +860,67 @@ Nodes (5): code:yaml (scene:), 功能说明, 运行属性, 配置示例, 配置�
 
 ### Community 150 - "Community 150"
 Cohesion: 0.33
-Nodes (5): code:yaml (ip_source_type: origin-source), code:yaml (ip_source_type: header), 功能说明, 运行属性, 配置说明
+Nodes (5): OIDC 流程图, 功能说明, 运行属性, 配置字段, 配置示例
 
 ### Community 151 - "Community 151"
 Cohesion: 0.33
-Nodes (6): answer 和 reasoning 拼接示例, code:block19 (data: {"choices":[{"delta":{"content":"你好"}}]}), code:block20 (data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c), code:json ([), tool_calls 拼接示例, 自动拼接机制
+Nodes (5): code:yaml (ip_source_type: origin-source), code:yaml (ip_source_type: header), 功能说明, 运行属性, 配置说明
 
 ### Community 152 - "Community 152"
 Cohesion: 0.33
-Nodes (6): code:yaml (attributes:), code:yaml (session_id_header: "x-session-id"  # 可选，指定 session ID header), code:json ({), 仅记录当前轮次的问题与回答, 记录完整的多轮对话历史（推荐配置）, 记录问题与回答
+Nodes (6): answer 和 reasoning 拼接示例, code:block19 (data: {"choices":[{"delta":{"content":"你好"}}]}), code:block20 (data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c), code:json ([), tool_calls 拼接示例, 自动拼接机制
 
 ### Community 153 - "Community 153"
 Cohesion: 0.33
-Nodes (5): 1. Impact And Test Planning, 2. Refactor ai-quota Configuration And Admission, 3. Implement ai-quota Monetary Deduction, 4. Add ai-billing Plugin, 5. Integration And Verification
+Nodes (6): code:yaml (attributes:), code:yaml (session_id_header: "x-session-id"  # 可选，指定 session ID header), code:json ({), 仅记录当前轮次的问题与回答, 记录完整的多轮对话历史（推荐配置）, 记录问题与回答
 
 ### Community 154 - "Community 154"
 Cohesion: 0.33
-Nodes (6): Requirement: Global and consumer-level key extraction settings, Scenario: Consumer keys override global keys, Scenario: Consumer source override is applied, Scenario: Consumer without keys uses global keys, Scenario: Global key does not authenticate consumer with consumer keys, Scenario: No enabled source is rejected
+Nodes (5): 1. Impact And Test Planning, 2. Refactor ai-quota Configuration And Admission, 3. Implement ai-quota Monetary Deduction, 4. Add ai-billing Plugin, 5. Integration And Verification
 
 ### Community 155 - "Community 155"
 Cohesion: 0.33
-Nodes (5): 1. Impact And Test Planning, 2. Refactor ai-quota Configuration And Admission, 3. Implement ai-quota Monetary Deduction, 4. Add ai-billing Plugin, 5. Integration And Verification
+Nodes (6): Requirement: Global and consumer-level key extraction settings, Scenario: Consumer keys override global keys, Scenario: Consumer source override is applied, Scenario: Consumer without keys uses global keys, Scenario: Global key does not authenticate consumer with consumer keys, Scenario: No enabled source is rejected
 
 ### Community 156 - "Community 156"
-Cohesion: 0.4
-Nodes (6): Custom Response Plugin, WasmPlugin Configuration Scopes, Higress WasmPlugin CRD, ParseConfig and ParseRuleConfig Hooks, Wasm Plugin Phase and Priority, Wasm Plugin Effective Scope
+Cohesion: 0.33
+Nodes (5): 1. Impact And Test Planning, 2. Refactor ai-quota Configuration And Admission, 3. Implement ai-quota Monetary Deduction, 4. Add ai-billing Plugin, 5. Integration And Verification
 
 ### Community 157 - "Community 157"
 Cohesion: 0.4
-Nodes (4): NewCommonVmCtx(), NewCommonVmCtxWithOptions(), SetCtxWithOptions(), prePluginOption[PluginConfig]
+Nodes (6): Custom Response Plugin, WasmPlugin Configuration Scopes, Higress WasmPlugin CRD, ParseConfig and ParseRuleConfig Hooks, Wasm Plugin Phase and Priority, Wasm Plugin Effective Scope
 
 ### Community 158 - "Community 158"
 Cohesion: 0.4
-Nodes (5): 12.1 查询流水, 12. 账单流水 API, code:text (GET /v1/billing/statements), code:text (tenant=tenant-a), code:json ({)
+Nodes (4): NewCommonVmCtx(), NewCommonVmCtxWithOptions(), SetCtxWithOptions(), prePluginOption[PluginConfig]
 
 ### Community 159 - "Community 159"
 Cohesion: 0.4
-Nodes (4): code:yaml (billing_service:), Event 字段, 功能说明, 配置示例
+Nodes (5): 12.1 查询流水, 12. 账单流水 API, code:text (GET /v1/billing/statements), code:text (tenant=tenant-a), code:json ({)
 
 ### Community 160 - "Community 160"
 Cohesion: 0.4
-Nodes (5): code:yaml (provider:), code:json ({), code:json ({), code:json ({), 使用自动协议兼容功能
+Nodes (4): code:yaml (billing_service:), Event 字段, 功能说明, 配置示例
 
 ### Community 161 - "Community 161"
 Cohesion: 0.4
-Nodes (5): 4.1 共享数据（Shared Data）, 4.2 共享队列 Shared Queue, 4 跨虚拟机通信, code:go (// GetSharedData 用于检索给定 "key" 的值。), code:go (// DequeueSharedQueue 从给定 queueID 的共享队列中出队数据。)
+Nodes (5): code:yaml (provider:), code:json ({), code:json ({), code:json ({), 使用自动协议兼容功能
 
 ### Community 162 - "Community 162"
 Cohesion: 0.4
-Nodes (5): code:yaml (use_default_response_attributes: true), code:yaml (use_default_attributes: true), 使用默认配置快速启用, 完整模式, 轻量模式（推荐用于生产环境）
+Nodes (5): 4.1 共享数据（Shared Data）, 4.2 共享队列 Shared Queue, 4 跨虚拟机通信, code:go (// GetSharedData 用于检索给定 "key" 的值。), code:go (// DequeueSharedQueue 从给定 queueID 的共享队列中出队数据。)
 
 ### Community 163 - "Community 163"
 Cohesion: 0.4
-Nodes (4): Context, Decisions, Goals / Non-Goals, Risks / Trade-offs
+Nodes (5): 5.1 一些标准库不可用, 5.2 由于垃圾回收导致的性能开销, 5.3 `recover` 未实现, 5.4 Goroutine 不支持, 5 限制和注意事项
 
 ### Community 164 - "Community 164"
 Cohesion: 0.4
-Nodes (4): 1. Build Discovery, 2. Artifact Build Targets, 3. Metadata Generation, 4. Verification
+Nodes (4): 6 插件开发样例, code:go (package main), Wasm 插件原理, 参考
 
 ### Community 165 - "Community 165"
 Cohesion: 0.4
-Nodes (4): 1. Source Alignment, 2. Update ai-quota Resource Package, 3. Generate ai-billing Resource Package, 4. Verification
+Nodes (5): code:yaml (use_default_response_attributes: true), code:yaml (use_default_attributes: true), 使用默认配置快速启用, 完整模式, 轻量模式（推荐用于生产环境）
 
 ### Community 166 - "Community 166"
 Cohesion: 0.4
@@ -925,155 +928,167 @@ Nodes (4): Context, Decisions, Goals / Non-Goals, Risks / Trade-offs
 
 ### Community 167 - "Community 167"
 Cohesion: 0.4
-Nodes (4): 1. Pre-Change Analysis, 2. Resource Documentation, 3. Resource Schema, 4. Verification
+Nodes (4): 1. Build Discovery, 2. Artifact Build Targets, 3. Metadata Generation, 4. Verification
 
 ### Community 168 - "Community 168"
 Cohesion: 0.4
-Nodes (5): Requirement: Documentation and examples, Scenario: Bearer Authorization is documented, Scenario: Multi-credential consumer is documented, Scenario: Redis is out of scope, Scenario: Tenant propagation is documented
+Nodes (4): 1. Source Alignment, 2. Update ai-quota Resource Package, 3. Generate ai-billing Resource Package, 4. Verification
 
 ### Community 169 - "Community 169"
 Cohesion: 0.4
-Nodes (5): Requirement: Combined header and query extraction, Scenario: Header and query both enabled, Scenario: Header source authenticates, Scenario: Multiple presented credentials are rejected, Scenario: Query source authenticates
+Nodes (4): Context, Decisions, Goals / Non-Goals, Risks / Trade-offs
 
 ### Community 170 - "Community 170"
 Cohesion: 0.4
-Nodes (5): Requirement: Top-level credentials authentication-only mode, Scenario: Consumers and top-level credentials conflict, Scenario: Missing identity source is rejected, Scenario: Top-level credential authenticates, Scenario: Top-level credentials do not inject consumer identity
+Nodes (4): 1. Pre-Change Analysis, 2. Resource Documentation, 3. Resource Schema, 4. Verification
 
 ### Community 171 - "Community 171"
 Cohesion: 0.4
-Nodes (5): Requirement: Consumer multiple credentials, Scenario: Credential field conflicts with credentials field, Scenario: Empty credentials list is rejected, Scenario: First credential authenticates consumer, Scenario: Second credential authenticates same consumer
+Nodes (5): Requirement: Documentation and examples, Scenario: Bearer Authorization is documented, Scenario: Multi-credential consumer is documented, Scenario: Redis is out of scope, Scenario: Tenant propagation is documented
 
 ### Community 172 - "Community 172"
 Cohesion: 0.4
-Nodes (4): 1. Source Alignment, 2. Update ai-quota Resource Package, 3. Generate ai-billing Resource Package, 4. Verification
+Nodes (5): Requirement: Top-level credentials authentication-only mode, Scenario: Consumers and top-level credentials conflict, Scenario: Missing identity source is rejected, Scenario: Top-level credential authenticates, Scenario: Top-level credentials do not inject consumer identity
 
 ### Community 173 - "Community 173"
-Cohesion: 0.5
-Nodes (5): Bot Detect Plugin, IP Restriction Plugin, Request Block Plugin, Request Blocking Rules, WAF Plugin
+Cohesion: 0.4
+Nodes (5): Requirement: Consumer multiple credentials, Scenario: Credential field conflicts with credentials field, Scenario: Empty credentials list is rejected, Scenario: First credential authenticates consumer, Scenario: Second credential authenticates same consumer
+
+### Community 174 - "Community 174"
+Cohesion: 0.4
+Nodes (5): Requirement: Combined header and query extraction, Scenario: Header and query both enabled, Scenario: Header source authenticates, Scenario: Multiple presented credentials are rejected, Scenario: Query source authenticates
 
 ### Community 175 - "Community 175"
-Cohesion: 0.5
-Nodes (3): ParseConfig(), PrePluginStartOrReload(), setGlobalMaxRequestsPerIoCycle()
+Cohesion: 0.4
+Nodes (4): 1. Source Alignment, 2. Update ai-quota Resource Package, 3. Generate ai-billing Resource Package, 4. Verification
 
 ### Community 176 - "Community 176"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用通义千问配合纯文本上下文信息
-
-### Community 177 - "Community 177"
-Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 DeepL 文本翻译服务
+Nodes (5): Bot Detect Plugin, IP Restriction Plugin, Request Block Plugin, Request Blocking Rules, WAF Plugin
 
 ### Community 178 - "Community 178"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:shell (curl --location 'http://<your higress domain>/v1/chat/comple), code:json ({), 使用 OpenAI 协议代理混元服务
+Nodes (3): ParseConfig(), PrePluginStartOrReload(), setGlobalMaxRequestsPerIoCycle()
 
 ### Community 179 - "Community 179"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Fireworks AI 服务
+Nodes (4): code:yaml (providers:), code:json ({), code:json ({), 使用 OpenAI 协议代理 NVIDIA Triton Interference Server 服务
 
 ### Community 180 - "Community 180"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Cloudflare Workers AI 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 original 协议代理百炼智能体应用
 
 ### Community 181 - "Community 181"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用通义千问配合其原生的文件上下文
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 DeepL 文本翻译服务
 
 ### Community 182 - "Community 182"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Dify 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 OpenRouter 服务
 
 ### Community 183 - "Community 183"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 original 协议代理百炼智能体应用
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Groq 服务
 
 ### Community 184 - "Community 184"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理百度文心一言服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Google Vertex 服务
 
 ### Community 185 - "Community 185"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Azure OpenAI 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Dify 服务
 
 ### Community 186 - "Community 186"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用月之暗面配合其原生的文件上下文
+Nodes (4): code:yaml (provider:), code:shell (curl --location 'http://<your higress domain>/v1/chat/comple), code:json ({), 使用 OpenAI 协议代理混元服务
 
 ### Community 187 - "Community 187"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 AWS Bedrock 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Fireworks AI 服务
 
 ### Community 188 - "Community 188"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Google Vertex 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 MiniMax 服务
 
 ### Community 189 - "Community 189"
 Cohesion: 0.5
-Nodes (4): code:yaml (providers:), code:json ({), code:json ({), 使用 OpenAI 协议代理 NVIDIA Triton Interference Server 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Cloudflare Workers AI 服务
 
 ### Community 190 - "Community 190"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Groq 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 AWS Bedrock 服务
 
 ### Community 191 - "Community 191"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Together-AI 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理百度文心一言服务
 
 ### Community 192 - "Community 192"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Gemini 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Spark 服务
 
 ### Community 193 - "Community 193"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 MiniMax 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Grok 服务
 
 ### Community 194 - "Community 194"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Grok 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用月之暗面配合其原生的文件上下文
 
 ### Community 195 - "Community 195"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 OpenRouter 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用通义千问配合其原生的文件上下文
 
 ### Community 196 - "Community 196"
 Cohesion: 0.5
-Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Spark 服务
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用通义千问配合纯文本上下文信息
 
 ### Community 197 - "Community 197"
 Cohesion: 0.5
-Nodes (4): Requirement: Error behavior compatibility, Scenario: Missing credential is rejected, Scenario: Unauthorized consumer is rejected, Scenario: Unknown credential is rejected
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Gemini 服务
 
 ### Community 198 - "Community 198"
 Cohesion: 0.5
-Nodes (4): Requirement: Authorization Bearer extraction, Scenario: Bearer stripping is limited to Authorization source, Scenario: Bearer token authenticates, Scenario: Non-Bearer Authorization remains raw
+Nodes (4): code:yaml (provider:), code:json ({), code:json ({), 使用 OpenAI 协议代理 Azure OpenAI 服务
 
 ### Community 199 - "Community 199"
 Cohesion: 0.5
-Nodes (4): Requirement: Consumer tenant identity, Scenario: Existing tenant header is not trusted, Scenario: Tenant header is injected, Scenario: Tenant is optional
+Nodes (4): code:shell (curl --url "foo.bar.com/headers"), code:shell (curl -X POST \), OIDC 流程解析, 用户令牌刷新
 
 ### Community 200 - "Community 200"
 Cohesion: 0.5
-Nodes (4): AI Prompt Decorator Prompt Insertion, AI Request Prompt Templates, Geo IP Request Properties, Geo-Aware Prompt Decoration
+Nodes (4): Requirement: Authorization Bearer extraction, Scenario: Bearer stripping is limited to Authorization source, Scenario: Bearer token authenticates, Scenario: Non-Bearer Authorization remains raw
 
 ### Community 201 - "Community 201"
 Cohesion: 0.5
-Nodes (4): AI Sensitive Data Replacement, AI Sensitive Word Interception, AI Content Moderation, AI Security Metrics And Trace Attributes
+Nodes (4): Requirement: Consumer tenant identity, Scenario: Existing tenant header is not trusted, Scenario: Tenant header is injected, Scenario: Tenant is optional
+
+### Community 202 - "Community 202"
+Cohesion: 0.5
+Nodes (4): Requirement: Allow authorization compatibility, Scenario: Allowed consumer continues, Scenario: Disallowed consumer is rejected, Scenario: Top-level credentials are not consumer authorization
+
+### Community 203 - "Community 203"
+Cohesion: 0.5
+Nodes (4): AI Prompt Decorator Prompt Insertion, AI Request Prompt Templates, Geo IP Request Properties, Geo-Aware Prompt Decoration
 
 ### Community 204 - "Community 204"
-Cohesion: 0.67
-Nodes (3): Requirement: Realm response header, Scenario: Configured realm is used, Scenario: Default realm is used
-
-### Community 205 - "Community 205"
-Cohesion: 0.67
-Nodes (3): Requirement: Consumer single credential compatibility, Scenario: Existing single credential config authenticates, Scenario: Existing single credential config injects consumer
-
-### Community 206 - "Community 206"
-Cohesion: 0.67
-Nodes (3): Requirement: Trusted consumer identity header, Scenario: Consumer header is injected once as trusted identity, Scenario: Existing consumer header is overwritten
+Cohesion: 0.5
+Nodes (4): AI Sensitive Data Replacement, AI Sensitive Word Interception, AI Content Moderation, AI Security Metrics And Trace Attributes
 
 ### Community 207 - "Community 207"
 Cohesion: 0.67
-Nodes (3): Requirement: Local YAML credential source, Scenario: External credential storage is absent, Scenario: Local credentials are parsed
+Nodes (3): Requirement: Credential uniqueness, Scenario: Duplicate credential across consumers is rejected, Scenario: Duplicate credential in same consumer is rejected
+
+### Community 208 - "Community 208"
+Cohesion: 0.67
+Nodes (3): Requirement: Consumer single credential compatibility, Scenario: Existing single credential config authenticates, Scenario: Existing single credential config injects consumer
+
+### Community 209 - "Community 209"
+Cohesion: 0.67
+Nodes (3): Requirement: Realm response header, Scenario: Configured realm is used, Scenario: Default realm is used
+
+### Community 210 - "Community 210"
+Cohesion: 0.67
+Nodes (3): Requirement: Trusted consumer identity header, Scenario: Consumer header is injected once as trusted identity, Scenario: Existing consumer header is overwritten
 
 ## Knowledge Gaps
 - **1458 isolated node(s):** `RuleConfig[PluginConfig]`, `ResponseCallback`, `HttpClient`, `ClusterClient`, `Log` (+1453 more)
@@ -1083,9 +1098,9 @@ Nodes (3): Requirement: Local YAML credential source, Scenario: External credent
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `contains()` connect `Community 0` to `Community 1`, `Community 39`, `Community 104`, `Community 9`, `Community 44`, `Community 45`, `Community 50`, `Community 54`, `Community 23`, `Community 25`, `Community 59`?**
+- **Why does `contains()` connect `Community 0` to `Community 1`, `Community 68`, `Community 104`, `Community 9`, `Community 41`, `Community 44`, `Community 47`, `Community 50`, `Community 86`, `Community 23`, `Community 24`, `Community 95`?**
   _High betweenness centrality (0.027) - this node is a cross-community bridge._
-- **Why does `TestBillingEventDelivery()` connect `Community 44` to `Community 24`, `Community 0`, `Community 59`, `Community 54`?**
+- **Why does `TestBillingEventDelivery()` connect `Community 95` to `Community 0`, `Community 34`, `Community 68`, `Community 47`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Why does `redisCallInternal()` connect `Community 1` to `Community 0`?**
   _High betweenness centrality (0.015) - this node is a cross-community bridge._

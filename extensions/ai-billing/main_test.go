@@ -186,6 +186,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, "req-1", event["request_id"])
 			require.NotEmpty(t, event["idempotency_key"])
 			require.NotEqual(t, "req-1", event["idempotency_key"])
+			require.Equal(t, "tenant-a", event["tenant"])
 			require.Equal(t, "consumer-a", event["consumer"])
 			requireObjectFactName(t, event, "provider", "openai")
 			requireObjectFactName(t, event, "model", "gpt-4")
@@ -203,7 +204,6 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, false, event["is_stream"])
 			require.Equal(t, "pv-7", event["price_version"])
-			require.NotContains(t, event, "tenant")
 			require.NotContains(t, event, "quota_scope")
 			require.NotContains(t, event, "input_tokens")
 			require.NotContains(t, event, "output_tokens")
@@ -268,7 +268,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				{":path", "/v1/chat/completions"},
 				{":method", "POST"},
 				{"x-request-id", "req-sensitive"},
-				{"x-tenant-id", "tenant-id-should-not-leak"},
+				{"x-tenant-id", "tenant-a"},
 				{"x-consumer-id", "consumer-a"},
 				{"authorization", "Bearer <raw-api-key>"},
 				{"x-api-key", "<raw-api-key>"},
@@ -303,7 +303,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				_, hasKey := event[key]
 				require.False(t, hasKey)
 			}
-			require.NotContains(t, body, "tenant-id-should-not-leak")
+			require.Equal(t, "tenant-a", event["tenant"])
 			require.NotContains(t, body, "user-id-sample")
 			require.NotContains(t, body, "<raw-api-key>")
 			require.NotContains(t, body, "<api-key-id>")

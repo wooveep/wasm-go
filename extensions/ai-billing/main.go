@@ -88,6 +88,7 @@ type BillingEvent struct {
 	EventID        string       `json:"event_id"`
 	IdempotencyKey string       `json:"idempotency_key"`
 	RequestID      string       `json:"request_id"`
+	Tenant         string       `json:"tenant"`
 	Consumer       string       `json:"consumer"`
 	Route          BillingFact  `json:"route"`
 	Provider       BillingFact  `json:"provider"`
@@ -308,6 +309,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		EventID:        eventID,
 		IdempotencyKey: idempotencyKey,
 		RequestID:      requestID,
+		Tenant:         ctx.GetStringContext(ctxTenant, ""),
 		Consumer:       ctx.GetStringContext(ctxConsumer, ""),
 		Route:          namedBillingFact(ctx.GetStringContext(ctxRoute, "-")),
 		Provider:       namedBillingFact(ctx.GetStringContext(ctxProvider, config.Provider)),
