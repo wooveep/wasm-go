@@ -72,6 +72,13 @@ var billingConfigWithoutPath = func() json.RawMessage {
 	return data
 }()
 
+func mustBillingConfig(t *testing.T, value map[string]interface{}) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(value)
+	require.NoError(t, err)
+	return data
+}
+
 func TestParseConfig(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		t.Run("billing service target and default fail policy", func(t *testing.T) {
@@ -118,6 +125,219 @@ func TestParseConfig(t *testing.T) {
 			billingConfig := config.(*BillingConfig)
 			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
 			require.Equal(t, defaultConsumerHeader, billingConfig.ConsumerHeader)
+		})
+
+		t.Run("global billing service with defaultable fields", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
+			require.Equal(t, 80, billingConfig.BillingService.ServicePort)
+			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
+			require.Equal(t, defaultTimeout, billingConfig.BillingService.Timeout)
+			require.Equal(t, defaultQuotaScope, billingConfig.QuotaScope)
+			require.Equal(t, defaultProvider, billingConfig.Provider)
+			require.Equal(t, defaultTenantHeader, billingConfig.TenantHeader)
+			require.Equal(t, defaultConsumerHeader, billingConfig.ConsumerHeader)
+			require.Equal(t, []string{"/v1/chat/completions", "/v1/messages"}, billingConfig.EnablePathSuffixes)
+			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
+		})
+
+		t.Run("partial rule inherits billing service and overrides selected fields", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"quota_scope":          "global-scope",
+				"provider":             "openai",
+				"tenant_header":        "x-tenant-id",
+				"consumer_header":      "x-consumer-id",
+				"enable_path_suffixes": []string{"/v1/chat/completions"},
+				"fail_policy":          FailPolicyOpen,
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+					"service_port": 8080,
+					"path":         "/internal/billing/events",
+					"timeout":      750,
+					"auth_token":   "<shared-secret>",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-provider"},
+						"provider":      "anthropic",
+						"quota_scope":   "route-scope",
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-provider"))
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
+			require.Equal(t, 8080, billingConfig.BillingService.ServicePort)
+			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
+			require.Equal(t, uint32(750), billingConfig.BillingService.Timeout)
+			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, "route-scope", billingConfig.QuotaScope)
+			require.Equal(t, "anthropic", billingConfig.Provider)
+			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)
+			require.Equal(t, "x-consumer-id", billingConfig.ConsumerHeader)
+			require.Equal(t, []string{"/v1/chat/completions"}, billingConfig.EnablePathSuffixes)
+			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
+		})
+
+		t.Run("partial rule only overrides provider and inherits billing service", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"quota_scope":          "global-scope",
+				"provider":             "openai",
+				"tenant_header":        "x-tenant-id",
+				"consumer_header":      "x-consumer-id",
+				"enable_path_suffixes": []string{"/v1/chat/completions"},
+				"fail_policy":          FailPolicyOpen,
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+					"service_port": 8080,
+					"path":         "/internal/billing/events",
+					"timeout":      750,
+					"auth_token":   "<shared-secret>",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-provider-only"},
+						"provider":      "anthropic",
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-provider-only"))
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
+			require.Equal(t, 8080, billingConfig.BillingService.ServicePort)
+			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
+			require.Equal(t, uint32(750), billingConfig.BillingService.Timeout)
+			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, "global-scope", billingConfig.QuotaScope)
+			require.Equal(t, "anthropic", billingConfig.Provider)
+			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)
+			require.Equal(t, "x-consumer-id", billingConfig.ConsumerHeader)
+			require.Equal(t, []string{"/v1/chat/completions"}, billingConfig.EnablePathSuffixes)
+			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
+		})
+
+		t.Run("partial rule overrides path suffixes and inherits fail policy", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"provider":             "openai",
+				"enable_path_suffixes": []string{"/v1/chat/completions"},
+				"fail_policy":          FailPolicyOpen,
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_":        []string{"route-custom-path"},
+						"enable_path_suffixes": []string{"/custom/ai"},
+						"fail_policy":          FailPolicyOpen,
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-custom-path"))
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "openai", billingConfig.Provider)
+			require.Equal(t, []string{"/custom/ai"}, billingConfig.EnablePathSuffixes)
+			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
+		})
+
+		t.Run("unsupported rule fail policy fails rule parsing", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"provider":    "openai",
+				"fail_policy": FailPolicyOpen,
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-invalid-fail-policy"},
+						"fail_policy":   "close",
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusFailed, status)
+		})
+
+		t.Run("full rule config remains valid and can override billing service", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"provider": "openai",
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-full"},
+						"provider":      "dashscope",
+						"billing_service": map[string]interface{}{
+							"service_name": "billing.route",
+							"service_port": 9090,
+							"path":         "/route/events",
+							"timeout":      900,
+							"auth_token":   "<route-secret>",
+						},
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-full"))
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "billing.route", billingConfig.BillingService.ServiceName)
+			require.Equal(t, 9090, billingConfig.BillingService.ServicePort)
+			require.Equal(t, "/route/events", billingConfig.BillingService.Path)
+			require.Equal(t, uint32(900), billingConfig.BillingService.Timeout)
+			require.Equal(t, "<route-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, "dashscope", billingConfig.Provider)
+		})
+
+		t.Run("missing global billing service fails even when rule has billing service", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"provider": "openai",
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-full"},
+						"billing_service": map[string]interface{}{
+							"service_name": "billing.route",
+						},
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusFailed, status)
 		})
 	})
 }
@@ -204,11 +424,108 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, false, event["is_stream"])
 			require.Equal(t, "pv-7", event["price_version"])
-			require.NotContains(t, event, "quota_scope")
+			require.Equal(t, "global", event["quota_scope"])
 			require.NotContains(t, event, "input_tokens")
 			require.NotContains(t, event, "output_tokens")
 			require.NotContains(t, event, "total_tokens")
 			require.NotContains(t, event, "gateway_calculated_cost")
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			host.CompleteHttp()
+		})
+
+		t.Run("matched rules emit resolved provider and quota scope", func(t *testing.T) {
+			config := mustBillingConfig(t, map[string]interface{}{
+				"quota_scope":          "global-scope",
+				"provider":             "openai",
+				"tenant_header":        "x-tenant-id",
+				"consumer_header":      "x-consumer-id",
+				"enable_path_suffixes": []string{"/v1/chat/completions"},
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+					"service_port": 8080,
+					"path":         "/internal/billing/events",
+					"timeout":      750,
+					"auth_token":   "<shared-secret>",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-openai"},
+						"provider":      "openai-route",
+					},
+					{
+						"_match_route_": []string{"route-anthropic"},
+						"provider":      "anthropic-route",
+						"quota_scope":   "route-scope",
+					},
+				},
+			})
+
+			openaiEvent := deliverTestBillingEvent(t, config, "route-openai", "req-openai")
+			requireObjectFactName(t, openaiEvent, "provider", "openai-route")
+			require.Equal(t, "global-scope", openaiEvent["quota_scope"])
+
+			anthropicEvent := deliverTestBillingEvent(t, config, "route-anthropic", "req-anthropic")
+			requireObjectFactName(t, anthropicEvent, "provider", "anthropic-route")
+			require.Equal(t, "route-scope", anthropicEvent["quota_scope"])
+		})
+
+		t.Run("full rule config uses rule billing service at runtime", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"provider":             "openai",
+				"tenant_header":        "x-tenant-id",
+				"consumer_header":      "x-consumer-id",
+				"enable_path_suffixes": []string{"/v1/chat/completions"},
+				"billing_service": map[string]interface{}{
+					"service_name": "billing.static",
+					"service_port": 8080,
+					"path":         "/internal/billing/events",
+					"timeout":      750,
+					"auth_token":   "<shared-secret>",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-full-runtime"},
+						"provider":      "dashscope",
+						"billing_service": map[string]interface{}{
+							"service_name": "billing.route",
+							"service_port": 9090,
+							"path":         "/route/events",
+							"timeout":      900,
+							"auth_token":   "<route-secret>",
+						},
+					},
+				},
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-full-runtime"))
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-request-id", "req-route-service"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+			action = host.CallOnHttpResponseBody([]byte(`{"model":"qwen-plus","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			require.Equal(t, "outbound|9090||billing.route", attrs[0].Upstream)
+			require.Contains(t, attrs[0].Headers, [2]string{"Authorization", "Bearer <route-secret>"})
+			require.Contains(t, attrs[0].Headers, [2]string{":path", "/route/events"})
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			requireObjectFactName(t, event, "provider", "dashscope")
 
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
 			host.CompleteHttp()
@@ -595,6 +912,41 @@ func TestBillingEventDelivery(t *testing.T) {
 	})
 }
 
+func deliverTestBillingEvent(t *testing.T, config json.RawMessage, routeName, requestID string) map[string]interface{} {
+	t.Helper()
+	host, status := test.NewTestHost(config)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+	require.NoError(t, host.SetRouteName(routeName))
+
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-request-id", requestID},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "application/json"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+	host.CompleteHttp()
+	return event
+}
+
 func requireObjectFactName(t *testing.T, event map[string]interface{}, key, name string) {
 	t.Helper()
 	value, ok := event[key].(map[string]interface{})
@@ -659,7 +1011,7 @@ func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
 
 		client := &failingBillingHTTPClient{err: errors.New("network unavailable")}
 		ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
-		eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-dispatch", "tenant-a", "consumer-a", "openai", "")
+		eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-dispatch", "tenant-a", "consumer-a", "openai", "global", "")
 		require.NoError(t, err)
 		ctx.SetContext(ctxEventID, eventID)
 		ctx.SetContext(ctxStatusCode, http.StatusOK)
@@ -734,13 +1086,14 @@ func TestSendBillingEventReusesEventIdempotencyKey(t *testing.T) {
 func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 
-	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-1", "tenant-a", "consumer-a", "openai", "pv-7")
+	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-1", "tenant-a", "consumer-a", "openai", "global", "pv-7")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, eventID)
 	require.Equal(t, eventID, ctx.values[ctxEventID])
 	require.Equal(t, eventID, ctx.values[ctxIdempotencyKey])
 	require.Equal(t, "openai", ctx.values[ctxProvider])
+	require.Equal(t, "global", ctx.values[ctxQuotaScope])
 	require.Equal(t, "/v1/chat/completions", ctx.values[ctxRequestPath])
 	require.Equal(t, "req-1", ctx.values[ctxRequestID])
 	require.Equal(t, "tenant-a", ctx.values[ctxTenant])
@@ -753,7 +1106,7 @@ func TestInitBillingRequestContextSetsEventID(t *testing.T) {
 
 func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
-	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "", "tenant-a", "consumer-a", "openai", "pv-7")
+	eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "", "tenant-a", "consumer-a", "openai", "global", "pv-7")
 	require.NoError(t, err)
 
 	ctx.SetContext(ctxStatusCode, http.StatusOK)

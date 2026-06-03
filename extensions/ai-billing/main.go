@@ -41,6 +41,7 @@ const (
 	ctxRoute          = "ai-billing-route"
 	ctxCluster        = "ai-billing-cluster"
 	ctxProvider       = "ai-billing-provider"
+	ctxQuotaScope     = "ai-billing-quota-scope"
 	ctxStatusCode     = "ai-billing-status-code"
 	ctxPriceVersion   = "ai-billing-price-version"
 	ctxIsStream       = "ai-billing-is-stream"
@@ -57,7 +58,7 @@ func main() {}
 func init() {
 	wrapper.SetCtx(
 		pluginName,
-		wrapper.ParseConfig(parseConfig),
+		wrapper.ParseOverrideConfig(parseConfig, parseRuleConfig),
 		wrapper.ProcessRequestHeaders(onHttpRequestHeaders),
 		wrapper.ProcessResponseHeaders(onHttpResponseHeaders),
 		wrapper.ProcessStreamingResponseBody(onHttpStreamingResponseBody),
@@ -92,6 +93,7 @@ type BillingEvent struct {
 	Consumer       string       `json:"consumer"`
 	Route          BillingFact  `json:"route"`
 	Provider       BillingFact  `json:"provider"`
+	QuotaScope     string       `json:"quota_scope"`
 	Model          BillingFact  `json:"model"`
 	RequestPath    string       `json:"request_path"`
 	StatusCode     int          `json:"status_code"`
@@ -118,6 +120,49 @@ type BillingUsage struct {
 }
 
 func parseConfig(configJson gjson.Result, config *BillingConfig) error {
+	if err := parseConfigFields(configJson, config); err != nil {
+		return err
+	}
+	return parseBillingService(configJson.Get("billing_service"), config)
+}
+
+func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *BillingConfig) error {
+	if global.BillingService.ServiceName == "" {
+		return errors.New("missing billing_service in config")
+	}
+	*config = global
+	if value := configJson.Get("quota_scope"); value.Exists() {
+		config.QuotaScope = stringDefault(value.String(), defaultQuotaScope)
+	}
+	if value := configJson.Get("provider"); value.Exists() {
+		config.Provider = stringDefault(value.String(), defaultProvider)
+	}
+	if value := configJson.Get("tenant_header"); value.Exists() {
+		config.TenantHeader = stringDefault(value.String(), defaultTenantHeader)
+	}
+	if value := configJson.Get("consumer_header"); value.Exists() {
+		config.ConsumerHeader = stringDefault(value.String(), defaultConsumerHeader)
+	}
+	if value := configJson.Get("fail_policy"); value.Exists() {
+		config.FailPolicy = stringDefault(value.String(), FailPolicyOpen)
+		if config.FailPolicy != FailPolicyOpen {
+			return errors.New("fail_policy only supports open")
+		}
+	}
+	if value := configJson.Get("enable_path_suffixes"); value.Exists() {
+		suffixes, err := parsePathSuffixes(value)
+		if err != nil {
+			return err
+		}
+		config.EnablePathSuffixes = suffixes
+	}
+	if service := configJson.Get("billing_service"); service.Exists() {
+		return parseBillingService(service, config)
+	}
+	return nil
+}
+
+func parseConfigFields(configJson gjson.Result, config *BillingConfig) error {
 	config.QuotaScope = stringDefault(configJson.Get("quota_scope").String(), defaultQuotaScope)
 	config.Provider = stringDefault(configJson.Get("provider").String(), defaultProvider)
 	config.TenantHeader = stringDefault(configJson.Get("tenant_header").String(), defaultTenantHeader)
@@ -131,8 +176,10 @@ func parseConfig(configJson gjson.Result, config *BillingConfig) error {
 		return err
 	}
 	config.EnablePathSuffixes = suffixes
+	return nil
+}
 
-	service := configJson.Get("billing_service")
+func parseBillingService(service gjson.Result, config *BillingConfig) error {
 	if !service.Exists() {
 		return errors.New("missing billing_service in config")
 	}
@@ -178,7 +225,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	tenant, _ := proxywasm.GetHttpRequestHeader(config.TenantHeader)
 	consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader)
 	priceVersion, _ := proxywasm.GetHttpRequestHeader("x-ai-price-version")
-	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, config.Provider, priceVersion); err != nil {
+	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, config.Provider, config.QuotaScope, priceVersion); err != nil {
 		log.Warnf("ai-billing event id generation failed open, request_id:%s err:%v", requestID, err)
 		ctx.SetContext(ctxBillingEnabled, false)
 		ctx.DontReadResponseBody()
@@ -186,7 +233,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	return types.ActionContinue
 }
 
-func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, tenant, consumer, provider, priceVersion string) (string, error) {
+func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, tenant, consumer, provider, quotaScope, priceVersion string) (string, error) {
 	eventID, err := newEventID()
 	if err != nil {
 		return "", err
@@ -197,6 +244,7 @@ func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, 
 	ctx.SetContext(ctxRequestPath, requestPath)
 	ctx.SetContext(ctxRequestID, requestID)
 	ctx.SetContext(ctxProvider, provider)
+	ctx.SetContext(ctxQuotaScope, quotaScope)
 	if tenant != "" {
 		ctx.SetContext(ctxTenant, tenant)
 	}
@@ -313,6 +361,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		Consumer:       ctx.GetStringContext(ctxConsumer, ""),
 		Route:          namedBillingFact(ctx.GetStringContext(ctxRoute, "-")),
 		Provider:       namedBillingFact(ctx.GetStringContext(ctxProvider, config.Provider)),
+		QuotaScope:     ctx.GetStringContext(ctxQuotaScope, config.QuotaScope),
 		Model:          namedBillingFact(ctx.GetStringContext(ctxModel, tokenusage.ModelUnknown)),
 		RequestPath:    ctx.GetStringContext(ctxRequestPath, ""),
 		StatusCode:     intDefault(intFromContext(ctx.GetContext(ctxStatusCode)), http.StatusBadGateway),
