@@ -12,27 +12,34 @@ description: ai-billing 请求级账单事件插件配置参考
 
 ## 事件字段
 
-事件包含 `event_id`、`idempotency_key`、`request_id`、`consumer`、`route`、`provider`、`model`、`cluster`、`request_path`、`status_code`、`start_time_ms`、`end_time_ms`、`is_stream`、`usage`、`usage_missing` 和可选 `price_version`。
+事件包含 `event_id`、`idempotency_key`、`request_id`、`tenant`、`consumer`、`quota_scope`、`route`、`provider`、`model`、`cluster`、`request_path`、`status_code`、`start_time_ms`、`end_time_ms`、`is_stream`、`usage`、`usage_missing` 和可选 `price_version`。
 
 `route`、`provider`、`model` 使用 Console 原生对象事实格式：`{ "id"?: "...", "name"?: "..." }`。网关通常不知道 Console UUID，因此默认填充运行时 `name`。
 
 ## 配置示例
 
 ```yaml
-billing_service:
-  service_name: modelfusion-console.higress-system.svc.cluster.local
-  service_port: 8080
-  path: /internal/billing/events
-  timeout: 750
-  auth_token: <shared-secret>
-quota_scope: route:qwen
-provider: dashscope
-tenant_header: x-mse-tenant
-consumer_header: x-mse-consumer
-enable_path_suffixes:
-  - /v1/chat/completions
-  - /v1/messages
-fail_policy: open
+defaultConfig:
+  billing_service:
+    service_name: modelfusion-console.higress-system.svc.cluster.local
+    service_port: 8080
+    path: /internal/billing/events
+    timeout: 750
+    auth_token: <shared-secret>
+  quota_scope: global
+  provider: default
+  tenant_header: x-mse-tenant
+  consumer_header: x-mse-consumer
+  enable_path_suffixes:
+    - /v1/chat/completions
+    - /v1/messages
+  fail_policy: open
+matchRules:
+  - ingress:
+      - qwen
+    config:
+      quota_scope: route:qwen
+      provider: dashscope
 ```
 
 ## 配置说明
@@ -46,6 +53,8 @@ fail_policy: open
 | `consumer_header` | string | `x-mse-consumer` | consumer 身份请求头 |
 | `enable_path_suffixes` | []string | `/v1/chat/completions`, `/v1/messages` | 生效路径后缀 |
 | `fail_policy` | string | `open` | 投递失败策略，当前支持 `open` |
+
+全局 `defaultConfig` 必须配置完整的 `billing_service`，并推荐放置共享的租户、consumer、路径后缀和 fail-open 设置。`matchRules[].config` 可以只配置当前路由差异，例如 `provider`、`quota_scope`、`enable_path_suffixes` 或 `fail_policy`；未配置字段会继承全局值。为了兼容旧配置，规则级 `billing_service` 仍可配置，并会为该规则创建独立 HTTP callout 客户端。
 
 `billing_service.path` 默认使用 `/internal/billing/events`，并通过 `billing_service.auth_token` 以 Bearer token 方式访问 Console 内部结算接口。Console 会使用 `CONSOLE_INTERNAL_BILLING_TOKEN` 校验该 token。
 

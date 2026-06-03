@@ -26,7 +26,9 @@ description: ai-billing 请求级账单事件插件配置参考
 | `event_id` | 插件在请求开始时生成的事件 ID |
 | `idempotency_key` | 幂等键，默认与 `event_id` 相同 |
 | `request_id` | 请求关联 ID，来自 `x-request-id` 或 Higress 请求属性 |
+| `tenant` | 从 `tenant_header` 指定请求头读取的租户标识 |
 | `consumer` | 从 `consumer_header` 指定请求头读取的 consumer 标识 |
+| `quota_scope` | 当前请求匹配到的额度作用域，可来自全局配置或规则级覆盖 |
 | `route` | Higress route 名称 |
 | `provider` | AI provider 标识 |
 | `model` | 响应中的 model，缺失时使用未知模型标识 |
@@ -39,7 +41,7 @@ description: ai-billing 请求级账单事件插件配置参考
 | `cluster` | 上游 cluster 名称 |
 | `price_version` | 可选价格版本，来自 `x-ai-price-version` |
 
-事件不会上报 `tenant`、`quota_scope`、顶层 `input_tokens`、顶层 `output_tokens`、顶层 `total_tokens` 或 `gateway_calculated_cost`。`tenant_header` 和 `quota_scope` 仍是兼容配置字段，但当前事件 payload 不序列化这些字段。
+事件不会上报顶层 `input_tokens`、顶层 `output_tokens`、顶层 `total_tokens` 或 `gateway_calculated_cost`。`tenant`、`consumer`、`provider` 和 `quota_scope` 使用当前请求匹配到的配置解析。
 
 ## 配置说明
 
@@ -53,31 +55,40 @@ description: ai-billing 请求级账单事件插件配置参考
 | `enable_path_suffixes` | []string | `/v1/chat/completions`, `/v1/messages` | 生效路径后缀 |
 | `fail_policy` | string | `open` | 投递失败策略，当前支持 `open` |
 
+全局 `defaultConfig` 必须配置完整的 `billing_service`，并推荐放置共享的租户、consumer、路径后缀和 fail-open 设置。`matchRules[].config` 可以只配置当前路由差异，例如 `provider`、`quota_scope`、`enable_path_suffixes` 或 `fail_policy`；未配置字段会继承全局值。为了兼容旧配置，规则级 `billing_service` 仍可配置，并会为该规则创建独立 HTTP callout 客户端。
+
 `billing_service` 字段：
 
 | 配置项 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `service_name` | string | 是 | `modelfusion-console.higress-system.svc.cluster.local` | billing-service 服务名称 |
 | `service_port` | int | 否 | 80 | billing-service 服务端口 |
-| `path` | string | 否 | `/billing/events` | billing event 上报路径 |
+| `path` | string | 否 | `/internal/billing/events` | billing event 上报路径 |
 | `timeout` | int | 否 | 500 | HTTP callout 超时时间，单位毫秒 |
 | `auth_token` | string | 否 | 无 | billing-service 共享鉴权密钥，用于生成 `Authorization: Bearer <token>`；示例必须使用 `<shared-secret>` 占位符 |
 
 ## 配置示例
 
 ```yaml
-billing_service:
-  service_name: modelfusion-console.higress-system.svc.cluster.local
-  service_port: 8080
-  path: /internal/billing/events
-  timeout: 750
-  auth_token: <shared-secret>
-quota_scope: route:qwen
-provider: dashscope
-tenant_header: x-mse-tenant
-consumer_header: x-mse-consumer
-enable_path_suffixes:
-  - /v1/chat/completions
-  - /v1/messages
-fail_policy: open
+defaultConfig:
+  billing_service:
+    service_name: modelfusion-console.higress-system.svc.cluster.local
+    service_port: 8080
+    path: /internal/billing/events
+    timeout: 750
+    auth_token: <shared-secret>
+  quota_scope: global
+  provider: default
+  tenant_header: x-mse-tenant
+  consumer_header: x-mse-consumer
+  enable_path_suffixes:
+    - /v1/chat/completions
+    - /v1/messages
+  fail_policy: open
+matchRules:
+  - ingress:
+      - qwen
+    config:
+      quota_scope: route:qwen
+      provider: dashscope
 ```

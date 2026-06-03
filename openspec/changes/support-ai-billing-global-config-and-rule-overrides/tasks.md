@@ -29,9 +29,9 @@
 
 ## 5. Documentation and Examples
 
-- [ ] 5.1 Update `extensions/ai-billing/plugin.yaml` to show shared `defaultConfig` and partial `matchRules[].config` as the recommended shape.
-- [ ] 5.2 Update `resources/plugins/ai-billing/spec.yaml` examples and route config schema text to document partial route overrides.
-- [ ] 5.3 Update `extensions/ai-billing` and resource README content to describe config inheritance and quota-scope event semantics.
+- [x] 5.1 Update `extensions/ai-billing/plugin.yaml` to show shared `defaultConfig` and partial `matchRules[].config` as the recommended shape.
+- [x] 5.2 Update `resources/plugins/ai-billing/spec.yaml` examples and route config schema text to document partial route overrides.
+- [x] 5.3 Update `extensions/ai-billing` and resource README content to describe config inheritance and quota-scope event semantics.
 
 ## 6. Verification
 

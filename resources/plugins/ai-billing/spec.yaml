@@ -61,7 +61,7 @@ spec:
               description: billing event 上报路径
               x-description-i18n:
                 en-US: Billing event delivery path
-              default: /billing/events
+              default: /internal/billing/events
             timeout:
               type: integer
               title: Callout超时
@@ -84,16 +84,16 @@ spec:
           title: 额度作用域
           x-title-i18n:
             en-US: Quota Scope
-          description: 当前路由或规则的额度作用域
+          description: 默认额度作用域，规则级配置可覆盖
           x-description-i18n:
-            en-US: Quota scope for the current route or rule
+            en-US: Default quota scope. Route rule config can override it
           default: global
         provider:
           type: string
           title: AI Provider
-          description: AI provider 标识
+          description: 默认 AI provider 标识，规则级配置可覆盖
           x-description-i18n:
-            en-US: AI provider identifier
+            en-US: Default AI provider identifier. Route rule config can override it
           default: default
         tenant_header:
           type: string
@@ -118,9 +118,9 @@ spec:
           title: 生效路径后缀
           x-title-i18n:
             en-US: Enabled Path Suffixes
-          description: 插件生效的 AI 请求路径后缀
+          description: 默认生效的 AI 请求路径后缀，规则级配置可覆盖
           x-description-i18n:
-            en-US: AI request path suffixes enabled for this plugin
+            en-US: Default AI request path suffixes enabled for this plugin. Route rule config can override them
           items:
             type: string
           default:
@@ -144,8 +144,8 @@ spec:
           path: /internal/billing/events
           timeout: 750
           auth_token: <shared-secret>
-        quota_scope: route:qwen
-        provider: dashscope
+        quota_scope: global
+        provider: default
         tenant_header: x-mse-tenant
         consumer_header: x-mse-consumer
         enable_path_suffixes:
@@ -161,43 +161,43 @@ spec:
           title: 额度作用域
           x-title-i18n:
             en-US: Quota Scope
-          description: 当前路由或规则的额度作用域
+          description: 规则级额度作用域覆盖；未配置时继承全局配置
           x-description-i18n:
-            en-US: Quota scope for the current route or rule
+            en-US: Rule-level quota scope override. Inherits the global config when omitted
           default: global
         provider:
           type: string
           title: AI Provider
-          description: AI provider 标识
+          description: 规则级 AI provider 覆盖；未配置时继承全局配置
           x-description-i18n:
-            en-US: AI provider identifier
+            en-US: Rule-level AI provider override. Inherits the global config when omitted
           default: default
         tenant_header:
           type: string
           title: 租户请求头
           x-title-i18n:
             en-US: Tenant Header
-          description: 租户身份请求头
+          description: 规则级租户身份请求头覆盖；未配置时继承全局配置
           x-description-i18n:
-            en-US: Request header containing tenant identity
+            en-US: Rule-level tenant identity header override. Inherits the global config when omitted
           default: x-mse-tenant
         consumer_header:
           type: string
           title: Consumer请求头
           x-title-i18n:
             en-US: Consumer Header
-          description: Consumer 身份请求头
+          description: 规则级 Consumer 身份请求头覆盖；未配置时继承全局配置
           x-description-i18n:
-            en-US: Request header containing consumer identity
+            en-US: Rule-level consumer identity header override. Inherits the global config when omitted
           default: x-mse-consumer
         enable_path_suffixes:
           type: array
           title: 生效路径后缀
           x-title-i18n:
             en-US: Enabled Path Suffixes
-          description: 插件生效的 AI 请求路径后缀
+          description: 规则级 AI 请求路径后缀覆盖；未配置时继承全局配置
           x-description-i18n:
-            en-US: AI request path suffixes enabled for this plugin
+            en-US: Rule-level enabled AI path suffix override. Inherits the global config when omitted
           items:
             type: string
           default:
@@ -208,17 +208,11 @@ spec:
           title: 投递失败策略
           x-title-i18n:
             en-US: Failure Policy
-          description: 投递失败策略，当前支持 open
+          description: 规则级投递失败策略覆盖，当前支持 open；未配置时继承全局配置
           x-description-i18n:
-            en-US: Delivery failure policy. Currently supports open
+            en-US: Rule-level delivery failure policy override. Currently supports open and inherits the global config when omitted
           enum: [open]
           default: open
       example:
         quota_scope: route:qwen
         provider: dashscope
-        tenant_header: x-mse-tenant
-        consumer_header: x-mse-consumer
-        enable_path_suffixes:
-        - /v1/chat/completions
-        - /v1/messages
-        fail_policy: open
