@@ -35,8 +35,8 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Run focused `ai-billing` Go tests.
-- [ ] 6.2 Run relevant wrapper or matcher tests if parser integration behavior changes or is relied on directly.
-- [ ] 6.3 Run `openspec status --change support-ai-billing-global-config-and-rule-overrides` and resolve any artifact issues.
-- [ ] 6.4 Run `gitnexus_detect_changes()` before committing to verify affected symbols and execution flows match the intended scope.
-- [ ] 6.5 Run `graphify update .` after code changes to refresh the project graph.
+- [x] 6.1 Run focused `ai-billing` Go tests.
+- [x] 6.2 Run relevant wrapper or matcher tests if parser integration behavior changes or is relied on directly.
+- [x] 6.3 Run `openspec status --change support-ai-billing-global-config-and-rule-overrides` and resolve any artifact issues.
+- [x] 6.4 Run `gitnexus_detect_changes()` before committing to verify affected symbols and execution flows match the intended scope.
+- [x] 6.5 Run `graphify update .` after code changes to refresh the project graph.

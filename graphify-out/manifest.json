@@ -140,12 +140,12 @@
     "hash": "b5aa23e12709e8ace42ef458177041b4"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/main.go": {
-    "mtime": 1780395446.5584152,
-    "hash": "1c677a0b200f69078e0c6e84b2620170"
+    "mtime": 1780481123.3773355,
+    "hash": "d13c08d5a7a484b6e6b8ebfadafad657"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/main_test.go": {
-    "mtime": 1780395469.0832658,
-    "hash": "4ad17715b2947d358ecc23aced561831"
+    "mtime": 1780481467.1363933,
+    "hash": "473780f6c47516141dcc7bd293144f1f"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-statistics/main.go": {
     "mtime": 1779087486.442425,
@@ -168,12 +168,12 @@
     "hash": "d07161712e052a25e67a858bc03c278a"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/AGENTS.md": {
-    "mtime": 1780063819.1154675,
-    "hash": "917d704414567b3e134e61e855026032"
+    "mtime": 1780481928.3319924,
+    "hash": "4e2f6f89cf8916f81df349eb2b074ca0"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/CLAUDE.md": {
-    "mtime": 1780063819.1154675,
-    "hash": "9bb0b9903087aa5b9fac285309aace0a"
+    "mtime": 1780481928.3319924,
+    "hash": "fd217d6182486bc3b7d9b73a81a596a8"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/examples/http-call/README.md": {
     "mtime": 1778636908.7349434,
@@ -424,12 +424,12 @@
     "hash": "24c3d483c81a72883ad185cefc355e4f"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/README.md": {
-    "mtime": 1780240550.5409536,
-    "hash": "c3cd53e51389b6528e2acb1496853974"
+    "mtime": 1780481676.3533418,
+    "hash": "29f3b7e71784552d9fa8b2b0703f8fb9"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/README_EN.md": {
-    "mtime": 1780240550.5409536,
-    "hash": "c52b87df31d3158dd895af83c08414f1"
+    "mtime": 1780481707.5946686,
+    "hash": "73a23f0035e6bd9a3846d8b3ab0e4353"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/extensions/ai-billing/plugin.yaml": {
     "mtime": 1779884734.026458,
@@ -563,6 +563,26 @@
     "mtime": 1779874569.4812384,
     "hash": "de080ad6c1019fbc8500cece64be5a0c"
   },
+  "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/openspec/changes/support-ai-billing-global-config-and-rule-overrides/proposal.md": {
+    "mtime": 1780479510.9269216,
+    "hash": "695d8e5c0563de874017dc186da6cbdd"
+  },
+  "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/openspec/changes/support-ai-billing-global-config-and-rule-overrides/design.md": {
+    "mtime": 1780479589.5393367,
+    "hash": "e789d08cbbbdbcb735288f5290cbd094"
+  },
+  "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/openspec/changes/support-ai-billing-global-config-and-rule-overrides/tasks.md": {
+    "mtime": 1780481905.2430208,
+    "hash": "224b10df18ec5193da119d29bc2bc4d3"
+  },
+  "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/openspec/changes/support-ai-billing-global-config-and-rule-overrides/specs/ai-billing-events/spec.md": {
+    "mtime": 1780479589.5393367,
+    "hash": "0069c612bb8efb253476a18c3a53f4ce"
+  },
+  "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/openspec/changes/support-ai-billing-global-config-and-rule-overrides/specs/ai-plugin-resource-docs/spec.md": {
+    "mtime": 1780479589.5393367,
+    "hash": "3c8a84179038b6f52f5dae58f724fa26"
+  },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/openspec/specs/ai-billing-events/spec.md": {
     "mtime": 1779537997.206263,
     "hash": "23d51b14e07668e2d9810a9bdee19796"
@@ -576,16 +596,16 @@
     "hash": "0dbff8986a57893abd0fc7c62f9b07ed"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/resources/plugins/ai-billing/README.md": {
-    "mtime": 1779540079.3490512,
-    "hash": "1826017dbad760d3c7796e201ac5d011"
+    "mtime": 1780481720.5472183,
+    "hash": "9f91745741263e8bdf44c99d1e1c8827"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/resources/plugins/ai-billing/README_EN.md": {
-    "mtime": 1779540079.3490512,
-    "hash": "985e39df7bb9add179a79d32f0abe264"
+    "mtime": 1780481735.6358578,
+    "hash": "264e1e37861d1f2093000aa0cbec8e49"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/resources/plugins/ai-billing/spec.yaml": {
-    "mtime": 1779884912.0115795,
-    "hash": "2aeab460664139a1d619be3303444a0e"
+    "mtime": 1780481777.5536327,
+    "hash": "55a281ab8d9dffa9d20060dc03db546c"
   },
   "/home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/resources/plugins/ai-quota/README.md": {
     "mtime": 1779537997.206263,
