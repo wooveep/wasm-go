@@ -1,49 +1,134 @@
 # ai-billing-events Specification
 
 ## Purpose
-TBD - created by archiving change add-ai-billing-monetary-quota. Update Purpose after archive.
+Define the `ai-billing` extension behavior for request-level AI billing events, billing-service delivery, identity propagation, and configuration inheritance across global defaults and route rules.
 ## Requirements
 ### Requirement: Billing plugin configuration
 
-`ai-billing` SHALL support configuration for `billing_service`, `quota_scope`, `provider`, `tenant_header`, `consumer_header`, `enable_path_suffixes`, and `fail_policy`.
+`ai-billing` SHALL support configuration for `billing_service`, `quota_scope`, `provider`, `tenant_header`, `consumer_header`, `enable_path_suffixes`, and `fail_policy`. `billing_service` SHALL include `service_name`, `service_port`, `path`, `timeout`, and `auth_token`. `ai-billing` SHALL parse global config as a complete default config and SHALL parse matched rule config as an override of that global config.
 
 #### Scenario: Billing service target is configured
 
-- **WHEN** `ai-billing` is configured with `billing_service.service_name`, `billing_service.service_port`, `billing_service.path`, and `billing_service.timeout`
-- **THEN** the plugin SHALL create HTTP callouts to the configured billing-service endpoint using the configured timeout
+- **WHEN** `ai-billing` global config is configured with `billing_service.service_name`, `billing_service.service_port`, `billing_service.path`, `billing_service.timeout`, and `billing_service.auth_token`
+- **THEN** the plugin SHALL create HTTP callouts to the configured billing-service endpoint using the configured timeout and SHALL retain the configured auth token for callout authorization
 
 #### Scenario: Default fail policy is open
 
-- **WHEN** `fail_policy` is omitted
+- **WHEN** `fail_policy` is omitted from global config
 - **THEN** `ai-billing` SHALL use `open` as the fail policy
+
+#### Scenario: Default consumer header is configured
+
+- **WHEN** `consumer_header` is omitted
+- **THEN** `ai-billing` SHALL use `x-mse-consumer` as the consumer header
+
+#### Scenario: Rule config inherits billing service
+
+- **WHEN** global config includes `billing_service` and a matching rule config omits `billing_service`
+- **THEN** `ai-billing` SHALL initialize successfully and the matched rule SHALL use the inherited billing-service endpoint
+
+#### Scenario: Rule config overrides provider
+
+- **WHEN** global config defines a default `provider` and a matching rule config defines a different `provider`
+- **THEN** `ai-billing` SHALL use the rule-level provider for requests matched by that rule
+
+#### Scenario: Rule config overrides quota scope
+
+- **WHEN** global config defines a default `quota_scope` and a matching rule config defines a different `quota_scope`
+- **THEN** `ai-billing` SHALL use the rule-level quota scope for requests matched by that rule
+
+#### Scenario: Rule config overrides path suffixes and fail policy
+
+- **WHEN** global config defines `enable_path_suffixes` and `fail_policy`, and a matching rule config explicitly defines either field
+- **THEN** `ai-billing` SHALL use the rule-level value for the matched request and SHALL inherit omitted fields from global config
+
+#### Scenario: Full rule config remains valid
+
+- **WHEN** a matching rule config provides a complete config including `billing_service`
+- **THEN** `ai-billing` SHALL parse the rule config successfully and use the rule-level billing-service endpoint and rule-level fields
+
+#### Scenario: Global billing service is required
+
+- **WHEN** global config omits `billing_service`
+- **THEN** `ai-billing` SHALL fail plugin initialization with a clear missing `billing_service` error
 
 ### Requirement: Billing events are generated per completed AI request
 
-`ai-billing` SHALL generate a request-level billing event for enabled AI requests after response completion.
+`ai-billing` SHALL generate a request-level billing event for enabled AI requests after response completion. The plugin SHALL generate an `event_id` at request start, store it in request context, and reuse it when building the response-completion event. The event `idempotency_key` SHALL default to the same value as `event_id`.
 
-#### Scenario: Successful event includes request facts
+#### Scenario: Successful event includes implemented request facts
 
-- **WHEN** an enabled AI request completes and identity headers are present
-- **THEN** `ai-billing` SHALL build an event containing request ID, idempotency key, tenant, consumer, quota scope, provider, model, route, cluster, request path, status code, start time, end time, stream flag, token usage fields, usage-missing flag, optional price version, and optional gateway-calculated cost
+- **WHEN** an enabled AI request completes and `X-Mse-Consumer` or the configured consumer header is present
+- **THEN** `ai-billing` SHALL build an event containing `event_id`, `idempotency_key`, `request_id`, `tenant`, `consumer`, `quota_scope`, `route`, `provider`, `model`, `request_path`, `status_code`, `usage`, `usage_missing`, `start_time_ms`, `end_time_ms`, `is_stream`, `cluster`, and optional `price_version`
+- **AND** `consumer` SHALL equal the configured consumer header value
+- **AND** `request_id` SHALL be read from `x-request-id` or the Higress `x_request_id` property and used only for trace correlation
+- **AND** the event SHALL NOT include raw API-key values, `tenant_id`, `user_id`, `api_key_id`, or `consumer_id` UUID fields
+
+#### Scenario: Event identity is generated by the billing plugin
+
+- **WHEN** an enabled AI request starts
+- **THEN** `ai-billing` SHALL generate a new event identity, store it for response completion, and default `idempotency_key` to that event identity
+
+#### Scenario: Each AI request gets a new event identity
+
+- **WHEN** two enabled AI requests are processed
+- **THEN** `ai-billing` SHALL generate a different `event_id` for each request
+- **AND** each `idempotency_key` SHALL equal that request's `event_id` by default
+
+#### Scenario: Retry reuses idempotency key
+
+- **WHEN** `ai-billing` retries delivery for the same billing event
+- **THEN** every retry attempt SHALL reuse the original `idempotency_key`
+
+#### Scenario: Consumer is sourced from configured consumer header
+
+- **WHEN** an enabled AI request includes the configured consumer header
+- **THEN** `ai-billing` SHALL set event `consumer` to that header value
+
+#### Scenario: Rule-level provider is emitted
+
+- **WHEN** two different match rules configure different `provider` values and each rule handles an enabled AI request
+- **THEN** each generated billing event SHALL contain the provider resolved from the matched rule
+
+#### Scenario: Rule-level quota scope is emitted
+
+- **WHEN** a matching rule config overrides `quota_scope` for an enabled AI request
+- **THEN** the generated billing event SHALL contain the rule-level quota scope
+
+#### Scenario: Non-emitted cost fields are excluded
+
+- **WHEN** `ai-billing` serializes a billing event
+- **THEN** the event SHALL NOT contain top-level `input_tokens`, top-level `output_tokens`, top-level `total_tokens`, or `gateway_calculated_cost`
+
+#### Scenario: Usage is structured
+
+- **WHEN** an enabled AI request completes with usable token usage
+- **THEN** `ai-billing` SHALL emit `usage.unit` as `token`, numeric `usage.input`, `usage.output`, `usage.total`, and object `usage.details`
+- **AND** `usage_missing` SHALL be `false`
 
 #### Scenario: Usage is missing
 
 - **WHEN** an enabled AI request completes without usable token usage
-- **THEN** `ai-billing` SHALL emit an event with `usage_missing` set to `true` and token counts set to `0` or omitted
+- **THEN** `ai-billing` SHALL emit an event with `usage_missing` set to `true`, `usage.unit` set to `token`, zero token counts, and empty `usage.details`
 
 ### Requirement: Billing event delivery is fail-open by default
 
 `ai-billing` SHALL NOT block the user response when event delivery fails and `fail_policy` is `open`.
 
-#### Scenario: Billing service timeout
+#### Scenario: Billing service timeout or dispatch failure
 
-- **WHEN** the billing-service callout times out and `fail_policy` is `open`
+- **WHEN** the billing-service callout times out or dispatch fails and `fail_policy` is `open`
 - **THEN** `ai-billing` SHALL allow the user response to complete and SHALL record the delivery failure
 
-#### Scenario: Billing service returns server error
+#### Scenario: Billing service returns delivery failure status
 
-- **WHEN** billing-service returns a 5xx response and `fail_policy` is `open`
+- **WHEN** billing-service returns 401, 403, 408, 429, or any 5xx response and `fail_policy` is `open`
 - **THEN** `ai-billing` SHALL allow the user response to complete and SHALL record the delivery failure
+
+#### Scenario: Billing service returns accepted status
+
+- **WHEN** billing-service returns a status that is not classified as a delivery failure
+- **THEN** `ai-billing` SHALL record the delivery as accepted
 
 ### Requirement: Billing plugin does not mutate account balance
 
@@ -68,3 +153,36 @@ TBD - created by archiving change add-ai-billing-monetary-quota. Update Purpose 
 - **WHEN** `ai-statistics` is not enabled for a route
 - **THEN** `ai-billing` SHALL still generate and deliver billing events for enabled AI requests
 
+### Requirement: Billing plugin does not expose secrets or raw credentials
+
+`ai-billing` SHALL NOT log `billing_service.auth_token` or raw API-key values. Documentation examples SHALL use placeholders for `billing_service.auth_token`.
+
+#### Scenario: Auth token is configured
+
+- **WHEN** `ai-billing` logs configuration, request handling, delivery success, or delivery failure information
+- **THEN** the log output SHALL NOT contain the configured `billing_service.auth_token`
+
+#### Scenario: Request contains raw API key
+
+- **WHEN** an enabled AI request contains a raw API-key header
+- **THEN** `ai-billing` SHALL NOT include the raw API-key value in the billing event payload
+- **AND** `ai-billing` SHALL NOT write the raw API-key value to plugin logs
+
+#### Scenario: Documentation shows auth token configuration
+
+- **WHEN** `ai-billing` documentation or examples show `billing_service.auth_token`
+- **THEN** the example value SHALL be a placeholder and SHALL NOT be a real shared secret
+
+### Requirement: Billing event callouts are authenticated
+
+`ai-billing` SHALL authenticate billing-service HTTP callouts with the configured shared secret.
+
+#### Scenario: Billing event callout includes Bearer token
+
+- **WHEN** `billing_service.auth_token` is configured and an enabled AI request completes
+- **THEN** the billing-service HTTP callout SHALL include `Authorization: Bearer <billing_service.auth_token>` and `content-type: application/json`
+
+#### Scenario: Documentation examples do not expose secrets
+
+- **WHEN** `ai-billing` examples document `billing_service.auth_token`
+- **THEN** they SHALL use a placeholder such as `<shared-secret>` rather than a real token

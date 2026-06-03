@@ -1,7 +1,7 @@
 # ai-monetary-quota Specification
 
 ## Purpose
-TBD - created by archiving change add-ai-billing-monetary-quota. Update Purpose after archive.
+Define monetary quota enforcement for `ai-quota`, including Redis-backed request admission, post-response cost deduction, missing-data policies, and ownership boundaries with billing-service.
 ## Requirements
 ### Requirement: Monetary quota configuration
 
@@ -91,4 +91,3 @@ TBD - created by archiving change add-ai-billing-monetary-quota. Update Purpose 
 
 - **WHEN** `ai-statistics` is not enabled for a route
 - **THEN** `ai-quota` SHALL still perform admission and eligible post-response deduction using its own invocation of `pkg/tokenusage`
-
