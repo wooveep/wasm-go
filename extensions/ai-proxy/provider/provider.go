@@ -1236,6 +1236,14 @@ func (c *ProviderConfig) handleRequestBody(
 		}
 		log.Debugf("[Auto Protocol] converted Claude request body to OpenAI format")
 	}
+	needResponsesConversion, _ := ctx.GetContext(CtxKeyNeedResponsesResponseConversion).(bool)
+	if needResponsesConversion {
+		body, err = convertResponsesRequestToChatCompletion(body)
+		if err != nil {
+			return types.ActionContinue, fmt.Errorf("failed to convert responses request to chat completions: %v", err)
+		}
+		log.Debugf("[Auto Protocol] converted Responses request body to Chat Completions format")
+	}
 
 	// handle context cleanup command for chat completion requests
 	if apiName == ApiNameChatCompletion && len(c.contextCleanupCommands) > 0 {

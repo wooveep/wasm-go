@@ -20,7 +20,7 @@
 - [x] 3.5 Map common generation fields, including `stream`, `temperature`, `top_p`, `presence_penalty`, `frequency_penalty`, and `max_output_tokens`.
 - [x] 3.6 Map safe Responses function tools and compatible `tool_choice` values to Chat Completions fields.
 - [x] 3.7 Reject or document unsupported fallback fields, including `previous_response_id`, `conversation`, hosted tools, and unmappable file or multimodal inputs.
-- [ ] 3.8 Integrate request conversion before existing provider-specific Chat Completions request transformation so model mapping and provider conversion remain reused.
+- [x] 3.8 Integrate request conversion before existing provider-specific Chat Completions request transformation so model mapping and provider conversion remain reused.
 
 ## 4. Responses Object Conversion
 

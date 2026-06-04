@@ -77,6 +77,9 @@ func convertResponsesRequestToChatCompletion(body []byte) ([]byte, error) {
 		ToolChoice: nil,
 		Tools:      nil,
 	}
+	if request.Stream {
+		chatRequest.StreamOptions = &streamOptions{IncludeUsage: true}
+	}
 	if request.Temperature != nil {
 		chatRequest.Temperature = *request.Temperature
 	}
