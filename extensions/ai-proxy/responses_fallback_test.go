@@ -120,6 +120,54 @@ func TestResponsesFallbackRequestBodyConvertsToChatCompletions(t *testing.T) {
 	})
 }
 
+func TestResponsesFallbackResponseBodyConvertsToResponses(t *testing.T) {
+	wasmhost.RunTest(t, func(t *testing.T) {
+		host, status := wasmhost.NewTestHost(responsesFallbackOpenRouterConfig)
+		defer host.Reset()
+		require.Equal(t, types.OnPluginStartStatusOK, status)
+
+		action := host.CallOnHttpRequestHeaders([][2]string{
+			{":authority", "example.com"},
+			{":path", "/v1/responses"},
+			{":method", "POST"},
+			{"Content-Type", "application/json"},
+		})
+		require.Equal(t, types.HeaderStopIteration, action)
+
+		action = host.CallOnHttpRequestBody([]byte(`{"model":"openai/gpt-4o-mini","input":"hello"}`))
+		require.Equal(t, types.ActionContinue, action)
+
+		require.NoError(t, host.SetProperty([]string{"response", "code_details"}, []byte("via_upstream")))
+		action = host.CallOnHttpResponseHeaders([][2]string{
+			{":status", "200"},
+			{"Content-Type", "application/json"},
+		})
+		require.Equal(t, types.ActionContinue, action)
+
+		action = host.CallOnHttpResponseBody([]byte(`{
+			"id":"chatcmpl_1",
+			"object":"chat.completion",
+			"created":123,
+			"model":"openai/gpt-4o-mini",
+			"choices":[{
+				"index":0,
+				"message":{"role":"assistant","content":"hello"},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}
+		}`))
+		require.Equal(t, types.ActionContinue, action)
+
+		body := host.GetResponseBody()
+		require.Equal(t, "response", gjson.GetBytes(body, "object").String(), string(body))
+		require.Equal(t, "completed", gjson.GetBytes(body, "status").String())
+		require.Equal(t, "output_text", gjson.GetBytes(body, "output.0.content.0.type").String())
+		require.Equal(t, "hello", gjson.GetBytes(body, "output.0.content.0.text").String())
+		require.Equal(t, int64(11), gjson.GetBytes(body, "usage.input_tokens").Int())
+		require.False(t, gjson.GetBytes(body, "choices").Exists(), string(body))
+	})
+}
+
 func TestResponsesUnsupportedProviderDoesNotFallbackToUnrelatedAPI(t *testing.T) {
 	wasmhost.RunTest(t, func(t *testing.T) {
 		host, status := wasmhost.NewTestHost(responsesUnsupportedKlingConfig)

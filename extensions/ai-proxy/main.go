@@ -423,8 +423,9 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, pluginConfig config.PluginCo
 
 	// Check if we need to read body for Claude response conversion
 	needClaudeConversion, _ := ctx.GetContext("needClaudeResponseConversion").(bool)
+	needResponsesConversion := needsResponsesResponseConversion(ctx)
 
-	if !needHandleBody && !needHandleStreamingBody && !needClaudeConversion {
+	if !needHandleBody && !needHandleStreamingBody && !needClaudeConversion && !needResponsesConversion {
 		ctx.DontReadResponseBody()
 	} else {
 		checkStream(ctx)
@@ -588,6 +589,12 @@ func onHttpResponseBody(ctx wrapper.HttpContext, pluginConfig config.PluginConfi
 		return types.ActionContinue
 	}
 
+	convertedBody, err = convertResponseBodyToResponses(ctx, convertedBody)
+	if err != nil {
+		_ = util.ErrorHandler("ai-proxy.convert_resp_to_responses_failed", err)
+		return types.ActionContinue
+	}
+
 	if err = provider.ReplaceResponseBody(convertedBody); err != nil {
 		_ = util.ErrorHandler("ai-proxy.replace_resp_body_failed", fmt.Errorf("failed to replace response body: %v", err))
 	}
@@ -733,6 +740,18 @@ func convertResponseBodyToClaude(ctx wrapper.HttpContext, body []byte) ([]byte, 
 	convertedBody, err := converter.ConvertOpenAIResponseToClaude(ctx, body)
 	if err != nil {
 		return body, fmt.Errorf("failed to convert response to claude format: %v", err)
+	}
+	return convertedBody, nil
+}
+
+func convertResponseBodyToResponses(ctx wrapper.HttpContext, body []byte) ([]byte, error) {
+	if !needsResponsesResponseConversion(ctx) {
+		return body, nil
+	}
+
+	convertedBody, err := provider.ConvertChatCompletionResponseToResponses(body)
+	if err != nil {
+		return body, fmt.Errorf("failed to convert response to Responses format: %v", err)
 	}
 	return convertedBody, nil
 }

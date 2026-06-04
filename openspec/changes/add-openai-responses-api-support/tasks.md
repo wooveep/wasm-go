@@ -24,12 +24,12 @@
 
 ## 4. Responses Object Conversion
 
-- [ ] 4.1 Add Responses response model structs or builders for fallback non-streaming responses.
-- [ ] 4.2 Convert Chat Completions `choices[0].message.content` into Responses `output[].content[]` with `type: "output_text"`.
-- [ ] 4.3 Convert Chat Completions `choices[0].message.refusal` into Responses refusal content.
-- [ ] 4.4 Map Chat Completions usage tokens into Responses input, output, and total token usage.
-- [ ] 4.5 Preserve response id, model, created timestamp, finish status, and error information where Responses has equivalent fields.
-- [ ] 4.6 Integrate non-streaming conversion after provider response transformation and bypass it for native Responses providers.
+- [x] 4.1 Add Responses response model structs or builders for fallback non-streaming responses.
+- [x] 4.2 Convert Chat Completions `choices[0].message.content` into Responses `output[].content[]` with `type: "output_text"`.
+- [x] 4.3 Convert Chat Completions `choices[0].message.refusal` into Responses refusal content.
+- [x] 4.4 Map Chat Completions usage tokens into Responses input, output, and total token usage.
+- [x] 4.5 Preserve response id, model, created timestamp, finish status, and error information where Responses has equivalent fields.
+- [x] 4.6 Integrate non-streaming conversion after provider response transformation and bypass it for native Responses providers.
 
 ## 5. Responses Streaming Conversion
 

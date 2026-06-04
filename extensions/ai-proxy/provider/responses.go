@@ -44,6 +44,49 @@ type responsesContentPart struct {
 	Text string `json:"text,omitempty"`
 }
 
+type responsesResponse struct {
+	ID                string                   `json:"id,omitempty"`
+	Object            string                   `json:"object"`
+	CreatedAt         int64                    `json:"created_at,omitempty"`
+	Status            string                   `json:"status"`
+	Model             string                   `json:"model,omitempty"`
+	Output            []responsesOutputMessage `json:"output,omitempty"`
+	Usage             *responsesUsage          `json:"usage,omitempty"`
+	Error             json.RawMessage          `json:"error,omitempty"`
+	IncompleteDetails *responsesIncomplete     `json:"incomplete_details,omitempty"`
+}
+
+type responsesOutputMessage struct {
+	Type    string                   `json:"type"`
+	Role    string                   `json:"role"`
+	Content []responsesOutputContent `json:"content"`
+}
+
+type responsesOutputContent struct {
+	Type    string `json:"type"`
+	Text    string `json:"text,omitempty"`
+	Refusal string `json:"refusal,omitempty"`
+}
+
+type responsesUsage struct {
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
+	TotalTokens  int `json:"total_tokens,omitempty"`
+}
+
+type responsesIncomplete struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type chatCompletionResponseEnvelope struct {
+	ID      string                 `json:"id,omitempty"`
+	Choices []chatCompletionChoice `json:"choices"`
+	Created int64                  `json:"created,omitempty"`
+	Model   string                 `json:"model,omitempty"`
+	Error   json.RawMessage        `json:"error,omitempty"`
+	Usage   *usage                 `json:"usage,omitempty"`
+}
+
 func convertResponsesRequestToChatCompletion(body []byte) ([]byte, error) {
 	if gjson.GetBytes(body, "previous_response_id").Exists() {
 		return nil, errors.New("previous_response_id is unsupported in Responses fallback mode")
@@ -217,8 +260,103 @@ func convertResponsesToolChoice(raw json.RawMessage) (interface{}, error) {
 	}
 }
 
+func ConvertChatCompletionResponseToResponses(body []byte) ([]byte, error) {
+	return convertChatCompletionResponseToResponses(body)
+}
+
 func convertChatCompletionResponseToResponses(body []byte) ([]byte, error) {
-	return nil, errors.New("chat completions to responses conversion is not implemented")
+	var chatResponse chatCompletionResponseEnvelope
+	if err := json.Unmarshal(body, &chatResponse); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal chat completions response: %w", err)
+	}
+
+	response := responsesResponse{
+		ID:        chatResponse.ID,
+		Object:    "response",
+		CreatedAt: chatResponse.Created,
+		Status:    "completed",
+		Model:     chatResponse.Model,
+		Usage:     convertChatCompletionUsageToResponsesUsage(chatResponse.Usage),
+	}
+
+	if len(bytes.TrimSpace(chatResponse.Error)) > 0 && !bytes.Equal(bytes.TrimSpace(chatResponse.Error), []byte("null")) {
+		response.Status = "failed"
+		response.Error = chatResponse.Error
+		return json.Marshal(response)
+	}
+
+	if len(chatResponse.Choices) == 0 || chatResponse.Choices[0].Message == nil {
+		return nil, errors.New("chat completions response has no assistant message")
+	}
+
+	choice := chatResponse.Choices[0]
+	if choice.FinishReason != nil {
+		applyResponsesFinishStatus(&response, *choice.FinishReason)
+	}
+
+	output := convertChatCompletionMessageToResponsesOutput(choice.Message)
+	if len(output.Content) > 0 {
+		response.Output = []responsesOutputMessage{output}
+	}
+	return json.Marshal(response)
+}
+
+func convertChatCompletionUsageToResponsesUsage(chatUsage *usage) *responsesUsage {
+	if chatUsage == nil {
+		return nil
+	}
+	return &responsesUsage{
+		InputTokens:  chatUsage.PromptTokens,
+		OutputTokens: chatUsage.CompletionTokens,
+		TotalTokens:  chatUsage.TotalTokens,
+	}
+}
+
+func applyResponsesFinishStatus(response *responsesResponse, finishReason string) {
+	switch finishReason {
+	case "length":
+		response.Status = "incomplete"
+		response.IncompleteDetails = &responsesIncomplete{Reason: "max_output_tokens"}
+	case "content_filter":
+		response.Status = "incomplete"
+		response.IncompleteDetails = &responsesIncomplete{Reason: "content_filter"}
+	default:
+		response.Status = "completed"
+	}
+}
+
+func convertChatCompletionMessageToResponsesOutput(message *chatMessage) responsesOutputMessage {
+	output := responsesOutputMessage{
+		Type:    "message",
+		Role:    roleAssistant,
+		Content: make([]responsesOutputContent, 0, 1),
+	}
+	if message.Role != "" {
+		output.Role = message.Role
+	}
+	if message.Refusal != "" {
+		output.Content = append(output.Content, responsesOutputContent{
+			Type:    "refusal",
+			Refusal: message.Refusal,
+		})
+		return output
+	}
+	if text, ok := chatCompletionContentText(message.Content); ok {
+		output.Content = append(output.Content, responsesOutputContent{
+			Type: "output_text",
+			Text: text,
+		})
+	}
+	return output
+}
+
+func chatCompletionContentText(content any) (string, bool) {
+	switch value := content.(type) {
+	case string:
+		return value, true
+	default:
+		return "", false
+	}
 }
 
 type chatCompletionToResponsesStreamConverter struct{}
