@@ -13,7 +13,7 @@
 
 ## 3. Responses Request Conversion
 
-- [ ] 3.1 Add Responses request model structs or parsing helpers for the supported fallback subset.
+- [x] 3.1 Add Responses request model structs or parsing helpers for the supported fallback subset.
 - [ ] 3.2 Convert string `input` into one Chat Completions user message.
 - [ ] 3.3 Convert supported Responses message-array `input` items into Chat Completions `messages`.
 - [ ] 3.4 Convert `instructions` into leading system or developer-level Chat Completions messages.
