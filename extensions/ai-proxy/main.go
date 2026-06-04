@@ -266,6 +266,8 @@ func onHttpRequestHeader(ctx wrapper.HttpContext, pluginConfig config.PluginConf
 			apiName = provider.ApiNameChatCompletion
 			ctx.SetContext(provider.CtxKeyNeedResponsesResponseConversion, true)
 			log.Debugf("[Auto Protocol] Responses request detected, provider doesn't support natively, converted path from %s to %s, apiName: %s", path.Path, newPath, apiName)
+		} else if apiName == provider.ApiNameResponses && !providerConfig.IsSupportedAPI(provider.ApiNameResponses) && !providerConfig.IsSupportedAPI(provider.ApiNameChatCompletion) {
+			log.Warnf("[Auto Protocol] Responses request detected, provider supports neither Responses nor Chat Completions, keeping original path for unsupported API handling: %s, apiName: %s", path.Path, apiName)
 		} else if apiName == provider.ApiNameResponses {
 			log.Debugf("[Auto Protocol] Responses request detected, provider supports natively or lacks chat fallback, keeping original path: %s, apiName: %s", path.Path, apiName)
 		}
