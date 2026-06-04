@@ -6,7 +6,7 @@
 
 ## 2. Routing and Context Markers
 
-- [ ] 2.1 Add or refine shared context keys for Responses fallback conversion without interfering with the existing Claude response conversion marker.
+- [x] 2.1 Add or refine shared context keys for Responses fallback conversion without interfering with the existing Claude response conversion marker.
 - [ ] 2.2 Update non-original protocol routing so `ApiNameResponses` keeps native routing when `openai/v1/responses` is supported by the active provider.
 - [ ] 2.3 Update non-original protocol routing so `ApiNameResponses` falls back to `ApiNameChatCompletion` and `/v1/chat/completions` when only Chat Completions is supported.
 - [ ] 2.4 Add explicit unsupported handling when the active provider supports neither Responses nor Chat Completions text generation.
