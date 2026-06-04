@@ -1,7 +1,7 @@
 ## 1. Safety and Baseline
 
 - [x] 1.1 Run GitNexus impact analysis for each source symbol that will be edited, including request routing, request body handling, response body handling, streaming handling, and provider conversion helpers.
-- [ ] 1.2 Confirm the current `/v1/responses` native-path behavior and existing provider capability defaults with focused tests or test fixtures before changing implementation.
+- [x] 1.2 Confirm the current `/v1/responses` native-path behavior and existing provider capability defaults with focused tests or test fixtures before changing implementation.
 - [ ] 1.3 Add failing tests for native Responses routing, fallback routing, unsupported provider behavior, request conversion, response conversion, streaming conversion, and existing `/v1/messages` and `/v1/chat/completions` regressions.
 
 ## 2. Routing and Context Markers
