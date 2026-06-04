@@ -260,6 +260,14 @@ func onHttpRequestHeader(ctx wrapper.HttpContext, pluginConfig config.PluginConf
 		} else if apiName == provider.ApiNameAnthropicMessages {
 			// Provider supports Claude protocol natively, no conversion needed
 			log.Debugf("[Auto Protocol] Claude request detected, provider supports natively, keeping original path: %s, apiName: %s", path.Path, apiName)
+		} else if apiName == provider.ApiNameResponses && !providerConfig.IsSupportedAPI(provider.ApiNameResponses) && providerConfig.IsSupportedAPI(provider.ApiNameChatCompletion) {
+			newPath := strings.Replace(path.Path, provider.PathOpenAIResponses, provider.PathOpenAIChatCompletions, 1)
+			_ = proxywasm.ReplaceHttpRequestHeader(":path", newPath)
+			apiName = provider.ApiNameChatCompletion
+			ctx.SetContext(provider.CtxKeyNeedResponsesResponseConversion, true)
+			log.Debugf("[Auto Protocol] Responses request detected, provider doesn't support natively, converted path from %s to %s, apiName: %s", path.Path, newPath, apiName)
+		} else if apiName == provider.ApiNameResponses {
+			log.Debugf("[Auto Protocol] Responses request detected, provider supports natively or lacks chat fallback, keeping original path: %s, apiName: %s", path.Path, apiName)
 		}
 	}
 

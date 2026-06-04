@@ -92,6 +92,22 @@ func TestResponsesFallbackRoutingUsesChatCompletions(t *testing.T) {
 		pathValue, hasPath := wasmhost.GetHeaderValue(host.GetRequestHeaders(), ":path")
 		require.True(t, hasPath)
 		require.Equal(t, "/api/v1/chat/completions", pathValue)
+	})
+}
+
+func TestResponsesFallbackRequestBodyConvertsToChatCompletions(t *testing.T) {
+	wasmhost.RunTest(t, func(t *testing.T) {
+		host, status := wasmhost.NewTestHost(responsesFallbackOpenRouterConfig)
+		defer host.Reset()
+		require.Equal(t, types.OnPluginStartStatusOK, status)
+
+		action := host.CallOnHttpRequestHeaders([][2]string{
+			{":authority", "example.com"},
+			{":path", "/v1/responses"},
+			{":method", "POST"},
+			{"Content-Type", "application/json"},
+		})
+		require.Equal(t, types.HeaderStopIteration, action)
 
 		action = host.CallOnHttpRequestBody([]byte(`{"model":"openai/gpt-4o-mini","input":"hello","max_output_tokens":32}`))
 		require.Equal(t, types.ActionContinue, action)
