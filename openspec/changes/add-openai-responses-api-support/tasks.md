@@ -47,8 +47,8 @@
 
 ## 7. Verification
 
-- [ ] 7.1 Run focused ai-proxy unit tests covering routing, request conversion, response conversion, streaming conversion, and regressions.
-- [ ] 7.2 Run the broader relevant Go test suite for `extensions/ai-proxy`.
-- [ ] 7.3 Run OpenSpec validation for `add-openai-responses-api-support`.
-- [ ] 7.4 Run `graphify update .` after implementation code changes.
-- [ ] 7.5 Run `gitnexus_detect_changes()` before committing and confirm affected symbols and flows match the expected ai-proxy scope.
+- [x] 7.1 Run focused ai-proxy unit tests covering routing, request conversion, response conversion, streaming conversion, and regressions.
+- [x] 7.2 Run the broader relevant Go test suite for `extensions/ai-proxy`.
+- [x] 7.3 Run OpenSpec validation for `add-openai-responses-api-support`.
+- [x] 7.4 Run `graphify update .` after implementation code changes.
+- [x] 7.5 Run `gitnexus_detect_changes()` before committing and confirm affected symbols and flows match the expected ai-proxy scope.
