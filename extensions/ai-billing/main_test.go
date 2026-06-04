@@ -764,6 +764,43 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("streaming cache usage maps explicit cache aware usage", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
+			action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":9,\"prompt_tokens_details\":{\"cached_tokens\":4},\"completion_tokens\":6,\"total_tokens\":15}}\n\n"), true)
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, true, event["is_stream"])
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 9, usage["input"])
+			require.EqualValues(t, 6, usage["output"])
+			require.EqualValues(t, 15, usage["total"])
+			require.EqualValues(t, 4, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 5, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 6, usage["output_tokens"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
 		t.Run("usage missing payload is still emitted", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -830,12 +867,58 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 5, usage["input"])
 			require.EqualValues(t, 8, usage["output"])
 			require.EqualValues(t, 13, usage["total"])
+			require.EqualValues(t, 2, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 3, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 8, usage["output_tokens"])
 			require.Equal(t, map[string]interface{}{
 				"input": map[string]interface{}{
 					"cached_tokens": float64(2),
 				},
 				"output": map[string]interface{}{
 					"reasoning_tokens": float64(3),
+				},
+			}, usage["details"])
+			require.Equal(t, false, event["usage_missing"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
+		t.Run("anthropic cache usage maps explicit cache aware usage", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/messages"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			host.CallOnHttpResponseBody([]byte(`{"message":{"model":"claude-3-5-sonnet","usage":{"input_tokens":10,"output_tokens":7}},"usage":{"cache_creation_input_tokens":4,"cache_read_input_tokens":3}}`))
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 17, usage["input"])
+			require.EqualValues(t, 7, usage["output"])
+			require.EqualValues(t, 24, usage["total"])
+			require.EqualValues(t, 3, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 14, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 7, usage["output_tokens"])
+			require.Equal(t, map[string]interface{}{
+				"input": map[string]interface{}{
+					"cache_creation_input_tokens": float64(4),
+					"cache_read_input_tokens":     float64(3),
 				},
 			}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])

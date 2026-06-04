@@ -48,6 +48,8 @@ const (
 	ctxInputToken     = "ai-billing-input-token"
 	ctxOutputToken    = "ai-billing-output-token"
 	ctxTotalToken     = "ai-billing-total-token"
+	ctxInputCacheHit  = "ai-billing-input-cache-hit-token"
+	ctxInputCacheMiss = "ai-billing-input-cache-miss-token"
 	ctxInputDetails   = "ai-billing-input-details"
 	ctxOutputDetails  = "ai-billing-output-details"
 	ctxModel          = "ai-billing-model"
@@ -112,11 +114,14 @@ type BillingFact struct {
 }
 
 type BillingUsage struct {
-	Unit    string         `json:"unit"`
-	Input   int64          `json:"input"`
-	Output  int64          `json:"output"`
-	Total   int64          `json:"total"`
-	Details map[string]any `json:"details"`
+	Unit                 string         `json:"unit"`
+	Input                int64          `json:"input"`
+	Output               int64          `json:"output"`
+	InputCacheHitTokens  *int64         `json:"input_cache_hit_tokens,omitempty"`
+	InputCacheMissTokens *int64         `json:"input_cache_miss_tokens,omitempty"`
+	OutputTokens         *int64         `json:"output_tokens,omitempty"`
+	Total                int64          `json:"total"`
+	Details              map[string]any `json:"details"`
 }
 
 func parseConfig(configJson gjson.Result, config *BillingConfig) error {
@@ -306,7 +311,13 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	if usage.TotalToken <= 0 {
 		return
 	}
-	ctx.SetContext(ctxInputToken, usage.InputToken)
+	inputTokens := usage.InputToken
+	if hitTokens, missTokens, ok := cacheAwareInputTokenSplit(usage.InputToken, usage.InputTokenDetails); ok {
+		inputTokens = hitTokens + missTokens
+		ctx.SetContext(ctxInputCacheHit, hitTokens)
+		ctx.SetContext(ctxInputCacheMiss, missTokens)
+	}
+	ctx.SetContext(ctxInputToken, inputTokens)
 	ctx.SetContext(ctxOutputToken, usage.OutputToken)
 	ctx.SetContext(ctxTotalToken, usage.TotalToken)
 	if len(usage.InputTokenDetails) > 0 {
@@ -349,6 +360,16 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	inputTokens := int64FromContext(ctx.GetContext(ctxInputToken))
 	outputTokens := int64FromContext(ctx.GetContext(ctxOutputToken))
 	totalTokens := int64FromContext(ctx.GetContext(ctxTotalToken))
+	var inputCacheHitTokens *int64
+	var inputCacheMissTokens *int64
+	var nativeOutputTokens *int64
+	if hitTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheHit)); ok {
+		if missTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheMiss)); ok {
+			inputCacheHitTokens = int64Ptr(hitTokens)
+			inputCacheMissTokens = int64Ptr(missTokens)
+			nativeOutputTokens = int64Ptr(outputTokens)
+		}
+	}
 	usageMissing := totalTokens <= 0
 	requestID := ctx.GetStringContext(ctxRequestID, "")
 	eventID := ctx.GetStringContext(ctxEventID, "")
@@ -366,11 +387,14 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		RequestPath:    ctx.GetStringContext(ctxRequestPath, ""),
 		StatusCode:     intDefault(intFromContext(ctx.GetContext(ctxStatusCode)), http.StatusBadGateway),
 		Usage: BillingUsage{
-			Unit:    "token",
-			Input:   inputTokens,
-			Output:  outputTokens,
-			Total:   totalTokens,
-			Details: billingUsageDetails(ctx),
+			Unit:                 "token",
+			Input:                inputTokens,
+			Output:               outputTokens,
+			InputCacheHitTokens:  inputCacheHitTokens,
+			InputCacheMissTokens: inputCacheMissTokens,
+			OutputTokens:         nativeOutputTokens,
+			Total:                totalTokens,
+			Details:              billingUsageDetails(ctx),
 		},
 		StartTimeMs:  int64FromContext(ctx.GetContext(ctxStartTime)),
 		EndTimeMs:    time.Now().UnixMilli(),
@@ -395,6 +419,41 @@ func billingUsageDetails(ctx wrapper.HttpContext) map[string]any {
 		details["output"] = outputDetails
 	}
 	return details
+}
+
+func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64) (int64, int64, bool) {
+	if len(inputDetails) == 0 {
+		return 0, 0, false
+	}
+	cacheCreationTokens, hasCacheCreation := inputDetails[tokenusage.InputTokenDetailsKeyAnthropicMessagesUsageCacheCreationInputTokens]
+	cacheReadTokens, hasCacheRead := inputDetails[tokenusage.InputTokenDetailsKeyAnthropicMessagesUsageCacheReadInputTokens]
+	if hasCacheCreation || hasCacheRead {
+		hitTokens := nonNegativeInt64(cacheReadTokens)
+		missTokens := nonNegativeInt64(inputTokens) + nonNegativeInt64(cacheCreationTokens)
+		return hitTokens, missTokens, true
+	}
+
+	cachedTokens := int64(0)
+	hasCachedTokens := false
+	for _, key := range []string{
+		"cached_tokens",
+		tokenusage.InputTokenDetailsKeyGeminiCachedContentTokenCount,
+	} {
+		value, ok := inputDetails[key]
+		if !ok {
+			continue
+		}
+		cachedTokens += nonNegativeInt64(value)
+		hasCachedTokens = true
+	}
+	if !hasCachedTokens {
+		return 0, 0, false
+	}
+	inputTokens = nonNegativeInt64(inputTokens)
+	if cachedTokens > inputTokens {
+		cachedTokens = inputTokens
+	}
+	return cachedTokens, inputTokens - cachedTokens, true
 }
 
 func tokenDetailsFromContext(value any) map[string]int64 {
@@ -499,6 +558,28 @@ func int64FromContext(value interface{}) int64 {
 	default:
 		return 0
 	}
+}
+
+func optionalInt64FromContext(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	default:
+		return 0, false
+	}
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
+}
+
+func nonNegativeInt64(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 func intFromContext(value interface{}) int {

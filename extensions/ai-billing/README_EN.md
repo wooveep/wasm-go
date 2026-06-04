@@ -8,7 +8,7 @@ description: Configuration reference for request-level AI billing event delivery
 
 `ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and sends it to Console's internal billing-service through an HTTP callout. The callout uses `billing_service.auth_token` to send `Authorization: Bearer <token>`. Delivery is fail-open by default: timeouts, network failures, and 5xx responses are logged but do not block the user response.
 
-The plugin does not deduct Redis balances or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
+The plugin does not calculate final authoritative costs, apply tenant discounts, apply override prices, deduct Redis balances, or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
 
 ## Example
 
@@ -37,6 +37,8 @@ matchRules:
 ```
 
 Events include `event_id`, `idempotency_key`, `request_id`, `tenant`, `consumer`, `quota_scope`, `route`, `provider`, `model`, `cluster`, request path, status code, timing, stream flag, `usage`, `usage_missing`, and optional price version.
+
+When provider usage exposes cache details, `usage` also includes `input_cache_hit_tokens`, `input_cache_miss_tokens`, and `output_tokens`. Legacy `usage.input`, `usage.output`, and `usage.total` stay present for compatibility.
 
 `route`, `provider`, and `model` use Console-native object facts: `{ "id"?: "...", "name"?: "..." }`. Gateways usually do not know Console UUIDs, so the plugin populates runtime `name` values by default.
 

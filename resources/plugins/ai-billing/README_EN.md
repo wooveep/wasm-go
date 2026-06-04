@@ -8,7 +8,7 @@ description: Configuration reference for request-level AI billing event delivery
 
 `ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and sends it to billing-service through an HTTP callout. The HTTP callout uses `billing_service.auth_token` to generate the `Authorization: Bearer <token>` header. Delivery is fail-open by default: timeouts, network failures, and delivery failure statuses are logged but do not block the user response.
 
-The plugin does not deduct Redis balances or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
+The plugin does not calculate final authoritative costs, apply tenant discounts, apply override prices, deduct Redis balances, or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
 
 `ai-billing`, `ai-quota`, and `ai-statistics` can be deployed independently.
 
@@ -34,7 +34,7 @@ Events include these fields:
 | `model` | Response model, or the unknown-model marker when absent |
 | `request_path` | Request path |
 | `status_code` | AI response status code |
-| `usage` | Structured token usage with `unit`, `input`, `output`, `total`, and `details` |
+| `usage` | Structured token usage with `unit`, `input`, `output`, `total`, `details`, and cache-aware `input_cache_hit_tokens`, `input_cache_miss_tokens`, `output_tokens` when provider usage exposes cache details |
 | `usage_missing` | Whether usable token usage could not be parsed |
 | `start_time_ms` / `end_time_ms` | Request start and event generation timestamps in milliseconds |
 | `is_stream` | Whether the response is streaming |
@@ -42,6 +42,8 @@ Events include these fields:
 | `price_version` | Optional price version from `x-ai-price-version` |
 
 Events do not emit top-level `input_tokens`, top-level `output_tokens`, top-level `total_tokens`, or `gateway_calculated_cost`. `tenant`, `consumer`, `provider`, and `quota_scope` are resolved from the config matched by the current request.
+
+Cache-aware token fields are nested inside `usage` as usage facts only. The plugin keeps legacy `usage.input`, `usage.output`, and `usage.total` for compatibility.
 
 ## Configuration
 

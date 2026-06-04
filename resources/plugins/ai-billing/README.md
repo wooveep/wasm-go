@@ -8,7 +8,7 @@ description: ai-billing 请求级账单事件插件配置参考
 
 `ai-billing` 在 AI 响应完成后独立解析 token usage 和 model，构造请求级 billing event，并通过 HTTP callout 上报给 billing-service。HTTP callout 使用 `billing_service.auth_token` 生成 `Authorization: Bearer <token>` 鉴权头。插件默认 fail-open：billing-service 超时、网络失败或返回投递失败状态时只记录日志，不阻塞用户响应。
 
-`ai-billing` 不扣减 Redis 余额，也不直接更新账户或数据库。幂等、结算、账单流水、余额投影和补偿由 billing-service 负责。
+`ai-billing` 不计算最终权威费用，不应用租户折扣或覆盖价格，不扣减 Redis 余额，也不直接更新账户或数据库。幂等、结算、账单流水、余额投影和补偿由 billing-service 负责。
 
 `ai-billing` 与 `ai-quota`、`ai-statistics` 相互独立，可以在另外两个插件关闭时单独上报 billing event。
 
@@ -34,7 +34,7 @@ description: ai-billing 请求级账单事件插件配置参考
 | `model` | 响应中的 model，缺失时使用未知模型标识 |
 | `request_path` | 请求路径 |
 | `status_code` | AI 响应状态码 |
-| `usage` | 结构化 token usage，包含 `unit`、`input`、`output`、`total`、`details` |
+| `usage` | 结构化 token usage，包含 `unit`、`input`、`output`、`total`、`details`，并在 provider usage 暴露 cache 详情时包含 `input_cache_hit_tokens`、`input_cache_miss_tokens`、`output_tokens` |
 | `usage_missing` | 是否未解析到可用 token usage |
 | `start_time_ms` / `end_time_ms` | 请求开始和事件生成时间，毫秒时间戳 |
 | `is_stream` | 是否流式响应 |
@@ -42,6 +42,8 @@ description: ai-billing 请求级账单事件插件配置参考
 | `price_version` | 可选价格版本，来自 `x-ai-price-version` |
 
 事件不会上报顶层 `input_tokens`、顶层 `output_tokens`、顶层 `total_tokens` 或 `gateway_calculated_cost`。`tenant`、`consumer`、`provider` 和 `quota_scope` 使用当前请求匹配到的配置解析。
+
+Cache-aware token 字段只作为 `usage` 内的 usage facts 上报。为了兼容旧事件，插件会继续保留 `usage.input`、`usage.output` 和 `usage.total`。
 
 ## 配置说明
 

@@ -8,11 +8,13 @@ description: ai-billing 请求级账单事件插件配置参考
 
 `ai-billing` 在 AI 响应完成后独立解析 token usage 和 model，构造请求级 billing event，并通过 HTTP callout 上报给 Console 内部 billing-service。HTTP callout 使用 `billing_service.auth_token` 生成 `Authorization: Bearer <token>` 鉴权头。插件默认 fail-open：billing-service 超时、网络失败或返回 5xx 时只记录日志，不阻塞用户响应。
 
-`ai-billing` 不扣减 Redis 余额，也不直接更新账户或数据库。幂等、结算、账单流水、余额投影和补偿由 billing-service 负责。
+`ai-billing` 不计算最终权威费用，不应用租户折扣或覆盖价格，不扣减 Redis 余额，也不直接更新账户或数据库。幂等、结算、账单流水、余额投影和补偿由 billing-service 负责。
 
 ## 事件字段
 
 事件包含 `event_id`、`idempotency_key`、`request_id`、`tenant`、`consumer`、`quota_scope`、`route`、`provider`、`model`、`cluster`、`request_path`、`status_code`、`start_time_ms`、`end_time_ms`、`is_stream`、`usage`、`usage_missing` 和可选 `price_version`。
+
+当 provider usage 暴露 cache 详情时，`usage` 还会包含 `input_cache_hit_tokens`、`input_cache_miss_tokens` 和 `output_tokens`。为了兼容旧事件，`usage.input`、`usage.output` 和 `usage.total` 会继续保留。
 
 `route`、`provider`、`model` 使用 Console 原生对象事实格式：`{ "id"?: "...", "name"?: "..." }`。网关通常不知道 Console UUID，因此默认填充运行时 `name`。
 
