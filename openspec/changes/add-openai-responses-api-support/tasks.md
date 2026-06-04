@@ -41,9 +41,9 @@
 
 ## 6. Documentation
 
-- [ ] 6.1 Update `extensions/ai-proxy/README.md` to document `/v1/responses`, native capability priority, fallback behavior, supported fields, streaming behavior, and limitations.
-- [ ] 6.2 Update `extensions/ai-proxy/README_EN.md` with the same Responses API behavior and limitations.
-- [ ] 6.3 Add provider capability examples that include `openai/v1/responses`.
+- [x] 6.1 Update `extensions/ai-proxy/README.md` to document `/v1/responses`, native capability priority, fallback behavior, supported fields, streaming behavior, and limitations.
+- [x] 6.2 Update `extensions/ai-proxy/README_EN.md` with the same Responses API behavior and limitations.
+- [x] 6.3 Add provider capability examples that include `openai/v1/responses`.
 
 ## 7. Verification
 
