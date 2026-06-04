@@ -33,11 +33,11 @@
 
 ## 5. Responses Streaming Conversion
 
-- [ ] 5.1 Add a Chat Completions SSE to Responses SSE converter with per-request stream state stored in context.
-- [ ] 5.2 Convert text deltas from `chat.completion.chunk` into `response.output_text.delta` events.
-- [ ] 5.3 Convert finish chunks and `[DONE]` markers into Responses completion events such as `response.output_text.done` and `response.completed`.
-- [ ] 5.4 Preserve usage, model, and finish reason in final stream state where available.
-- [ ] 5.5 Integrate streaming conversion after provider streaming transformation and bypass it for native Responses SSE.
+- [x] 5.1 Add a Chat Completions SSE to Responses SSE converter with per-request stream state stored in context.
+- [x] 5.2 Convert text deltas from `chat.completion.chunk` into `response.output_text.delta` events.
+- [x] 5.3 Convert finish chunks and `[DONE]` markers into Responses completion events such as `response.output_text.done` and `response.completed`.
+- [x] 5.4 Preserve usage, model, and finish reason in final stream state where available.
+- [x] 5.5 Integrate streaming conversion after provider streaming transformation and bypass it for native Responses SSE.
 
 ## 6. Documentation
 

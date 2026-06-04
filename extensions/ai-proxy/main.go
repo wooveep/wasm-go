@@ -454,12 +454,11 @@ func onStreamingResponseBody(ctx wrapper.HttpContext, pluginConfig config.Plugin
 			if promoteThinking {
 				modifiedChunk = promoteThinkingInStreamingChunk(ctx, modifiedChunk, isLastChunk)
 			}
-			// Convert to Claude format if needed
-			claudeChunk, convertErr := convertStreamingResponseToClaude(ctx, modifiedChunk)
+			convertedChunk, convertErr := convertStreamingResponse(ctx, modifiedChunk, isLastChunk)
 			if convertErr != nil {
 				return modifiedChunk
 			}
-			return claudeChunk
+			return convertedChunk
 		}
 		return chunk
 	}
@@ -501,15 +500,14 @@ func onStreamingResponseBody(ctx wrapper.HttpContext, pluginConfig config.Plugin
 			result = promoteThinkingInStreamingChunk(ctx, result, isLastChunk)
 		}
 
-		// Convert to Claude format if needed
-		claudeChunk, convertErr := convertStreamingResponseToClaude(ctx, result)
+		convertedChunk, convertErr := convertStreamingResponse(ctx, result, isLastChunk)
 		if convertErr != nil {
 			return result
 		}
-		return claudeChunk
+		return convertedChunk
 	}
 
-	if !needsClaudeResponseConversion(ctx) && !promoteThinking {
+	if !needsClaudeResponseConversion(ctx) && !needsResponsesResponseConversion(ctx) && !promoteThinking {
 		return chunk
 	}
 
@@ -535,12 +533,11 @@ func onStreamingResponseBody(ctx wrapper.HttpContext, pluginConfig config.Plugin
 		result = promoteThinkingInStreamingChunk(ctx, result, isLastChunk)
 	}
 
-	// Convert to Claude format if needed
-	claudeChunk, convertErr := convertStreamingResponseToClaude(ctx, result)
+	convertedChunk, convertErr := convertStreamingResponse(ctx, result, isLastChunk)
 	if convertErr != nil {
 		return result
 	}
-	return claudeChunk
+	return convertedChunk
 }
 
 func onHttpResponseBody(ctx wrapper.HttpContext, pluginConfig config.PluginConfig, body []byte) types.Action {
@@ -658,6 +655,18 @@ func needsResponsesResponseConversion(ctx wrapper.HttpContext) bool {
 	return needResponsesConversion
 }
 
+func convertStreamingResponse(ctx wrapper.HttpContext, data []byte, isLastChunk bool) ([]byte, error) {
+	convertedChunk, err := convertStreamingResponseToClaude(ctx, data)
+	if err != nil {
+		return data, err
+	}
+	convertedChunk, err = convertStreamingResponseToResponses(ctx, convertedChunk, isLastChunk)
+	if err != nil {
+		return convertedChunk, err
+	}
+	return convertedChunk, nil
+}
+
 // Helper function to convert OpenAI streaming response to Claude format
 func convertStreamingResponseToClaude(ctx wrapper.HttpContext, data []byte) ([]byte, error) {
 	if !needsClaudeResponseConversion(ctx) {
@@ -685,6 +694,32 @@ func convertStreamingResponseToClaude(ctx wrapper.HttpContext, data []byte) ([]b
 		return data, err
 	}
 	return claudeChunk, nil
+}
+
+func convertStreamingResponseToResponses(ctx wrapper.HttpContext, data []byte, isLastChunk bool) ([]byte, error) {
+	if !needsResponsesResponseConversion(ctx) {
+		return data, nil
+	}
+
+	const responsesConverterKey = "responsesConverter"
+	var converter *provider.ChatCompletionToResponsesStreamConverter
+	if converterData := ctx.GetContext(responsesConverterKey); converterData != nil {
+		if c, ok := converterData.(*provider.ChatCompletionToResponsesStreamConverter); ok {
+			converter = c
+		}
+	}
+
+	if converter == nil {
+		converter = provider.NewChatCompletionToResponsesStreamConverter()
+		ctx.SetContext(responsesConverterKey, converter)
+	}
+
+	responsesChunk, err := converter.Convert(data, isLastChunk)
+	if err != nil {
+		log.Errorf("failed to convert streaming response to Responses format: %v", err)
+		return data, err
+	}
+	return responsesChunk, nil
 }
 
 // promoteThinkingInStreamingChunk processes SSE-formatted streaming data, buffering

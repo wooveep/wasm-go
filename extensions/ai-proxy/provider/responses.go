@@ -50,6 +50,7 @@ type responsesResponse struct {
 	CreatedAt         int64                    `json:"created_at,omitempty"`
 	Status            string                   `json:"status"`
 	Model             string                   `json:"model,omitempty"`
+	FinishReason      string                   `json:"finish_reason,omitempty"`
 	Output            []responsesOutputMessage `json:"output,omitempty"`
 	Usage             *responsesUsage          `json:"usage,omitempty"`
 	Error             json.RawMessage          `json:"error,omitempty"`
@@ -359,12 +360,201 @@ func chatCompletionContentText(content any) (string, bool) {
 	}
 }
 
-type chatCompletionToResponsesStreamConverter struct{}
+type chatCompletionToResponsesStreamConverter struct {
+	buffer       []byte
+	id           string
+	createdAt    int64
+	model        string
+	text         bytes.Buffer
+	hasText      bool
+	textDone     bool
+	finishReason string
+	usage        *responsesUsage
+	completed    bool
+}
+
+type ChatCompletionToResponsesStreamConverter = chatCompletionToResponsesStreamConverter
 
 func newChatCompletionToResponsesStreamConverter() *chatCompletionToResponsesStreamConverter {
 	return &chatCompletionToResponsesStreamConverter{}
 }
 
+func NewChatCompletionToResponsesStreamConverter() *ChatCompletionToResponsesStreamConverter {
+	return newChatCompletionToResponsesStreamConverter()
+}
+
+func (c *chatCompletionToResponsesStreamConverter) Convert(chunk []byte, isLastChunk bool) ([]byte, error) {
+	return c.convert(chunk, isLastChunk)
+}
+
 func (c *chatCompletionToResponsesStreamConverter) convert(chunk []byte, isLastChunk bool) ([]byte, error) {
-	return nil, errors.New("chat completions stream to responses conversion is not implemented")
+	payloads := c.extractSSEPayloads(chunk, isLastChunk)
+	var output bytes.Buffer
+
+	for _, payload := range payloads {
+		switch payload {
+		case "":
+			continue
+		case streamEndDataValue:
+			if err := c.writeCompletedEvent(&output); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		var chatChunk chatCompletionResponseEnvelope
+		if err := json.Unmarshal([]byte(payload), &chatChunk); err != nil {
+			return nil, fmt.Errorf("unable to unmarshal chat completions stream chunk: %w", err)
+		}
+		c.captureChunkMetadata(chatChunk)
+		if chatChunk.Usage != nil {
+			c.usage = convertChatCompletionUsageToResponsesUsage(chatChunk.Usage)
+		}
+		if len(chatChunk.Choices) == 0 {
+			continue
+		}
+
+		choice := chatChunk.Choices[0]
+		if choice.Delta != nil {
+			if delta, ok := chatCompletionContentText(choice.Delta.Content); ok && delta != "" {
+				c.text.WriteString(delta)
+				c.hasText = true
+				if err := writeResponsesStreamEvent(&output, "response.output_text.delta", map[string]any{
+					"type":          "response.output_text.delta",
+					"item_id":       "msg_0",
+					"output_index":  0,
+					"content_index": 0,
+					"delta":         delta,
+				}); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if choice.FinishReason != nil {
+			c.finishReason = *choice.FinishReason
+			if err := c.writeTextDoneEvent(&output); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if isLastChunk && !c.completed && len(bytes.TrimSpace(c.buffer)) == 0 {
+		if err := c.writeCompletedEvent(&output); err != nil {
+			return nil, err
+		}
+	}
+	return output.Bytes(), nil
+}
+
+func (c *chatCompletionToResponsesStreamConverter) extractSSEPayloads(chunk []byte, isLastChunk bool) []string {
+	c.buffer = append(c.buffer, chunk...)
+	c.buffer = bytes.ReplaceAll(c.buffer, []byte("\r\n"), []byte("\n"))
+	c.buffer = bytes.ReplaceAll(c.buffer, []byte("\r"), []byte("\n"))
+
+	var payloads []string
+	for {
+		eventEnd := bytes.Index(c.buffer, []byte("\n\n"))
+		if eventEnd < 0 {
+			break
+		}
+		eventBlock := c.buffer[:eventEnd]
+		c.buffer = c.buffer[eventEnd+2:]
+		payloads = append(payloads, sseDataPayload(eventBlock))
+	}
+
+	if isLastChunk && len(bytes.TrimSpace(c.buffer)) > 0 {
+		payloads = append(payloads, sseDataPayload(c.buffer))
+		c.buffer = nil
+	}
+	return payloads
+}
+
+func sseDataPayload(eventBlock []byte) string {
+	var dataLines [][]byte
+	for _, line := range bytes.Split(eventBlock, []byte("\n")) {
+		if !bytes.HasPrefix(line, []byte(streamDataItemKey)) {
+			continue
+		}
+		value := bytes.TrimSpace(line[len(streamDataItemKey):])
+		dataLines = append(dataLines, value)
+	}
+	return string(bytes.Join(dataLines, []byte("\n")))
+}
+
+func (c *chatCompletionToResponsesStreamConverter) captureChunkMetadata(chunk chatCompletionResponseEnvelope) {
+	if chunk.ID != "" {
+		c.id = chunk.ID
+	}
+	if chunk.Created != 0 {
+		c.createdAt = chunk.Created
+	}
+	if chunk.Model != "" {
+		c.model = chunk.Model
+	}
+}
+
+func (c *chatCompletionToResponsesStreamConverter) writeTextDoneEvent(output *bytes.Buffer) error {
+	if !c.hasText || c.textDone {
+		return nil
+	}
+	c.textDone = true
+	return writeResponsesStreamEvent(output, "response.output_text.done", map[string]any{
+		"type":          "response.output_text.done",
+		"item_id":       "msg_0",
+		"output_index":  0,
+		"content_index": 0,
+		"text":          c.text.String(),
+	})
+}
+
+func (c *chatCompletionToResponsesStreamConverter) writeCompletedEvent(output *bytes.Buffer) error {
+	if c.completed {
+		return nil
+	}
+	if err := c.writeTextDoneEvent(output); err != nil {
+		return err
+	}
+
+	response := responsesResponse{
+		ID:           c.id,
+		Object:       "response",
+		CreatedAt:    c.createdAt,
+		Status:       "completed",
+		Model:        c.model,
+		FinishReason: c.finishReason,
+		Usage:        c.usage,
+	}
+	if c.finishReason != "" {
+		applyResponsesFinishStatus(&response, c.finishReason)
+	}
+	if c.hasText {
+		response.Output = []responsesOutputMessage{{
+			Type: "message",
+			Role: roleAssistant,
+			Content: []responsesOutputContent{{
+				Type: "output_text",
+				Text: c.text.String(),
+			}},
+		}}
+	}
+
+	c.completed = true
+	return writeResponsesStreamEvent(output, "response.completed", map[string]any{
+		"type":     "response.completed",
+		"response": response,
+	})
+}
+
+func writeResponsesStreamEvent(output *bytes.Buffer, eventType string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	output.WriteString("event: ")
+	output.WriteString(eventType)
+	output.WriteString("\n")
+	output.WriteString("data: ")
+	output.Write(data)
+	output.WriteString("\n\n")
+	return nil
 }
