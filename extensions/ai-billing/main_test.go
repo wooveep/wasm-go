@@ -1800,6 +1800,49 @@ func TestOnHttpStreamingResponseBodyAccumulatesSentAssistantDeltas(t *testing.T)
 	require.Empty(t, ctx.GetStringContext(ctxUsageSource, ""))
 }
 
+func TestOnHttpStreamingResponseBodyEndOfStreamDeliversAndMarksDelivered(t *testing.T) {
+	client := &recordingBillingHTTPClient{}
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{
+		ctxBillingEnabled: true,
+		ctxStartTime:      int64(1),
+		ctxEventID:        "018f4c7c-3333-7abc-8333-333333333333",
+		ctxIdempotencyKey: "018f4c7c-3333-7abc-8333-333333333333",
+		ctxRequestPath:    "/v1/chat/completions",
+		ctxRequestID:      "req-stream-end",
+		ctxTenant:         "tenant-a",
+		ctxConsumer:       "consumer-a",
+		ctxProvider:       "openai",
+		ctxQuotaScope:     "global",
+		ctxRoute:          "route-a",
+		ctxCluster:        "cluster-a",
+		ctxStatusCode:     http.StatusOK,
+	}}
+
+	chunk := []byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n")
+	returned := onHttpStreamingResponseBody(ctx, BillingConfig{
+		Provider: "openai",
+		BillingService: BillingService{
+			Path:      "/internal/billing/events",
+			Timeout:   750,
+			AuthToken: "<shared-secret>",
+		},
+		httpClient: client,
+	}, chunk, true)
+
+	require.Equal(t, chunk, returned)
+	require.True(t, ctx.GetBoolContext(ctxBillingDelivered, false))
+	require.Len(t, client.bodies, 1)
+
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(client.bodies[0], &event))
+	require.True(t, event.IsStream)
+	require.False(t, event.UsageMissing)
+	require.Equal(t, usageSourceProvider, event.UsageSource)
+	require.EqualValues(t, 1, event.Usage.Input)
+	require.EqualValues(t, 2, event.Usage.Output)
+	require.EqualValues(t, 3, event.Usage.Total)
+}
+
 type mockBillingHttpContext struct {
 	values map[string]interface{}
 }
