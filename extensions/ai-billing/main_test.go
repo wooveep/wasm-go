@@ -1843,6 +1843,143 @@ func TestOnHttpStreamingResponseBodyEndOfStreamDeliversAndMarksDelivered(t *test
 	require.EqualValues(t, 3, event.Usage.Total)
 }
 
+func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpRequestBody([]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello input"}]}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n"), false)
+	require.Equal(t, types.ActionContinue, action)
+
+	host.CompleteHttp()
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.True(t, event.IsStream)
+	require.False(t, event.UsageMissing)
+	require.Equal(t, usageSourceEstimated, event.UsageSource)
+	require.Greater(t, event.Usage.Input, int64(0))
+	require.Greater(t, event.Usage.Output, int64(0))
+	require.Equal(t, event.Usage.Input+event.Usage.Output, event.Usage.Total)
+	require.Nil(t, event.Usage.Details)
+}
+
+func TestStreamDoneFallbackDeliversProviderUsage(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":5,\"total_tokens\":9}}\n\n"), false)
+	require.Equal(t, types.ActionContinue, action)
+
+	host.CompleteHttp()
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.True(t, event.IsStream)
+	require.False(t, event.UsageMissing)
+	require.Equal(t, usageSourceProvider, event.UsageSource)
+	require.EqualValues(t, 4, event.Usage.Input)
+	require.EqualValues(t, 5, event.Usage.Output)
+	require.EqualValues(t, 9, event.Usage.Total)
+	require.Contains(t, event.Usage.Details, "provider_usage")
+}
+
+func TestStreamDoneFallbackDeliversMissingUsage(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\"}}]}}]}\n\n"), false)
+	require.Equal(t, types.ActionContinue, action)
+
+	host.CompleteHttp()
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.True(t, event.IsStream)
+	require.True(t, event.UsageMissing)
+	require.Equal(t, usageSourceMissing, event.UsageSource)
+	require.EqualValues(t, 0, event.Usage.Input)
+	require.EqualValues(t, 0, event.Usage.Output)
+	require.EqualValues(t, 0, event.Usage.Total)
+	require.Empty(t, event.Usage.Details)
+}
+
+func TestStreamDoneFallbackSkipsAfterNormalDelivery(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"), true)
+	require.Equal(t, types.ActionContinue, action)
+	require.Len(t, host.GetHttpCalloutAttributes(), 1)
+
+	host.CompleteHttp()
+
+	require.Len(t, host.GetHttpCalloutAttributes(), 1)
+}
+
 type mockBillingHttpContext struct {
 	values map[string]interface{}
 }

@@ -77,6 +77,7 @@ func init() {
 		wrapper.ProcessResponseHeaders(onHttpResponseHeaders),
 		wrapper.ProcessStreamingResponseBody(onHttpStreamingResponseBody),
 		wrapper.ProcessResponseBody(onHttpResponseBody),
+		wrapper.ProcessStreamDone(onHttpStreamDone),
 	)
 }
 
@@ -344,9 +345,28 @@ func onHttpStreamingResponseBody(ctx wrapper.HttpContext, config BillingConfig, 
 	recordStreamingOutputText(ctx, data)
 	recordUsage(ctx, data)
 	if endOfStream {
+		if ctx.GetStringContext(ctxUsageSource, "") == "" {
+			recordStreamingEstimatedUsage(ctx)
+		}
 		deliverBillingEvent(ctx, config, true)
 	}
 	return data
+}
+
+func onHttpStreamDone(ctx wrapper.HttpContext, config BillingConfig) {
+	if !ctx.GetBoolContext(ctxBillingEnabled, false) {
+		return
+	}
+	if !ctx.GetBoolContext(ctxIsStream, false) {
+		return
+	}
+	if ctx.GetBoolContext(ctxBillingDelivered, false) {
+		return
+	}
+	if ctx.GetStringContext(ctxUsageSource, "") == "" {
+		recordStreamingEstimatedUsage(ctx)
+	}
+	deliverBillingEvent(ctx, config, true)
 }
 
 func onHttpResponseBody(ctx wrapper.HttpContext, config BillingConfig, body []byte) types.Action {
@@ -405,6 +425,15 @@ func recordStreamingOutputText(ctx wrapper.HttpContext, data []byte) {
 		return
 	}
 	ctx.SetContext(ctxStreamOutputText, ctx.GetStringContext(ctxStreamOutputText, "")+outputText)
+}
+
+func recordStreamingEstimatedUsage(ctx wrapper.HttpContext) bool {
+	return recordEstimatedUsage(
+		ctx,
+		ctx.GetStringContext(ctxModel, ""),
+		ctx.GetStringContext(ctxRequestText, ""),
+		ctx.GetStringContext(ctxStreamOutputText, ""),
+	)
 }
 
 func recordEstimatedUsage(ctx wrapper.HttpContext, model, inputText, outputText string) bool {

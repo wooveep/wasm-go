@@ -26,7 +26,7 @@
 - [x] 4.2 Accumulate streamed assistant text deltas that have been sent to the client for output estimation.
 - [x] 4.3 Add a request-scoped delivered marker such as `ctxBillingDelivered` and set it before billing event dispatch.
 - [x] 4.4 Keep response body `endOfStream=true` as the normal billing delivery path and make it mark the event as delivered.
-- [ ] 4.5 Add stream-done fallback delivery that emits one provider, estimated, or missing billing event only when the delivered marker is not already set.
+- [x] 4.5 Add stream-done fallback delivery that emits one provider, estimated, or missing billing event only when the delivered marker is not already set.
 - [ ] 4.6 Ensure client-interrupted streaming estimates count only text deltas already sent to the client.
 
 ## 5. Tests and Verification
