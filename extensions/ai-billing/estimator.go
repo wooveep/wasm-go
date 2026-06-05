@@ -46,18 +46,7 @@ func matchesModelFamily(model, family string) bool {
 }
 
 func extractRequestInputText(body []byte) (string, bool) {
-	var payload any
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
-		return "", false
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return "", false
-	}
-
-	object, ok := payload.(map[string]any)
+	object, ok := decodeJSONObject(body)
 	if !ok {
 		return "", false
 	}
@@ -69,6 +58,44 @@ func extractRequestInputText(body []byte) (string, bool) {
 	appendTextValue(&parts, object["prompt"])
 
 	return joinTextParts(parts)
+}
+
+func extractResponseOutputText(body []byte) (string, bool) {
+	object, ok := decodeJSONObject(body)
+	if !ok {
+		return "", false
+	}
+
+	if text, ok := extractTextFromValue(object["output_text"]); ok {
+		return text, true
+	}
+	if text, ok := extractResponseOutputTextValue(object["output"]); ok {
+		return text, true
+	}
+	if text, ok := extractChoiceOutputText(object["choices"]); ok {
+		return text, true
+	}
+
+	return "", false
+}
+
+func decodeJSONObject(body []byte) (map[string]any, bool) {
+	var payload any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, false
+	}
+
+	object, ok := payload.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return object, true
 }
 
 func appendChatMessagesText(parts *[]string, value any) {
@@ -83,6 +110,56 @@ func appendChatMessagesText(parts *[]string, value any) {
 		}
 		appendTextValue(parts, messageObject["content"])
 	}
+}
+
+func appendResponseOutputText(parts *[]string, value any) {
+	outputItems, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, item := range outputItems {
+		itemObject, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		appendTextValue(parts, itemObject["content"])
+	}
+}
+
+func extractResponseOutputTextValue(value any) (string, bool) {
+	parts := make([]string, 0)
+	appendResponseOutputText(&parts, value)
+	return joinTextParts(parts)
+}
+
+func appendChoiceOutputText(parts *[]string, value any) {
+	choices, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, choice := range choices {
+		choiceObject, ok := choice.(map[string]any)
+		if !ok {
+			continue
+		}
+		appendTextValue(parts, choiceObject["text"])
+		messageObject, ok := choiceObject["message"].(map[string]any)
+		if ok {
+			appendTextValue(parts, messageObject["content"])
+		}
+	}
+}
+
+func extractChoiceOutputText(value any) (string, bool) {
+	parts := make([]string, 0)
+	appendChoiceOutputText(&parts, value)
+	return joinTextParts(parts)
+}
+
+func extractTextFromValue(value any) (string, bool) {
+	parts := make([]string, 0)
+	appendTextValue(&parts, value)
+	return joinTextParts(parts)
 }
 
 func appendTextValue(parts *[]string, value any) {

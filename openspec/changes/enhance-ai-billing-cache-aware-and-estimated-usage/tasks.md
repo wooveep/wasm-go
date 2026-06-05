@@ -16,7 +16,7 @@
 
 - [x] 3.1 Implement model-to-vocabulary selection with `o200k_base` fallback for unknown, empty, unmapped, or newly matched models and `cl100k_base` for recognized older OpenAI-compatible models.
 - [x] 3.2 Implement structured input text extraction for Chat Completions `messages[].content`, Responses `input` and `instructions`, and Completions `prompt`.
-- [ ] 3.3 Implement non-streaming assistant output text extraction without tokenizing complete raw JSON request bodies when structured extraction fails.
+- [x] 3.3 Implement non-streaming assistant output text extraction without tokenizing complete raw JSON request bodies when structured extraction fails.
 - [ ] 3.4 Implement estimated usage event construction with only `usage.unit`, `usage.input`, `usage.output`, and `usage.total`.
 - [ ] 3.5 Implement missing usage fallback with zero token counts, `usage_missing=true`, and `usage_source=missing` when provider usage and estimation are unavailable.
 

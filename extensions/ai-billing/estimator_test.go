@@ -122,3 +122,79 @@ func TestExtractRequestInputTextFailsClosedForUnsupportedBodies(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractResponseOutputTextFromSupportedResponseShapes(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "chat completions message content",
+			body: `{"choices":[{"message":{"role":"assistant","content":"hello there"}}],"usage":null}`,
+			want: "hello there",
+		},
+		{
+			name: "chat completions message content blocks",
+			body: `{"choices":[{"message":{"content":[{"type":"text","text":"first"},{"type":"image_url","image_url":{"url":"https://example.test/out.png"}},{"type":"text","text":"second"}]}}]}`,
+			want: "first\nsecond",
+		},
+		{
+			name: "responses output content blocks",
+			body: `{"output":[{"type":"message","content":[{"type":"output_text","text":"answer text"},{"type":"refusal","text":"do-not-tokenize"}]}],"metadata":{"trace":"ignore"}}`,
+			want: "answer text",
+		},
+		{
+			name: "responses output text shortcut",
+			body: `{"output_text":"direct answer","usage":null}`,
+			want: "direct answer",
+		},
+		{
+			name: "responses output text shortcut takes precedence",
+			body: `{"output_text":"direct answer","output":[{"content":[{"type":"output_text","text":"direct answer"}]}]}`,
+			want: "direct answer",
+		},
+		{
+			name: "completions choices text",
+			body: `{"choices":[{"text":" completion one"},{"text":"completion two"}],"model":"legacy"}`,
+			want: " completion one\ncompletion two",
+		},
+		{
+			name: "output preserves whitespace",
+			body: "{\"choices\":[{\"message\":{\"content\":\"  exact output\\n  \"}}]}",
+			want: "  exact output\n  ",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractResponseOutputText([]byte(tc.body))
+			require.True(t, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestExtractResponseOutputTextFailsClosedForUnsupportedBodies(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid json", body: `{"choices":`},
+		{name: "trailing garbage after json", body: `{"choices":[{"text":"hi"}]} trailing`},
+		{name: "non object json", body: `"raw text"`},
+		{name: "empty object", body: `{}`},
+		{name: "usage only", body: `{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`},
+		{name: "tool call arguments only", body: `{"choices":[{"message":{"tool_calls":[{"function":{"arguments":"{\"query\":\"Paris\"}"}}]}}]}`},
+		{name: "image output without text", body: `{"output":[{"content":[{"type":"output_image","image_url":"https://example.test/out.png"}]}]}`},
+		{name: "unsupported output object text", body: `{"output":{"text":"do-not-tokenize"}}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractResponseOutputText([]byte(tc.body))
+			require.False(t, ok)
+			require.Empty(t, got)
+		})
+	}
+}
