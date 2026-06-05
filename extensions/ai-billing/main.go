@@ -53,6 +53,13 @@ const (
 	ctxInputDetails   = "ai-billing-input-details"
 	ctxOutputDetails  = "ai-billing-output-details"
 	ctxModel          = "ai-billing-model"
+	ctxUsageSource    = "ai-billing-usage-source"
+)
+
+const (
+	usageSourceProvider  = "provider"
+	usageSourceEstimated = "estimated"
+	usageSourceMissing   = "missing"
 )
 
 func main() {}
@@ -101,6 +108,7 @@ type BillingEvent struct {
 	StatusCode     int          `json:"status_code"`
 	Usage          BillingUsage `json:"usage"`
 	UsageMissing   bool         `json:"usage_missing"`
+	UsageSource    string       `json:"usage_source"`
 	StartTimeMs    int64        `json:"start_time_ms"`
 	EndTimeMs      int64        `json:"end_time_ms"`
 	IsStream       bool         `json:"is_stream"`
@@ -327,6 +335,7 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 		ctx.SetContext(ctxOutputDetails, usage.OutputTokenDetails)
 	}
 	ctx.SetContext(ctxModel, usage.Model)
+	ctx.SetContext(ctxUsageSource, usageSourceProvider)
 }
 
 func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream bool) {
@@ -371,6 +380,14 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		}
 	}
 	usageMissing := totalTokens <= 0
+	usageSource := ctx.GetStringContext(ctxUsageSource, "")
+	if usageSource == "" {
+		if usageMissing {
+			usageSource = usageSourceMissing
+		} else {
+			usageSource = usageSourceProvider
+		}
+	}
 	requestID := ctx.GetStringContext(ctxRequestID, "")
 	eventID := ctx.GetStringContext(ctxEventID, "")
 	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, eventID)
@@ -400,6 +417,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		EndTimeMs:    time.Now().UnixMilli(),
 		IsStream:     ctx.GetBoolContext(ctxIsStream, isStream),
 		UsageMissing: usageMissing,
+		UsageSource:  usageSource,
 		Cluster:      ctx.GetStringContext(ctxCluster, "-"),
 		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
 	}

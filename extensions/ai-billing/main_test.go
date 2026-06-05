@@ -422,6 +422,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 13, usage["total"])
 			require.Equal(t, map[string]interface{}{}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])
+			require.Equal(t, "provider", event["usage_source"])
 			require.Equal(t, false, event["is_stream"])
 			require.Equal(t, "pv-7", event["price_version"])
 			require.Equal(t, "global", event["quota_scope"])
@@ -824,6 +825,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			var event map[string]interface{}
 			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
 			require.Equal(t, true, event["usage_missing"])
+			require.Equal(t, "missing", event["usage_source"])
 
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
