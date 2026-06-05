@@ -427,11 +427,16 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 			usageSource = usageSourceProvider
 		}
 	}
+	if usageMissing {
+		inputTokens = 0
+		outputTokens = 0
+		totalTokens = 0
+	}
 
 	var inputCacheHitTokens *int64
 	var inputCacheMissTokens *int64
 	var nativeOutputTokens *int64
-	if usageSource != usageSourceEstimated {
+	if usageSource != usageSourceEstimated && !usageMissing {
 		if hitTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheHit)); ok {
 			if missTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheMiss)); ok {
 				inputCacheHitTokens = int64Ptr(hitTokens)
@@ -443,6 +448,8 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	usageDetails := billingUsageDetails(ctx)
 	if usageSource == usageSourceEstimated {
 		usageDetails = nil
+	} else if usageMissing {
+		usageDetails = map[string]any{}
 	}
 
 	requestID := ctx.GetStringContext(ctxRequestID, "")

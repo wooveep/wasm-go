@@ -1616,6 +1616,47 @@ func TestBuildBillingEventEstimatedUsageIsBasicOnly(t *testing.T) {
 	require.ElementsMatch(t, []string{"unit", "input", "output", "total"}, mapKeys(usage))
 }
 
+func TestBuildBillingEventMissingUsageFallbackIsZero(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxStartTime, int64(1))
+	ctx.SetContext(ctxEventID, "018f4c7c-3333-7abc-8333-333333333333")
+	ctx.SetContext(ctxIdempotencyKey, "018f4c7c-3333-7abc-8333-333333333333")
+	ctx.SetContext(ctxRequestPath, "/v1/chat/completions")
+	ctx.SetContext(ctxRequestID, "req-missing")
+	ctx.SetContext(ctxConsumer, "consumer-a")
+	ctx.SetContext(ctxProvider, "openai")
+	ctx.SetContext(ctxQuotaScope, "global")
+	ctx.SetContext(ctxRoute, "route-a")
+	ctx.SetContext(ctxCluster, "cluster-a")
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+	ctx.SetContext(ctxInputToken, int64(12))
+	ctx.SetContext(ctxOutputToken, int64(8))
+	ctx.SetContext(ctxInputCacheHit, int64(1))
+	ctx.SetContext(ctxInputCacheMiss, int64(2))
+	ctx.SetContext(ctxInputDetails, map[string]int64{"cached_tokens": 1})
+	ctx.SetContext(ctxProviderUsage, map[string]any{"prompt_tokens": 99})
+
+	body, err := json.Marshal(buildBillingEvent(ctx, BillingConfig{Provider: "openai"}, false))
+	require.NoError(t, err)
+
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &event))
+	require.Equal(t, true, event["usage_missing"])
+	require.Equal(t, usageSourceMissing, event["usage_source"])
+
+	usage, ok := event["usage"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "token", usage["unit"])
+	require.EqualValues(t, 0, usage["input"])
+	require.EqualValues(t, 0, usage["output"])
+	require.EqualValues(t, 0, usage["total"])
+	require.Equal(t, map[string]interface{}{}, usage["details"])
+	require.NotContains(t, usage, "input_cache_hit_tokens")
+	require.NotContains(t, usage, "input_cache_miss_tokens")
+	require.NotContains(t, usage, "output_tokens")
+}
+
 type failingBillingHTTPClient struct {
 	err    error
 	called bool
