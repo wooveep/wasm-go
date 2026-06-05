@@ -1885,6 +1885,56 @@ func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
 	require.Nil(t, event.Usage.Details)
 }
 
+func TestStreamDoneFallbackEstimatesOnlySentDeltas(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	requestText := "hello input"
+	sentText := "Hello"
+	unsentText := " unreachable generated continuation with many distinct words and numbers 12345"
+
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpRequestBody([]byte(`{"messages":[{"role":"user","content":"` + requestText + `"}]}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"choices\":[{\"delta\":{\"content\":\""+sentText+"\"}}]}\n\n"), false)
+	require.Equal(t, types.ActionContinue, action)
+
+	host.CompleteHttp()
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	sentUsage, ok := estimateTextTokenUsage("", requestText, sentText)
+	require.True(t, ok)
+	unsentUsage, ok := estimateTextTokenUsage("", requestText, sentText+unsentText)
+	require.True(t, ok)
+	require.Greater(t, unsentUsage.OutputToken, sentUsage.OutputToken)
+
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.Equal(t, usageSourceEstimated, event.UsageSource)
+	require.Equal(t, sentUsage.InputToken, event.Usage.Input)
+	require.Equal(t, sentUsage.OutputToken, event.Usage.Output)
+	require.Equal(t, sentUsage.TotalToken, event.Usage.Total)
+	require.NotEqual(t, unsentUsage.OutputToken, event.Usage.Output)
+}
+
 func TestStreamDoneFallbackDeliversProviderUsage(t *testing.T) {
 	host, status := test.NewTestHost(billingConfig)
 	defer host.Reset()
