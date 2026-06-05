@@ -9,7 +9,7 @@
 - [x] 2.1 Add usage source handling so provider usage emits `usage_source=provider`, estimated usage emits `usage_source=estimated`, and unavailable usage emits `usage_source=missing`.
 - [x] 2.2 Preserve complete raw provider usage in `usage.details.provider_usage` for every provider-sourced event.
 - [x] 2.3 Extend cache-aware parsing for OpenAI-compatible/GLM, Kimi, DeepSeek, Qwen, Claude/Anthropic, and Gemini usage payloads.
-- [ ] 2.4 Apply non-negative validation and clamp cached input tokens to provider input tokens before deriving cache hit and miss counts.
+- [x] 2.4 Apply non-negative validation and clamp cached input tokens to provider input tokens before deriving cache hit and miss counts.
 - [ ] 2.5 Ensure provider usage without supported cache-aware fields emits only basic provider usage plus `details.provider_usage`.
 
 ## 3. Tokenizer Estimation

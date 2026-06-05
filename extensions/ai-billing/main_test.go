@@ -856,6 +856,40 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("cached tokens clamp to provider input tokens", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":5,"prompt_tokens_details":{"cached_tokens":8},"completion_tokens":2,"total_tokens":7}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 5, usage["input"])
+			require.EqualValues(t, 5, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 0, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 2, usage["output_tokens"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
 		t.Run("deepseek explicit cache split maps hit and miss usage", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -1267,28 +1301,104 @@ func TestBillingDeliveryAcceptedStatusExcludesAuthFailures(t *testing.T) {
 }
 
 func TestCacheAwareInputTokenSplit(t *testing.T) {
-	hitTokens, missTokens, ok := cacheAwareInputTokenSplit(10, map[string]int64{
-		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  8,
-		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 7,
-	})
-	require.True(t, ok)
-	require.EqualValues(t, 8, hitTokens)
-	require.EqualValues(t, 7, missTokens)
+	tests := []struct {
+		name       string
+		input      int64
+		details    map[string]int64
+		wantHit    int64
+		wantMiss   int64
+		wantMapped bool
+	}{
+		{
+			name:  "cached tokens clamp to input",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyCachedTokens: 12,
+			},
+			wantHit:    10,
+			wantMiss:   0,
+			wantMapped: true,
+		},
+		{
+			name:  "negative cached tokens become zero",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyCachedTokens: -2,
+			},
+			wantHit:    0,
+			wantMiss:   10,
+			wantMapped: true,
+		},
+		{
+			name:  "gemini cached content clamps to input",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyGeminiCachedContentTokenCount: 12,
+			},
+			wantHit:    10,
+			wantMiss:   0,
+			wantMapped: true,
+		},
+		{
+			name:  "deepseek explicit split preserves provider hit and miss",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  8,
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 7,
+			},
+			wantHit:    8,
+			wantMiss:   7,
+			wantMapped: true,
+		},
+		{
+			name:  "deepseek negative explicit split becomes zero",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  -2,
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: -3,
+			},
+			wantHit:    0,
+			wantMiss:   0,
+			wantMapped: true,
+		},
+		{
+			name:  "deepseek miss only preserves provider miss",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 12,
+			},
+			wantHit:    0,
+			wantMiss:   12,
+			wantMapped: true,
+		},
+		{
+			name:  "anthropic negative cache values become zero",
+			input: -10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyAnthropicMessagesUsageCacheCreationInputTokens: -4,
+				tokenusage.InputTokenDetailsKeyAnthropicMessagesUsageCacheReadInputTokens:     -3,
+			},
+			wantHit:    0,
+			wantMiss:   0,
+			wantMapped: true,
+		},
+		{
+			name:       "unsupported details do not map cache split",
+			input:      10,
+			details:    map[string]int64{"audio_tokens": 2},
+			wantMapped: false,
+		},
+	}
 
-	hitTokens, missTokens, ok = cacheAwareInputTokenSplit(10, map[string]int64{
-		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  -2,
-		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: -3,
-	})
-	require.True(t, ok)
-	require.EqualValues(t, 0, hitTokens)
-	require.EqualValues(t, 0, missTokens)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hitTokens, missTokens, ok := cacheAwareInputTokenSplit(tc.input, tc.details)
 
-	hitTokens, missTokens, ok = cacheAwareInputTokenSplit(10, map[string]int64{
-		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 12,
-	})
-	require.True(t, ok)
-	require.EqualValues(t, 0, hitTokens)
-	require.EqualValues(t, 12, missTokens)
+			require.Equal(t, tc.wantMapped, ok)
+			require.EqualValues(t, tc.wantHit, hitTokens)
+			require.EqualValues(t, tc.wantMiss, missTokens)
+		})
+	}
 }
 
 func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
