@@ -16,6 +16,7 @@ package tokenusage
 
 import (
 	"bytes"
+	"encoding/json"
 	"slices"
 
 	"github.com/higress-group/wasm-go/pkg/wrapper"
@@ -29,6 +30,7 @@ const (
 	CtxKeyTotalToken         = "total_token"
 	CtxKeyModel              = "model"
 	CtxKeyRequestModel       = "request_model"
+	CtxKeyProviderUsage      = "provider_usage"
 	CtxKeyChatId             = "chat_id"
 
 	ModelEmpty   = ""
@@ -79,6 +81,11 @@ const (
 	UsageTotalTokensPathOpenAIResponses       = "response.usage.total_tokens"
 	UsageTotalTokensPathGemini                = "usageMetadata.totalTokenCount"
 
+	ProviderUsagePathOpenAIChatCompletions = "usage"
+	ProviderUsagePathOpenAIResponses       = "response.usage"
+	ProviderUsagePathAnthropicMessages     = "message.usage"
+	ProviderUsagePathGemini                = "usageMetadata"
+
 	InputTokenDetailsKeyAnthropicMessagesUsageCacheCreationInputTokens = "cache_creation_input_tokens"
 	InputTokenDetailsKeyAnthropicMessagesUsageCacheReadInputTokens     = "cache_read_input_tokens"
 	InputTokenDetailsKeyGeminiCachedContentTokenCount                  = "cached_content_token_count"
@@ -98,6 +105,7 @@ type TokenUsage struct {
 	OutputToken        int64
 	TotalToken         int64
 	Model              string
+	ProviderUsage      map[string]any
 
 	// Anthropic Messages
 	AnthropicCacheCreationInputToken int64
@@ -127,6 +135,7 @@ func GetTokenUsage(ctx wrapper.HttpContext, body []byte) TokenUsage {
 		ExtractInputTokenDetails(ctx, chunk, &u)
 		ExtractOutputTokenDetails(ctx, chunk, &u)
 		ExtractTotalTokens(ctx, chunk, &u)
+		ExtractProviderUsage(ctx, chunk, &u)
 	}
 	return u
 }
@@ -284,6 +293,62 @@ func ExtractTotalTokens(ctx wrapper.HttpContext, body []byte, u *TokenUsage) {
 		u.TotalToken = u.InputToken + u.OutputToken + u.AnthropicCacheCreationInputToken + u.AnthropicCacheReadInputToken
 	}
 	ctx.SetUserAttribute(CtxKeyTotalToken, u.TotalToken)
+}
+
+func ExtractProviderUsage(ctx wrapper.HttpContext, body []byte, u *TokenUsage) {
+	if existing, ok := ctx.GetUserAttribute(CtxKeyProviderUsage).(map[string]any); ok {
+		u.ProviderUsage = cloneMap(existing)
+	}
+	for _, path := range []string{
+		ProviderUsagePathOpenAIChatCompletions,
+		ProviderUsagePathOpenAIResponses,
+		ProviderUsagePathAnthropicMessages,
+		ProviderUsagePathGemini,
+	} {
+		usage := wrapper.GetValueFromBody(body, []string{path})
+		if usage == nil || !usage.IsObject() {
+			continue
+		}
+		var providerUsage map[string]any
+		if err := json.Unmarshal([]byte(usage.Raw), &providerUsage); err != nil {
+			continue
+		}
+		if u.ProviderUsage == nil {
+			u.ProviderUsage = map[string]any{}
+		}
+		mergeProviderUsage(u.ProviderUsage, providerUsage)
+	}
+	if len(u.ProviderUsage) > 0 {
+		ctx.SetUserAttribute(CtxKeyProviderUsage, u.ProviderUsage)
+	}
+}
+
+func mergeProviderUsage(dst, src map[string]any) {
+	for key, srcValue := range src {
+		srcMap, srcIsMap := srcValue.(map[string]any)
+		dstMap, dstIsMap := dst[key].(map[string]any)
+		if srcIsMap && dstIsMap {
+			mergeProviderUsage(dstMap, srcMap)
+			continue
+		}
+		if srcIsMap {
+			dst[key] = cloneMap(srcMap)
+			continue
+		}
+		dst[key] = srcValue
+	}
+}
+
+func cloneMap(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for key, value := range src {
+		if nested, ok := value.(map[string]any); ok {
+			dst[key] = cloneMap(nested)
+			continue
+		}
+		dst[key] = value
+	}
+	return dst
 }
 
 func ExtractChatId(ctx wrapper.HttpContext, body []byte) {

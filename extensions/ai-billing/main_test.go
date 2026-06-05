@@ -420,7 +420,13 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 5, usage["input"])
 			require.EqualValues(t, 8, usage["output"])
 			require.EqualValues(t, 13, usage["total"])
-			require.Equal(t, map[string]interface{}{}, usage["details"])
+			require.Equal(t, map[string]interface{}{
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens":     float64(5),
+					"completion_tokens": float64(8),
+					"total_tokens":      float64(13),
+				},
+			}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, "provider", event["usage_source"])
 			require.Equal(t, false, event["is_stream"])
@@ -802,6 +808,56 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("streaming provider usage details merge across chunks", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
+
+			action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":2}}}\n\n"), false)
+			require.Equal(t, types.ActionContinue, action)
+			action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"completion_tokens\":8,\"total_tokens\":13,\"prompt_tokens_details\":{\"audio_tokens\":1},\"completion_tokens_details\":{\"reasoning_tokens\":3}}}\n\n"), true)
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 5, usage["input"])
+			require.EqualValues(t, 8, usage["output"])
+			require.EqualValues(t, 13, usage["total"])
+			details, ok := usage["details"].(map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, map[string]interface{}{
+				"prompt_tokens": float64(5),
+				"prompt_tokens_details": map[string]interface{}{
+					"cached_tokens": float64(2),
+					"audio_tokens":  float64(1),
+				},
+				"completion_tokens": float64(8),
+				"total_tokens":      float64(13),
+				"completion_tokens_details": map[string]interface{}{
+					"reasoning_tokens": float64(3),
+				},
+			}, details["provider_usage"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
 		t.Run("usage missing payload is still emitted", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -879,6 +935,16 @@ func TestBillingEventDelivery(t *testing.T) {
 				"output": map[string]interface{}{
 					"reasoning_tokens": float64(3),
 				},
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens": float64(5),
+					"prompt_tokens_details": map[string]interface{}{
+						"cached_tokens": float64(2),
+					},
+					"completion_tokens": float64(8),
+					"completion_tokens_details": map[string]interface{}{
+						"reasoning_tokens": float64(3),
+					},
+				},
 			}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])
 
@@ -919,6 +985,12 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 7, usage["output_tokens"])
 			require.Equal(t, map[string]interface{}{
 				"input": map[string]interface{}{
+					"cache_creation_input_tokens": float64(4),
+					"cache_read_input_tokens":     float64(3),
+				},
+				"provider_usage": map[string]interface{}{
+					"input_tokens":                float64(10),
+					"output_tokens":               float64(7),
 					"cache_creation_input_tokens": float64(4),
 					"cache_read_input_tokens":     float64(3),
 				},

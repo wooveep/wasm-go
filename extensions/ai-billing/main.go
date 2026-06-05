@@ -54,6 +54,7 @@ const (
 	ctxOutputDetails  = "ai-billing-output-details"
 	ctxModel          = "ai-billing-model"
 	ctxUsageSource    = "ai-billing-usage-source"
+	ctxProviderUsage  = "ai-billing-provider-usage"
 )
 
 const (
@@ -334,6 +335,9 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	if len(usage.OutputTokenDetails) > 0 {
 		ctx.SetContext(ctxOutputDetails, usage.OutputTokenDetails)
 	}
+	if len(usage.ProviderUsage) > 0 {
+		ctx.SetContext(ctxProviderUsage, usage.ProviderUsage)
+	}
 	ctx.SetContext(ctxModel, usage.Model)
 	ctx.SetContext(ctxUsageSource, usageSourceProvider)
 }
@@ -436,7 +440,17 @@ func billingUsageDetails(ctx wrapper.HttpContext) map[string]any {
 	if outputDetails := tokenDetailsFromContext(ctx.GetContext(ctxOutputDetails)); len(outputDetails) > 0 {
 		details["output"] = outputDetails
 	}
+	if providerUsage := providerUsageFromContext(ctx.GetContext(ctxProviderUsage)); len(providerUsage) > 0 {
+		details["provider_usage"] = providerUsage
+	}
 	return details
+}
+
+func providerUsageFromContext(value any) map[string]any {
+	if usage, ok := value.(map[string]any); ok {
+		return usage
+	}
+	return nil
 }
 
 func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64) (int64, int64, bool) {
