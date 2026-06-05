@@ -2035,6 +2035,50 @@ func TestOnHttpStreamingResponseBodyEndOfStreamDeliversAndMarksDelivered(t *test
 	require.EqualValues(t, 3, event.Usage.Total)
 }
 
+func TestStreamingNormalEndWithoutProviderUsageIsEstimated(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	inputText := "streaming prompt text"
+	outputText := "streaming answer text"
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	action := host.CallOnHttpRequestBody([]byte(`{"messages":[{"role":"user","content":"` + inputText + `"}]}`))
+	require.Equal(t, types.ActionContinue, action)
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"choices\":[{\"delta\":{\"content\":\""+outputText+"\"}}]}\n\n"), true)
+	require.Equal(t, types.ActionContinue, action)
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	expected, ok := estimateTextTokenUsage("", inputText, outputText)
+	require.True(t, ok)
+
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.True(t, event.IsStream)
+	require.False(t, event.UsageMissing)
+	require.Equal(t, usageSourceEstimated, event.UsageSource)
+	require.Equal(t, expected.InputToken, event.Usage.Input)
+	require.Equal(t, expected.OutputToken, event.Usage.Output)
+	require.Equal(t, expected.TotalToken, event.Usage.Total)
+	require.Nil(t, event.Usage.Details)
+
+	host.CompleteHttp()
+	require.Len(t, host.GetHttpCalloutAttributes(), 1)
+}
+
 func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
 	host, status := test.NewTestHost(billingConfig)
 	defer host.Reset()
