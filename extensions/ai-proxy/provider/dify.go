@@ -30,7 +30,7 @@ const (
 type difyProviderInitializer struct{}
 
 func (d *difyProviderInitializer) ValidateConfig(config *ProviderConfig) error {
-	if config.apiTokens == nil || len(config.apiTokens) == 0 {
+	if len(config.apiTokens) == 0 {
 		return errors.New("no apiToken found in provider config")
 	}
 	return nil
@@ -61,7 +61,7 @@ func (d *difyProvider) TransformRequestHeaders(ctx wrapper.HttpContext, apiName 
 	if d.config.difyApiUrl != "" {
 		log.Debugf("use local host: %s", d.config.difyApiUrl)
 		// Extract hostname, including Full URL or Domain
-		host := d.config.difyApiUrl
+		var host string
 		if parsedUrl, err := url.Parse(d.config.difyApiUrl); err == nil && parsedUrl.Host != "" {
 			host = parsedUrl.Host
 		} else {

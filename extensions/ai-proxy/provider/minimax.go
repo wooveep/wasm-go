@@ -43,7 +43,7 @@ func (m *minimaxProviderInitializer) ValidateConfig(config *ProviderConfig) erro
 	if minimaxApiTypePro == config.minimaxApiType && config.minimaxGroupId == "" {
 		return fmt.Errorf("missing minimaxGroupId in provider config when minimaxApiType is %s", minimaxApiTypePro)
 	}
-	if config.apiTokens == nil || len(config.apiTokens) == 0 {
+	if len(config.apiTokens) == 0 {
 		return errors.New("no apiToken found in provider config")
 	}
 	return nil

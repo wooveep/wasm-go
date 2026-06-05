@@ -20,21 +20,21 @@ import (
 
 type failover struct {
 	// @Title zh-CN 是否启用 apiToken 的 failover 机制
-	enabled bool `required:"false" yaml:"enabled" json:"enabled"`
+	enabled bool `required:"false" yaml:"enabled"`
 	// @Title zh-CN 触发 failover 连续请求失败的阈值
-	failureThreshold int64 `required:"false" yaml:"failureThreshold" json:"failureThreshold"`
+	failureThreshold int64 `required:"false" yaml:"failureThreshold"`
 	// @Title zh-CN 健康检测的成功阈值
-	successThreshold int64 `required:"false" yaml:"successThreshold" json:"successThreshold"`
+	successThreshold int64 `required:"false" yaml:"successThreshold"`
 	// @Title zh-CN 健康检测的间隔时间，单位毫秒
-	healthCheckInterval int64 `required:"false" yaml:"healthCheckInterval" json:"healthCheckInterval"`
+	healthCheckInterval int64 `required:"false" yaml:"healthCheckInterval"`
 	// @Title zh-CN 健康检测的超时时间，单位毫秒
-	healthCheckTimeout int64 `required:"false" yaml:"healthCheckTimeout" json:"healthCheckTimeout"`
+	healthCheckTimeout int64 `required:"false" yaml:"healthCheckTimeout"`
 	// @Title zh-CN 健康检测使用的模型
-	healthCheckModel string `required:"false" yaml:"healthCheckModel" json:"healthCheckModel"`
+	healthCheckModel string `required:"false" yaml:"healthCheckModel"`
 	// @Title zh-CN apiToken 不可用后的冷却恢复时间，单位毫秒，配置后无需健康检测即可自动恢复
-	cooldownDuration int64 `required:"false" yaml:"cooldownDuration" json:"cooldownDuration"`
+	cooldownDuration int64 `required:"false" yaml:"cooldownDuration"`
 	// @Title zh-CN 需要进行 failover 的原始请求的状态码，支持正则表达式匹配
-	failoverOnStatus []string `required:"false" yaml:"failoverOnStatus" json:"failoverOnStatus"`
+	failoverOnStatus []string `required:"false" yaml:"failoverOnStatus"`
 	// @Title zh-CN 本次请求使用的 apiToken
 	ctxApiTokenInUse string
 	// @Title zh-CN 记录本次请求时所有可用的 apiToken
@@ -640,12 +640,15 @@ func removeApiTokenUnavailableSince(key, apiToken string) {
 
 func (c *ProviderConfig) GetGlobalRandomToken() string {
 	apiTokens, _, err := getApiTokens(c.failover.ctxApiTokens)
-	unavailableApiTokens, _, err := getApiTokens(c.failover.ctxUnavailableApiTokens)
-	log.Debugf("apiTokens: %v, unavailableApiTokens: %v", apiTokens, unavailableApiTokens)
-
 	if err != nil {
 		return ""
 	}
+	unavailableApiTokens, _, err := getApiTokens(c.failover.ctxUnavailableApiTokens)
+	if err != nil {
+		return ""
+	}
+	log.Debugf("apiTokens: %v, unavailableApiTokens: %v", apiTokens, unavailableApiTokens)
+
 	count := len(apiTokens)
 	switch count {
 	case 0:
@@ -706,10 +709,6 @@ func (c *ProviderConfig) OnRequestFailed(activeProvider Provider, ctx wrapper.Ht
 		return types.HeaderStopAllIterationAndWatermark
 	}
 	return types.ActionContinue
-}
-
-func isNotStreamingResponse(ctx wrapper.HttpContext) bool {
-	return ctx.GetContext(ctxKeyIsStreaming) != nil && !ctx.GetContext(ctxKeyIsStreaming).(bool)
 }
 
 func (c *ProviderConfig) GetApiTokenInUse(ctx wrapper.HttpContext) string {

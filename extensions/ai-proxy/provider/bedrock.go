@@ -108,7 +108,7 @@ func (b *bedrockProvider) OnStreamingResponseBody(ctx wrapper.HttpContext, name 
 		if isLastChunk {
 			return []byte(ssePrefix + "[DONE]\n\n"), nil
 		}
-		return chunk, fmt.Errorf("No events are extracted ")
+		return chunk, fmt.Errorf("no events are extracted")
 	}
 	var responseBuilder strings.Builder
 	for _, event := range events {

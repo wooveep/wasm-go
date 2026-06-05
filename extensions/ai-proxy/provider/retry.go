@@ -7,9 +7,9 @@ import (
 	"net/http"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-proxy/util"
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
-	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/tidwall/gjson"
 )
 
@@ -19,13 +19,13 @@ const (
 
 type retryOnFailure struct {
 	// @Title zh-CN 是否启用请求重试
-	enabled bool `required:"false" yaml:"enabled" json:"enabled"`
+	enabled bool `required:"false" yaml:"enabled"`
 	// @Title zh-CN 重试次数
-	maxRetries int64 `required:"false" yaml:"maxRetries" json:"maxRetries"`
+	maxRetries int64 `required:"false" yaml:"maxRetries"`
 	// @Title zh-CN 重试超时时间
-	retryTimeout int64 `required:"false" yaml:"retryTimeout" json:"retryTimeout"`
+	retryTimeout int64 `required:"false" yaml:"retryTimeout"`
 	// @Title zh-CN 需要进行重试的原始请求的状态码，支持正则表达式匹配
-	retryOnStatus []string `required:"false" yaml:"retryOnStatus" json:"retryOnStatus"`
+	retryOnStatus []string `required:"false" yaml:"retryOnStatus"`
 }
 
 func (r *retryOnFailure) FromJson(json gjson.Result) {
@@ -119,7 +119,7 @@ func (c *ProviderConfig) sendRetryRequest(
 	// Remove last failed token from retry apiTokens list
 	apiTokens = removeApiTokenFromRetryList(apiTokens, apiTokenInUse)
 	if len(apiTokens) == 0 {
-		return errors.New("No more apiTokens to retry")
+		return errors.New("no more apiTokens to retry")
 	}
 	// Set apiTokenInUse for the retry request
 	apiTokenInUse = GetRandomToken(apiTokens)
@@ -141,7 +141,7 @@ func (c *ProviderConfig) sendRetryRequest(
 			c.retryCall(ctx, activeProvider, apiName, statusCode, responseHeaders, responseBody, retryClient, apiTokenInUse, apiTokens)
 		}, uint32(c.retryOnFailure.retryTimeout))
 	if err != nil {
-		return fmt.Errorf("Failed to send retry request: %v", err)
+		return fmt.Errorf("failed to send retry request: %v", err)
 	}
 	return nil
 }

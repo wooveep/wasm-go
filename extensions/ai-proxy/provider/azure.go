@@ -108,7 +108,7 @@ func (m *azureProviderInitializer) ValidateConfig(config *ProviderConfig) error 
 	} else if err := validateAzureServiceURLAPIVersion(azureServiceUrl, config.azureServiceUrl); err != nil {
 		return err
 	}
-	if config.apiTokens == nil || len(config.apiTokens) == 0 {
+	if len(config.apiTokens) == 0 {
 		return errors.New("no apiToken found in provider config")
 	}
 	return nil

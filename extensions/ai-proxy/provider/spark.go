@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-proxy/util"
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
-	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 )
 
 // sparkProvider is the provider for SparkLLM AI service.
@@ -23,17 +23,6 @@ type sparkProviderInitializer struct{}
 type sparkProvider struct {
 	config       ProviderConfig
 	contextCache *contextCache
-}
-
-type sparkRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	TopK        int           `json:"top_k,omitempty"`
-	Stream      bool          `json:"stream,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
-	Tools       []tool        `json:"tools,omitempty"`
-	ToolChoice  string        `json:"tool_choice,omitempty"`
 }
 
 type sparkResponse struct {

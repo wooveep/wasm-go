@@ -296,7 +296,7 @@ func (m *qwenProvider) buildQwenTextGenerationRequest(ctx wrapper.HttpContext, o
 			Seed:              origRequest.Seed,
 			Temperature:       origRequest.Temperature,
 			TopP:              math.Max(qwenTopPMin, math.Min(origRequest.TopP, qwenTopPMax)),
-			IncrementalOutput: streaming && (origRequest.Tools == nil || len(origRequest.Tools) == 0),
+			IncrementalOutput: streaming && (len(origRequest.Tools) == 0),
 			EnableSearch:      m.config.qwenEnableSearch,
 			PreserveThinking:  shouldEnableQwenPreserveThinking(origRequest.Model, origRequest.Messages),
 			Tools:             origRequest.Tools,
@@ -437,21 +437,21 @@ func (m *qwenProvider) buildChatCompletionStreamingResponse(ctx wrapper.HttpCont
 	}
 
 	if !deltaContentMessage.IsEmpty() {
-		response := *&baseMessage
+		response := baseMessage
 		response.Choices = append(response.Choices, chatCompletionChoice{Delta: deltaContentMessage})
 		responses = append(responses, &response)
 	}
 	if !deltaToolCallsMessage.IsEmpty() {
-		response := *&baseMessage
+		response := baseMessage
 		response.Choices = append(response.Choices, chatCompletionChoice{Delta: deltaToolCallsMessage})
 		responses = append(responses, &response)
 	}
 
 	if finished {
-		finishResponse := *&baseMessage
+		finishResponse := baseMessage
 		finishResponse.Choices = append(finishResponse.Choices, chatCompletionChoice{Delta: &chatMessage{}, FinishReason: util.Ptr(qwenChoice.FinishReason)})
 
-		usageResponse := *&baseMessage
+		usageResponse := baseMessage
 		usageResponse.Choices = []chatCompletionChoice{{Delta: &chatMessage{}}}
 		usageResponse.Usage = &usage{
 			PromptTokens:     qwenResponse.Usage.InputTokens,
@@ -507,12 +507,6 @@ func (m *qwenProvider) insertHttpContextMessage(body []byte, content string, onl
 	}
 
 	return json.Marshal(request)
-}
-
-func (m *qwenProvider) appendStreamEvent(responseBuilder *strings.Builder, event *StreamEvent) {
-	responseBuilder.WriteString(streamDataItemKey)
-	responseBuilder.WriteString(event.Data)
-	responseBuilder.WriteString("\n\n")
 }
 
 func (m *qwenProvider) buildQwenTextEmbeddingRequest(request *embeddingsRequest) (*qwenTextEmbeddingRequest, error) {

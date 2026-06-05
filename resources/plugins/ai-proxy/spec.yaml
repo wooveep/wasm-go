@@ -1,0 +1,696 @@
+apiVersion: 1.0.0
+info:
+  gatewayMinVersion: "2.0.0"
+  type: enterprise
+  category: ai
+  image: platform_wasm/ai-proxy
+  name: ai-proxy
+  title: AI Proxy
+  x-title-i18n:
+    zh-CN: AI 代理
+  description: Provide a unified OpenAI-compatible AI gateway that can proxy OpenAI, Claude, Responses API, embeddings, image generation, and provider-native traffic to multiple AI service providers.
+  x-description-i18n:
+    zh-CN: 提供统一的 OpenAI 兼容 AI 网关能力，可代理 OpenAI、Claude、Responses API、Embedding、图片生成以及厂商原生请求到多个 AI 服务提供商。
+  iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
+  readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-proxy/README.md
+  x-readmeUrl-i18n:
+    en-US: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-proxy/README_EN.md
+  version: 1.0.0
+  contact:
+    name: CH3CHO
+    url: https://github.com/CH3CHO
+    email: ch3cho@qq.com
+spec:
+  phase: default
+  priority: 100
+  configSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        activeProviderId:
+          type: string
+          title: 当前 Provider ID
+          x-title-i18n:
+            en-US: Active Provider ID
+          description: 从 providers 列表中选择当前生效的 Provider；未配置时仅保存 Provider 列表，不主动代理。
+          x-description-i18n:
+            en-US: Selects the active provider from the providers list. When omitted, the provider list is stored but no provider is activated.
+        providers:
+          type: array
+          title: Provider列表
+          x-title-i18n:
+            en-US: Provider List
+          description: 多 Provider 配置列表，可通过全局或路由级 activeProviderId 选择生效 Provider。
+          x-description-i18n:
+            en-US: Multi-provider configuration list. Global or route-level activeProviderId selects the active provider.
+          items: &providerConfigSchema
+            type: object
+            required: [type]
+            additionalProperties: true
+            properties:
+              id:
+                type: string
+                title: Provider ID
+                description: 多 Provider 配置中用于 activeProviderId 选择的唯一标识。
+                x-description-i18n:
+                  en-US: Unique identifier used by activeProviderId in multi-provider configuration.
+              type:
+                type: string
+                title: AI服务提供商
+                x-title-i18n:
+                  en-US: AI Provider
+                description: AI 服务提供商类型。
+                x-description-i18n:
+                  en-US: AI service provider type.
+                enum:
+                - moonshot
+                - azure
+                - ai360
+                - github
+                - qwen
+                - openai
+                - groq
+                - grok
+                - baichuan
+                - yi
+                - deepseek
+                - zhipuai
+                - ollama
+                - claude
+                - baidu
+                - hunyuan
+                - stepfun
+                - minimax
+                - cloudflare
+                - spark
+                - gemini
+                - deepl
+                - mistral
+                - cohere
+                - doubao
+                - coze
+                - together-ai
+                - dify
+                - bedrock
+                - vertex
+                - triton
+                - openrouter
+                - longcat
+                - fireworks
+                - vllm
+                - generic
+                - kling
+              apiTokens:
+                type: array
+                title: API Tokens
+                description: 访问 AI 服务时用于认证的 API Token 列表。配置多个 Token 时，插件会按请求选择可用 Token。
+                x-description-i18n:
+                  en-US: API tokens used to authenticate to the AI service. When multiple tokens are configured, the plugin selects an available token per request.
+                items:
+                  type: string
+              timeout:
+                type: integer
+                title: 请求超时
+                x-title-i18n:
+                  en-US: Request Timeout
+                description: 获取上下文文件的超时时间，单位毫秒；默认 120000。该字段不控制实际转发到大模型的请求超时。
+                x-description-i18n:
+                  en-US: Timeout in milliseconds for retrieving context files. Defaults to 120000 and does not control the timeout of requests forwarded to LLM upstreams.
+                default: 120000
+              firstByteTimeout:
+                type: integer
+                title: 首包超时
+                x-title-i18n:
+                  en-US: First Byte Timeout
+                description: 流式请求中收到上游服务第一个响应包的超时时间，单位毫秒；默认 0 表示不开启。
+                x-description-i18n:
+                  en-US: Timeout in milliseconds for receiving the first upstream response byte on streaming requests. Defaults to 0, which disables it.
+                default: 0
+              protocol:
+                type: string
+                title: 对外接口协议
+                x-title-i18n:
+                  en-US: External Protocol
+                description: 对外提供的 API 契约。openai 为默认值；original 表示使用目标服务提供商原始接口契约。
+                x-description-i18n:
+                  en-US: API contract exposed by the plugin. openai is the default. original keeps the target provider's native API contract.
+                enum: [openai, original]
+                default: openai
+              modelMapping:
+                type: object
+                title: 模型名称映射表
+                x-title-i18n:
+                  en-US: Model Mapping
+                description: 将请求中的模型名称映射为目标服务商支持的模型名称。支持前缀、通配符和以 ~ 开头的正则匹配。
+                x-description-i18n:
+                  en-US: Maps request model names to provider model names. Supports prefix matching, wildcard fallback, and regular expressions prefixed with ~.
+                additionalProperties:
+                  type: string
+              capabilities:
+                type: object
+                title: 原生能力映射
+                x-title-i18n:
+                  en-US: Native Capability Mapping
+                description: 厂商原生兼容能力到上游 API path 的映射，例如 openai/v1/chatcompletions、openai/v1/responses、openai/v1/embeddings、openai/v1/imagegeneration、openai/v1/audiospeech、cohere/v1/rerank。
+                x-description-i18n:
+                  en-US: Mapping from provider-native compatible capabilities to upstream API paths, such as openai/v1/chatcompletions, openai/v1/responses, openai/v1/embeddings, openai/v1/imagegeneration, openai/v1/audiospeech, and cohere/v1/rerank.
+                additionalProperties:
+                  type: string
+              basePath:
+                type: string
+                title: 请求基础路径
+                x-title-i18n:
+                  en-US: Request Base Path
+                description: 请求 path 中需要移除或添加的基础路径。
+                x-description-i18n:
+                  en-US: Base path to remove from or prepend to request paths.
+              basePathHandling:
+                type: string
+                title: 基础路径处理方式
+                x-title-i18n:
+                  en-US: Base Path Handling
+                description: basePath 的处理方式。removePrefix 表示转发前移除前缀，prepend 表示转发前添加前缀。
+                x-description-i18n:
+                  en-US: How basePath is handled. removePrefix removes the prefix before forwarding, while prepend adds the prefix before forwarding.
+                enum: [removePrefix, prepend]
+                default: removePrefix
+              providerBasePath:
+                type: string
+                title: Provider基础路径
+                x-title-i18n:
+                  en-US: Provider Base Path
+                description: Provider 改写请求路径时额外添加的路径前缀，例如 /api/ai。
+                x-description-i18n:
+                  en-US: Path prefix added when the provider rewrites the upstream request path, for example /api/ai.
+              providerDomain:
+                type: string
+                title: Provider域名
+                x-title-i18n:
+                  en-US: Provider Domain
+                description: 通用 Provider 服务域名覆盖值，常用于代理服务器场景。
+                x-description-i18n:
+                  en-US: Generic provider service domain override, commonly used for proxy server scenarios.
+              context:
+                type: object
+                title: 模型对话上下文
+                x-title-i18n:
+                  en-US: Conversation Context
+                description: 外部上下文文件来源，用于在 AI 请求中补充对话上下文。
+                x-description-i18n:
+                  en-US: External context file source used to add conversation context to AI requests.
+                required: [fileUrl, serviceName, servicePort]
+                properties:
+                  fileUrl:
+                    type: string
+                    title: 文件URL
+                    x-title-i18n:
+                      en-US: File URL
+                    description: 用于获取对话上下文的纯文本文件 URL。
+                    x-description-i18n:
+                      en-US: Plain text file URL used to retrieve conversation context.
+                  serviceName:
+                    type: string
+                    title: 上游服务名称
+                    x-title-i18n:
+                      en-US: Upstream Service Name
+                    description: 文件服务对应的网关内上游服务名称。
+                    x-description-i18n:
+                      en-US: In-gateway upstream service name for the file service.
+                  servicePort:
+                    type: integer
+                    title: 上游服务端口
+                    x-title-i18n:
+                      en-US: Upstream Service Port
+                    description: 文件服务对应的网关内上游服务端口。
+                    x-description-i18n:
+                      en-US: In-gateway upstream service port for the file service.
+              contextCleanupCommands:
+                type: array
+                title: 上下文清理命令
+                x-title-i18n:
+                  en-US: Context Cleanup Commands
+                description: 当请求 messages 中存在完全匹配任一命令的 user 消息时，清理该消息及之前的非 system 消息。
+                x-description-i18n:
+                  en-US: When a user message exactly matches any command, that message and previous non-system messages are removed.
+                items:
+                  type: string
+              customSettings:
+                type: array
+                title: 自定义模型参数
+                x-title-i18n:
+                  en-US: Custom Model Settings
+                description: 为 AI 请求填充或覆盖模型参数。
+                x-description-i18n:
+                  en-US: Fill or override model parameters in AI requests.
+                items:
+                  type: object
+                  required: [name, value]
+                  properties:
+                    name:
+                      type: string
+                      title: 参数名称
+                      x-title-i18n:
+                        en-US: Setting Name
+                    value:
+                      title: 参数值
+                      x-title-i18n:
+                        en-US: Setting Value
+                      anyOf:
+                      - type: string
+                      - type: integer
+                      - type: number
+                      - type: boolean
+                    mode:
+                      type: string
+                      title: 设置模式
+                      x-title-i18n:
+                        en-US: Setting Mode
+                      enum: [auto, raw]
+                      default: auto
+                    overwrite:
+                      type: boolean
+                      title: 是否覆盖
+                      x-title-i18n:
+                        en-US: Overwrite
+                      default: true
+              failover:
+                type: object
+                title: API Token故障切换
+                x-title-i18n:
+                  en-US: API Token Failover
+                description: API Token 不可用时将其临时移出可用列表，并通过健康检查或冷却时间恢复。
+                x-description-i18n:
+                  en-US: Temporarily removes unavailable API tokens and restores them by health check or cooldown.
+                properties:
+                  enabled:
+                    type: boolean
+                    title: 是否启用
+                    x-title-i18n:
+                      en-US: Enabled
+                    default: false
+                  failureThreshold:
+                    type: integer
+                    title: 失败阈值
+                    x-title-i18n:
+                      en-US: Failure Threshold
+                    default: 3
+                  successThreshold:
+                    type: integer
+                    title: 成功阈值
+                    x-title-i18n:
+                      en-US: Success Threshold
+                    default: 1
+                  healthCheckInterval:
+                    type: integer
+                    title: 健康检查间隔
+                    x-title-i18n:
+                      en-US: Health Check Interval
+                    description: 健康检查间隔，单位毫秒。
+                    x-description-i18n:
+                      en-US: Health check interval in milliseconds.
+                    default: 5000
+                  healthCheckTimeout:
+                    type: integer
+                    title: 健康检查超时
+                    x-title-i18n:
+                      en-US: Health Check Timeout
+                    description: 健康检查超时时间，单位毫秒。
+                    x-description-i18n:
+                      en-US: Health check timeout in milliseconds.
+                    default: 5000
+                  healthCheckModel:
+                    type: string
+                    title: 健康检查模型
+                    x-title-i18n:
+                      en-US: Health Check Model
+                  cooldownDuration:
+                    type: integer
+                    title: 冷却恢复时间
+                    x-title-i18n:
+                      en-US: Cooldown Duration
+                    description: API Token 不可用后的冷却恢复时间，单位毫秒。
+                    x-description-i18n:
+                      en-US: Cooldown duration in milliseconds after an API token becomes unavailable.
+                    default: 0
+                  failoverOnStatus:
+                    type: array
+                    title: 故障切换状态码
+                    x-title-i18n:
+                      en-US: Failover Status Patterns
+                    description: 触发 failover 的原始请求状态码，支持正则表达式。
+                    x-description-i18n:
+                      en-US: Original request status code patterns that trigger failover. Regular expressions are supported.
+                    items:
+                      type: string
+                    default: ["4.*", "5.*"]
+              retryOnFailure:
+                type: object
+                title: 失败请求重试
+                x-title-i18n:
+                  en-US: Retry On Failure
+                description: 非流式请求失败时立即使用其他 API Token 重试。
+                x-description-i18n:
+                  en-US: Immediately retries failed non-streaming requests with another API token.
+                properties:
+                  enabled:
+                    type: boolean
+                    title: 是否启用
+                    x-title-i18n:
+                      en-US: Enabled
+                    default: false
+                  maxRetries:
+                    type: integer
+                    title: 最大重试次数
+                    x-title-i18n:
+                      en-US: Max Retries
+                    default: 1
+                  retryTimeout:
+                    type: integer
+                    title: 重试超时
+                    x-title-i18n:
+                      en-US: Retry Timeout
+                    description: 重试请求超时时间，单位毫秒。
+                    x-description-i18n:
+                      en-US: Retry request timeout in milliseconds.
+                    default: 60000
+                  retryOnStatus:
+                    type: array
+                    title: 重试状态码
+                    x-title-i18n:
+                      en-US: Retry Status Patterns
+                    description: 触发重试的原始请求状态码，支持正则表达式。
+                    x-description-i18n:
+                      en-US: Original request status code patterns that trigger retry. Regular expressions are supported.
+                    items:
+                      type: string
+                    default: ["4.*", "5.*"]
+              reasoningContentMode:
+                type: string
+                title: 推理内容处理方式
+                x-title-i18n:
+                  en-US: Reasoning Content Mode
+                description: 如何处理大模型返回的 reasoning_content/thinking。passthrough 正常输出，ignore 不输出，concat 拼接到常规内容前。
+                x-description-i18n:
+                  en-US: How to handle reasoning_content/thinking returned by models. passthrough outputs normally, ignore suppresses it, concat prepends it to regular content.
+                enum: [passthrough, ignore, concat]
+                default: passthrough
+              mergeConsecutiveMessages:
+                type: boolean
+                title: 合并连续同角色消息
+                x-title-i18n:
+                  en-US: Merge Consecutive Messages
+                default: false
+              promoteThinkingOnEmpty:
+                type: boolean
+                title: 空内容时提升思考为正文
+                x-title-i18n:
+                  en-US: Promote Thinking On Empty
+                default: false
+              logUpstreamErrorResponseBody:
+                type: boolean
+                title: 记录上游错误响应体
+                x-title-i18n:
+                  en-US: Log Upstream Error Response Body
+                default: false
+              hiclawMode:
+                type: boolean
+                title: HiClaw模式
+                x-title-i18n:
+                  en-US: HiClaw Mode
+                description: 同时启用 mergeConsecutiveMessages 和 promoteThinkingOnEmpty。
+                x-description-i18n:
+                  en-US: Enables mergeConsecutiveMessages and promoteThinkingOnEmpty together.
+                default: false
+              openaiCustomUrl:
+                type: string
+                title: OpenAI自定义URL
+                x-title-i18n:
+                  en-US: OpenAI Custom URL
+              responseJsonSchema:
+                type: object
+                title: OpenAI响应JSON Schema
+                x-title-i18n:
+                  en-US: OpenAI Response JSON Schema
+                additionalProperties: true
+              azureServiceUrl:
+                type: string
+                title: Azure OpenAI Service URL
+              moonshotFileId:
+                type: string
+                title: Moonshot File ID
+              qwenFileIds:
+                type: array
+                title: 通义千问File ID列表
+                x-title-i18n:
+                  en-US: Qwen File IDs
+                items:
+                  type: string
+              qwenEnableSearch:
+                type: boolean
+                title: 启用通义千问搜索
+                x-title-i18n:
+                  en-US: Enable Qwen Search
+                default: false
+              qwenDomain:
+                type: string
+                title: 通义千问服务域名
+                x-title-i18n:
+                  en-US: Qwen Domain
+              qwenEnableCompatible:
+                type: boolean
+                title: 开启通义千问兼容模式
+                x-title-i18n:
+                  en-US: Enable Qwen Compatible Mode
+                default: true
+              ollamaServerHost:
+                type: string
+                title: Ollama Server Host
+              ollamaServerPort:
+                type: integer
+                title: Ollama Server Port
+                default: 11434
+              hunyuanAuthId:
+                type: string
+                title: Hunyuan Auth ID
+              hunyuanAuthKey:
+                type: string
+                title: Hunyuan Auth Key
+              awsAccessKey:
+                type: string
+                title: AWS Access Key
+              awsSecretKey:
+                type: string
+                title: AWS Secret Key
+              awsRegion:
+                type: string
+                title: AWS Region
+              bedrockAdditionalFields:
+                type: object
+                title: Bedrock额外模型请求参数
+                x-title-i18n:
+                  en-US: Bedrock Additional Model Fields
+                additionalProperties: true
+              bedrockPromptCachePointPositions:
+                type: object
+                title: Bedrock Prompt CachePoint位置
+                x-title-i18n:
+                  en-US: Bedrock Prompt CachePoint Positions
+                additionalProperties:
+                  type: boolean
+              promptCacheRetention:
+                type: string
+                title: Prompt Cache保留策略
+                x-title-i18n:
+                  en-US: Prompt Cache Retention
+                enum: [in_memory, "24h"]
+              minimaxApiType:
+                type: string
+                title: MiniMax API类型
+                x-title-i18n:
+                  en-US: MiniMax API Type
+                enum: [v2, pro]
+                default: v2
+              minimaxGroupId:
+                type: string
+                title: MiniMax Group ID
+              apiVersion:
+                type: string
+                title: API版本
+                x-title-i18n:
+                  en-US: API Version
+                description: Gemini、Claude 等服务使用的 API 版本字段。
+                x-description-i18n:
+                  en-US: API version field used by services such as Gemini and Claude.
+              claudeVersion:
+                type: string
+                title: Claude API版本
+                x-title-i18n:
+                  en-US: Claude API Version
+                description: Claude 服务 API 版本；配置后优先于 apiVersion。
+                x-description-i18n:
+                  en-US: Claude service API version. When configured, it takes precedence over apiVersion.
+              claudeCodeMode:
+                type: boolean
+                title: Claude Code模式
+                x-title-i18n:
+                  en-US: Claude Code Mode
+                default: false
+              cloudflareAccountId:
+                type: string
+                title: Cloudflare Account ID
+              geminiSafetySetting:
+                type: object
+                title: Gemini安全设置
+                x-title-i18n:
+                  en-US: Gemini Safety Settings
+                additionalProperties:
+                  type: string
+              geminiThinkingBudget:
+                type: integer
+                title: Gemini Thinking Budget
+              vertexRegion:
+                type: string
+                title: Vertex Region
+              vertexProjectId:
+                type: string
+                title: Vertex Project ID
+              vertexAuthKey:
+                type: string
+                title: Vertex Auth Key
+              vertexAuthServiceName:
+                type: string
+                title: Vertex Auth Service Name
+              vertexTokenRefreshAhead:
+                type: integer
+                title: Vertex Token Refresh Ahead
+                default: 60
+              vertexOpenAICompatible:
+                type: boolean
+                title: Vertex OpenAI兼容模式
+                x-title-i18n:
+                  en-US: Vertex OpenAI Compatible Mode
+                default: false
+              klingAccessKey:
+                type: string
+                title: Kling Access Key
+              klingSecretKey:
+                type: string
+                title: Kling Secret Key
+              klingTokenRefreshAhead:
+                type: integer
+                title: Kling Token Refresh Ahead
+                default: 60
+              targetLang:
+                type: string
+                title: DeepL目标语种
+                x-title-i18n:
+                  en-US: DeepL Target Language
+              difyApiUrl:
+                type: string
+                title: Dify API URL
+              botType:
+                type: string
+                title: Dify应用类型
+                x-title-i18n:
+                  en-US: Dify Bot Type
+                enum: [Chat, Completion, Agent, Workflow]
+              inputVariable:
+                type: string
+                title: Dify输入变量
+                x-title-i18n:
+                  en-US: Dify Input Variable
+              outputVariable:
+                type: string
+                title: Dify输出变量
+                x-title-i18n:
+                  en-US: Dify Output Variable
+              genericHost:
+                type: string
+                title: Generic Host
+              tritonModelVersion:
+                type: string
+                title: Triton Model Version
+              tritonDomain:
+                type: string
+                title: Triton Domain
+              vllmCustomUrl:
+                type: string
+                title: vLLM Custom URL
+              vllmServerHost:
+                type: string
+                title: vLLM Server Host
+              doubaoDomain:
+                type: string
+                title: 豆包服务域名
+                x-title-i18n:
+                  en-US: Doubao Domain
+              zhipuDomain:
+                type: string
+                title: 智谱AI服务域名
+                x-title-i18n:
+                  en-US: Zhipu AI Domain
+              zhipuCodePlanMode:
+                type: boolean
+                title: 智谱AI Code Plan模式
+                x-title-i18n:
+                  en-US: Zhipu AI Code Plan Mode
+                default: false
+        provider:
+          <<: *providerConfigSchema
+          title: 单 Provider配置
+          x-title-i18n:
+            en-US: Single Provider Configuration
+          description: 兼容旧版单 Provider 配置。配置 provider 时会直接作为当前生效 Provider。
+          x-description-i18n:
+            en-US: Legacy-compatible single provider configuration. When provider is configured, it becomes the active provider directly.
+      example:
+        activeProviderId: qwen-main
+        providers:
+        - id: qwen-main
+          type: qwen
+          apiTokens:
+          - YOUR_DASHSCOPE_API_TOKEN
+          qwenEnableCompatible: true
+          modelMapping:
+            "*": qwen-plus
+          capabilities:
+            openai/v1/chatcompletions: /compatible-mode/v1/chat/completions
+            openai/v1/responses: /compatible-mode/v1/responses
+        - id: generic-fallback
+          type: generic
+          apiTokens:
+          - YOUR_FALLBACK_TOKEN
+          genericHost: api.example.com
+          basePathHandling: prepend
+          basePath: /v1
+  routeConfigSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        activeProviderId:
+          type: string
+          title: 当前 Provider ID
+          x-title-i18n:
+            en-US: Active Provider ID
+          description: 路由级 Provider 选择。用于从全局 providers 列表中切换当前路由生效的 Provider。
+          x-description-i18n:
+            en-US: Route-level provider selector. Switches the active provider for the current route from the global providers list.
+        providers:
+          type: array
+          title: Provider列表
+          x-title-i18n:
+            en-US: Provider List
+          description: 路由级 Provider 列表覆盖；未配置时继承全局配置。
+          x-description-i18n:
+            en-US: Route-level provider list override. Inherits global configuration when omitted.
+          items: *providerConfigSchema
+        provider:
+          <<: *providerConfigSchema
+          title: 单 Provider配置
+          x-title-i18n:
+            en-US: Single Provider Configuration
+          description: 路由级旧版单 Provider 覆盖；配置后会直接作为当前路由生效 Provider。
+          x-description-i18n:
+            en-US: Route-level legacy single provider override. When configured, it becomes the active provider for the route.
+      example:
+        activeProviderId: generic-fallback

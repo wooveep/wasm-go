@@ -43,7 +43,7 @@ var geminiThinkingModels = map[string]bool{
 type geminiProviderInitializer struct{}
 
 func (g *geminiProviderInitializer) ValidateConfig(config *ProviderConfig) error {
-	if config.apiTokens == nil || len(config.apiTokens) == 0 {
+	if len(config.apiTokens) == 0 {
 		return errors.New("no apiToken found in provider config")
 	}
 	return nil
@@ -655,18 +655,6 @@ func (g *geminiProvider) getImageInlineDataWithCallback(raw string, callback fun
 		callback(nil, fmt.Errorf("failed to get image %s", raw))
 		return
 	}
-}
-
-func (g *geminiProvider) setSystemContent(request *geminiGenerationContentRequest, content string) {
-	systemContents := []geminiChatContent{{
-		Role: roleUser,
-		Parts: []geminiPart{
-			{
-				Text: content,
-			},
-		},
-	}}
-	request.Contents = append(systemContents, request.Contents...)
 }
 
 type geminiBatchEmbeddingRequest struct {

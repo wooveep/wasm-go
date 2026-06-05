@@ -513,7 +513,7 @@ func (v *vertexProvider) onImageGenerationRequestBody(ctx wrapper.HttpContext, b
 
 func (v *vertexProvider) onImageEditRequestBody(ctx wrapper.HttpContext, body []byte, headers http.Header) ([]byte, error) {
 	request := &imageEditRequest{}
-	imageURLs := make([]string, 0)
+	var imageURLs []string
 	contentType := headers.Get("Content-Type")
 	if isMultipartFormData(contentType) {
 		parsedRequest, err := parseMultipartImageRequest(body, contentType)
@@ -560,7 +560,7 @@ func (v *vertexProvider) onImageEditRequestBody(ctx wrapper.HttpContext, body []
 
 func (v *vertexProvider) onImageVariationRequestBody(ctx wrapper.HttpContext, body []byte, headers http.Header) ([]byte, error) {
 	request := &imageVariationRequest{}
-	imageURLs := make([]string, 0)
+	var imageURLs []string
 	contentType := headers.Get("Content-Type")
 	if isMultipartFormData(contentType) {
 		parsedRequest, err := parseMultipartImageRequest(body, contentType)

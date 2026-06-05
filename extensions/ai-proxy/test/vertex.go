@@ -451,6 +451,7 @@ func RunVertexExpressModeOnHttpRequestBodyTests(t *testing.T) {
 				}
 				seed++
 			}
+			//lint:ignore SA1019 The regression target uses package-level math/rand token selection.
 			rand.Seed(seed)
 
 			requestBody := `{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"token consistency test"}]}`
@@ -522,6 +523,7 @@ func RunVertexExpressModeOnHttpRequestBodyTests(t *testing.T) {
 				}
 				seed++
 			}
+			//lint:ignore SA1019 The regression target uses package-level math/rand token selection.
 			rand.Seed(seed)
 
 			requestBody := `{"model":"claude-sonnet-4@20250514","messages":[{"role":"user","content":"hello anthropic"}]}`
@@ -2671,6 +2673,7 @@ func RunVertexRawModeOnHttpRequestBodyTests(t *testing.T) {
 				}
 				seed++
 			}
+			//lint:ignore SA1019 The regression target uses package-level math/rand token selection.
 			rand.Seed(seed)
 
 			host.CallOnHttpRequestHeaders([][2]string{
