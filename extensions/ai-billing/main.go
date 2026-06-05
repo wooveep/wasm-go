@@ -133,6 +133,33 @@ type BillingUsage struct {
 	Details              map[string]any `json:"details"`
 }
 
+func (usage BillingUsage) MarshalJSON() ([]byte, error) {
+	type billingUsageJSON struct {
+		Unit                 string          `json:"unit"`
+		Input                int64           `json:"input"`
+		Output               int64           `json:"output"`
+		InputCacheHitTokens  *int64          `json:"input_cache_hit_tokens,omitempty"`
+		InputCacheMissTokens *int64          `json:"input_cache_miss_tokens,omitempty"`
+		OutputTokens         *int64          `json:"output_tokens,omitempty"`
+		Total                int64           `json:"total"`
+		Details              *map[string]any `json:"details,omitempty"`
+	}
+	var details *map[string]any
+	if usage.Details != nil {
+		details = &usage.Details
+	}
+	return json.Marshal(billingUsageJSON{
+		Unit:                 usage.Unit,
+		Input:                usage.Input,
+		Output:               usage.Output,
+		InputCacheHitTokens:  usage.InputCacheHitTokens,
+		InputCacheMissTokens: usage.InputCacheMissTokens,
+		OutputTokens:         usage.OutputTokens,
+		Total:                usage.Total,
+		Details:              details,
+	})
+}
+
 func parseConfig(configJson gjson.Result, config *BillingConfig) error {
 	if err := parseConfigFields(configJson, config); err != nil {
 		return err
@@ -344,6 +371,22 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	ctx.SetContext(ctxUsageSource, usageSourceProvider)
 }
 
+func recordEstimatedUsage(ctx wrapper.HttpContext, model, inputText, outputText string) bool {
+	usage, ok := estimateTextTokenUsage(model, inputText, outputText)
+	if !ok {
+		return false
+	}
+	ctx.SetContext(ctxInputToken, usage.InputToken)
+	ctx.SetContext(ctxOutputToken, usage.OutputToken)
+	ctx.SetContext(ctxTotalToken, usage.TotalToken)
+	if strings.TrimSpace(model) == "" {
+		model = tokenusage.ModelUnknown
+	}
+	ctx.SetContext(ctxModel, model)
+	ctx.SetContext(ctxUsageSource, usageSourceEstimated)
+	return true
+}
+
 func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream bool) {
 	event := buildBillingEvent(ctx, config, isStream)
 	sendBillingEvent(config, event)
@@ -375,16 +418,6 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	inputTokens := int64FromContext(ctx.GetContext(ctxInputToken))
 	outputTokens := int64FromContext(ctx.GetContext(ctxOutputToken))
 	totalTokens := int64FromContext(ctx.GetContext(ctxTotalToken))
-	var inputCacheHitTokens *int64
-	var inputCacheMissTokens *int64
-	var nativeOutputTokens *int64
-	if hitTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheHit)); ok {
-		if missTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheMiss)); ok {
-			inputCacheHitTokens = int64Ptr(hitTokens)
-			inputCacheMissTokens = int64Ptr(missTokens)
-			nativeOutputTokens = int64Ptr(outputTokens)
-		}
-	}
 	usageMissing := totalTokens <= 0
 	usageSource := ctx.GetStringContext(ctxUsageSource, "")
 	if usageSource == "" {
@@ -394,6 +427,24 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 			usageSource = usageSourceProvider
 		}
 	}
+
+	var inputCacheHitTokens *int64
+	var inputCacheMissTokens *int64
+	var nativeOutputTokens *int64
+	if usageSource != usageSourceEstimated {
+		if hitTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheHit)); ok {
+			if missTokens, ok := optionalInt64FromContext(ctx.GetContext(ctxInputCacheMiss)); ok {
+				inputCacheHitTokens = int64Ptr(hitTokens)
+				inputCacheMissTokens = int64Ptr(missTokens)
+				nativeOutputTokens = int64Ptr(outputTokens)
+			}
+		}
+	}
+	usageDetails := billingUsageDetails(ctx)
+	if usageSource == usageSourceEstimated {
+		usageDetails = nil
+	}
+
 	requestID := ctx.GetStringContext(ctxRequestID, "")
 	eventID := ctx.GetStringContext(ctxEventID, "")
 	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, eventID)
@@ -417,7 +468,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 			InputCacheMissTokens: inputCacheMissTokens,
 			OutputTokens:         nativeOutputTokens,
 			Total:                totalTokens,
-			Details:              billingUsageDetails(ctx),
+			Details:              usageDetails,
 		},
 		StartTimeMs:  int64FromContext(ctx.GetContext(ctxStartTime)),
 		EndTimeMs:    time.Now().UnixMilli(),

@@ -13,6 +13,39 @@ func tokenizerForModel(model string) (tokenizer.Codec, error) {
 	return tokenizer.Get(tokenizerEncodingForModel(model))
 }
 
+type estimatedTokenUsage struct {
+	InputToken  int64
+	OutputToken int64
+	TotalToken  int64
+}
+
+func estimateTextTokenUsage(model, inputText, outputText string) (estimatedTokenUsage, bool) {
+	if inputText == "" || outputText == "" {
+		return estimatedTokenUsage{}, false
+	}
+	codec, err := tokenizerForModel(model)
+	if err != nil {
+		return estimatedTokenUsage{}, false
+	}
+	inputTokens, err := codec.Count(inputText)
+	if err != nil {
+		return estimatedTokenUsage{}, false
+	}
+	outputTokens, err := codec.Count(outputText)
+	if err != nil {
+		return estimatedTokenUsage{}, false
+	}
+	usage := estimatedTokenUsage{
+		InputToken:  int64(inputTokens),
+		OutputToken: int64(outputTokens),
+	}
+	usage.TotalToken = usage.InputToken + usage.OutputToken
+	if usage.TotalToken <= 0 {
+		return estimatedTokenUsage{}, false
+	}
+	return usage, true
+}
+
 func tokenizerEncodingForModel(model string) tokenizer.Encoding {
 	normalizedModel := strings.ToLower(strings.TrimSpace(model))
 	if isCl100kBaseModel(normalizedModel) {

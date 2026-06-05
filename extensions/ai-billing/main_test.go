@@ -1300,6 +1300,14 @@ func requireObjectFactName(t *testing.T, event map[string]interface{}, key, name
 	require.False(t, hasID, "%s.id should be omitted when no stable Console id is available", key)
 }
 
+func mapKeys(values map[string]interface{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func TestPathFiltering(t *testing.T) {
 	require.True(t, isAIPathEnabled("/proxy/v1/chat/completions?x=1", []string{"/v1/chat/completions"}))
 	require.False(t, isAIPathEnabled("/proxy/not-ai", []string{"/v1/chat/completions"}))
@@ -1563,6 +1571,49 @@ func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
 	require.NotEqual(t, event.RequestID, "tenant-a")
 	require.NotEqual(t, event.RequestID, "consumer-a")
 	require.NotEqual(t, event.RequestID, "200")
+}
+
+func TestBuildBillingEventEstimatedUsageIsBasicOnly(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxStartTime, int64(1))
+	ctx.SetContext(ctxEventID, "018f4c7c-2222-7abc-8222-222222222222")
+	ctx.SetContext(ctxIdempotencyKey, "018f4c7c-2222-7abc-8222-222222222222")
+	ctx.SetContext(ctxRequestPath, "/v1/chat/completions")
+	ctx.SetContext(ctxRequestID, "req-estimated")
+	ctx.SetContext(ctxTenant, "tenant-a")
+	ctx.SetContext(ctxConsumer, "consumer-a")
+	ctx.SetContext(ctxProvider, "openai")
+	ctx.SetContext(ctxQuotaScope, "global")
+	ctx.SetContext(ctxRoute, "route-a")
+	ctx.SetContext(ctxCluster, "cluster-a")
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+	require.True(t, recordEstimatedUsage(ctx, "provider-new-model", "hello input", "hello output"))
+	ctx.SetContext(ctxInputCacheHit, int64(1))
+	ctx.SetContext(ctxInputCacheMiss, int64(2))
+	ctx.SetContext(ctxInputDetails, map[string]int64{"cached_tokens": 1})
+	ctx.SetContext(ctxOutputDetails, map[string]int64{"reasoning_tokens": 2})
+	ctx.SetContext(ctxProviderUsage, map[string]any{"prompt_tokens": 99})
+
+	body, err := json.Marshal(buildBillingEvent(ctx, BillingConfig{Provider: "openai"}, false))
+	require.NoError(t, err)
+
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &event))
+	require.Equal(t, false, event["usage_missing"])
+	require.Equal(t, usageSourceEstimated, event["usage_source"])
+	requireObjectFactName(t, event, "model", "provider-new-model")
+
+	usage, ok := event["usage"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "token", usage["unit"])
+	input := int64(usage["input"].(float64))
+	output := int64(usage["output"].(float64))
+	total := int64(usage["total"].(float64))
+	require.Greater(t, input, int64(0))
+	require.Greater(t, output, int64(0))
+	require.Equal(t, input+output, total)
+	require.ElementsMatch(t, []string{"unit", "input", "output", "total"}, mapKeys(usage))
 }
 
 type failingBillingHTTPClient struct {
