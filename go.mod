@@ -8,6 +8,7 @@ require (
 	github.com/higress-group/proxy-wasm-go-sdk v0.0.0-20251103120604-77e9cce339d2
 	github.com/invopop/jsonschema v0.13.0
 	github.com/stretchr/testify v1.9.0
+	github.com/tiktoken-go/tokenizer v0.7.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/resp v0.1.1
 	github.com/tidwall/sjson v1.2.5
@@ -23,6 +24,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect

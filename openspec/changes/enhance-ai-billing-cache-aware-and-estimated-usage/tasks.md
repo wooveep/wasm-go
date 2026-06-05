@@ -2,7 +2,7 @@
 
 - [x] 1.1 Run GitNexus upstream impact analysis for `recordUsage`, `onHttpResponseBody`, `onHttpStreamingResponseBody`, and `GetTokenUsage`; report direct callers, affected processes, and risk before editing those symbols.
 - [x] 1.2 Inspect the existing `ai-billing` request, non-streaming response, streaming response, and billing delivery flows to identify current context keys and event construction points.
-- [ ] 1.3 Add `github.com/tiktoken-go/tokenizer` to module dependencies and confirm the selected version exposes `o200k_base` and `cl100k_base` vocabulary support.
+- [x] 1.3 Add `github.com/tiktoken-go/tokenizer` to module dependencies and confirm the selected version exposes `o200k_base` and `cl100k_base` vocabulary support.
 
 ## 2. Provider Usage Normalization
 
