@@ -38,4 +38,4 @@
 - [x] 5.5 Run focused Go tests for `extensions/ai-billing` and `pkg/tokenusage`, then run any broader suite required by touched shared packages.
 - [x] 5.6 Run `openspec status --change "enhance-ai-billing-cache-aware-and-estimated-usage"` and OpenSpec validation commands available in this repo.
 - [x] 5.7 Run `gitnexus_detect_changes()` before committing to verify affected symbols and flows match the expected blast radius.
-- [ ] 5.8 Run `graphify update .` after code changes to keep the project graph current.
+- [x] 5.8 Run `graphify update .` after code changes to keep the project graph current.
