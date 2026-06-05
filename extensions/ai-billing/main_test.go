@@ -11,6 +11,7 @@ import (
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/iface"
 	"github.com/higress-group/wasm-go/pkg/test"
+	"github.com/higress-group/wasm-go/pkg/tokenusage"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/stretchr/testify/require"
 )
@@ -808,6 +809,102 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("kimi top-level cached tokens map cache aware usage", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"moonshot-v1","usage":{"prompt_tokens":12,"cached_tokens":5,"completion_tokens":6,"total_tokens":18}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 12, usage["input"])
+			require.EqualValues(t, 6, usage["output"])
+			require.EqualValues(t, 18, usage["total"])
+			require.EqualValues(t, 5, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 7, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 6, usage["output_tokens"])
+			require.Equal(t, map[string]interface{}{
+				"input": map[string]interface{}{
+					"cached_tokens": float64(5),
+				},
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens":     float64(12),
+					"cached_tokens":     float64(5),
+					"completion_tokens": float64(6),
+					"total_tokens":      float64(18),
+				},
+			}, usage["details"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
+		t.Run("deepseek explicit cache split maps hit and miss usage", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-chat","usage":{"prompt_tokens":11,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":7,"completion_tokens":2,"total_tokens":13}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 11, usage["input"])
+			require.EqualValues(t, 2, usage["output"])
+			require.EqualValues(t, 13, usage["total"])
+			require.EqualValues(t, 4, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 7, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 2, usage["output_tokens"])
+			require.Equal(t, map[string]interface{}{
+				"input": map[string]interface{}{
+					"prompt_cache_hit_tokens":  float64(4),
+					"prompt_cache_miss_tokens": float64(7),
+				},
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens":            float64(11),
+					"prompt_cache_hit_tokens":  float64(4),
+					"prompt_cache_miss_tokens": float64(7),
+					"completion_tokens":        float64(2),
+					"total_tokens":             float64(13),
+				},
+			}, usage["details"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
 		t.Run("streaming provider usage details merge across chunks", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -842,17 +939,26 @@ func TestBillingEventDelivery(t *testing.T) {
 			details, ok := usage["details"].(map[string]interface{})
 			require.True(t, ok)
 			require.Equal(t, map[string]interface{}{
-				"prompt_tokens": float64(5),
-				"prompt_tokens_details": map[string]interface{}{
+				"input": map[string]interface{}{
 					"cached_tokens": float64(2),
 					"audio_tokens":  float64(1),
 				},
-				"completion_tokens": float64(8),
-				"total_tokens":      float64(13),
-				"completion_tokens_details": map[string]interface{}{
+				"output": map[string]interface{}{
 					"reasoning_tokens": float64(3),
 				},
-			}, details["provider_usage"])
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens": float64(5),
+					"prompt_tokens_details": map[string]interface{}{
+						"cached_tokens": float64(2),
+						"audio_tokens":  float64(1),
+					},
+					"completion_tokens": float64(8),
+					"total_tokens":      float64(13),
+					"completion_tokens_details": map[string]interface{}{
+						"reasoning_tokens": float64(3),
+					},
+				},
+			}, details)
 
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
 			host.CompleteHttp()
@@ -1158,6 +1264,31 @@ func TestBillingDeliveryAcceptedStatusExcludesAuthFailures(t *testing.T) {
 	for _, statusCode := range []int{http.StatusOK, http.StatusCreated, http.StatusAccepted} {
 		require.True(t, isBillingDeliveryAcceptedStatus(statusCode), "status %d", statusCode)
 	}
+}
+
+func TestCacheAwareInputTokenSplit(t *testing.T) {
+	hitTokens, missTokens, ok := cacheAwareInputTokenSplit(10, map[string]int64{
+		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  8,
+		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 7,
+	})
+	require.True(t, ok)
+	require.EqualValues(t, 8, hitTokens)
+	require.EqualValues(t, 7, missTokens)
+
+	hitTokens, missTokens, ok = cacheAwareInputTokenSplit(10, map[string]int64{
+		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  -2,
+		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: -3,
+	})
+	require.True(t, ok)
+	require.EqualValues(t, 0, hitTokens)
+	require.EqualValues(t, 0, missTokens)
+
+	hitTokens, missTokens, ok = cacheAwareInputTokenSplit(10, map[string]int64{
+		tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 12,
+	})
+	require.True(t, ok)
+	require.EqualValues(t, 0, hitTokens)
+	require.EqualValues(t, 12, missTokens)
 }
 
 func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {

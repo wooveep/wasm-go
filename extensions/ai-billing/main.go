@@ -330,10 +330,10 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	ctx.SetContext(ctxOutputToken, usage.OutputToken)
 	ctx.SetContext(ctxTotalToken, usage.TotalToken)
 	if len(usage.InputTokenDetails) > 0 {
-		ctx.SetContext(ctxInputDetails, usage.InputTokenDetails)
+		ctx.SetContext(ctxInputDetails, mergeTokenDetailsFromContext(ctx.GetContext(ctxInputDetails), usage.InputTokenDetails))
 	}
 	if len(usage.OutputTokenDetails) > 0 {
-		ctx.SetContext(ctxOutputDetails, usage.OutputTokenDetails)
+		ctx.SetContext(ctxOutputDetails, mergeTokenDetailsFromContext(ctx.GetContext(ctxOutputDetails), usage.OutputTokenDetails))
 	}
 	if len(usage.ProviderUsage) > 0 {
 		ctx.SetContext(ctxProviderUsage, usage.ProviderUsage)
@@ -457,6 +457,20 @@ func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64)
 	if len(inputDetails) == 0 {
 		return 0, 0, false
 	}
+	deepSeekHitTokens, hasDeepSeekHit := inputDetails[tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens]
+	deepSeekMissTokens, hasDeepSeekMiss := inputDetails[tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens]
+	if hasDeepSeekHit || hasDeepSeekMiss {
+		hitTokens := nonNegativeInt64(deepSeekHitTokens)
+		if hasDeepSeekMiss {
+			return hitTokens, nonNegativeInt64(deepSeekMissTokens), true
+		}
+		inputTokens = nonNegativeInt64(inputTokens)
+		if hitTokens > inputTokens {
+			hitTokens = inputTokens
+		}
+		return hitTokens, inputTokens - hitTokens, true
+	}
+
 	cacheCreationTokens, hasCacheCreation := inputDetails[tokenusage.InputTokenDetailsKeyAnthropicMessagesUsageCacheCreationInputTokens]
 	cacheReadTokens, hasCacheRead := inputDetails[tokenusage.InputTokenDetailsKeyAnthropicMessagesUsageCacheReadInputTokens]
 	if hasCacheCreation || hasCacheRead {
@@ -468,7 +482,7 @@ func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64)
 	cachedTokens := int64(0)
 	hasCachedTokens := false
 	for _, key := range []string{
-		"cached_tokens",
+		tokenusage.InputTokenDetailsKeyCachedTokens,
 		tokenusage.InputTokenDetailsKeyGeminiCachedContentTokenCount,
 	} {
 		value, ok := inputDetails[key]
@@ -486,6 +500,17 @@ func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64)
 		cachedTokens = inputTokens
 	}
 	return cachedTokens, inputTokens - cachedTokens, true
+}
+
+func mergeTokenDetailsFromContext(value any, updates map[string]int64) map[string]int64 {
+	merged := map[string]int64{}
+	for key, existingValue := range tokenDetailsFromContext(value) {
+		merged[key] = existingValue
+	}
+	for key, updateValue := range updates {
+		merged[key] = updateValue
+	}
+	return merged
 }
 
 func tokenDetailsFromContext(value any) map[string]int64 {

@@ -60,6 +60,9 @@ const (
 	UsageInputTokensDetailsPathOpenAIResponses       = "response.usage.input_tokens_details"
 	UsageInputTokensDetailsPathDoubao                = "usage.input_tokens_details"
 	UsageInputTokensDetailsPathGemini                = "usageMetadata.promptTokensDetails"
+	UsageCachedTokensPathKimi                        = "usage.cached_tokens"
+	UsagePromptCacheHitTokensPathDeepSeek            = "usage.prompt_cache_hit_tokens"
+	UsagePromptCacheMissTokensPathDeepSeek           = "usage.prompt_cache_miss_tokens"
 
 	UsageOutputTokensPathOpenAIChatCompletions = "usage.completion_tokens"
 	UsageOutputTokensPathOpenAIImages          = "usage.output_tokens"
@@ -86,8 +89,11 @@ const (
 	ProviderUsagePathAnthropicMessages     = "message.usage"
 	ProviderUsagePathGemini                = "usageMetadata"
 
+	InputTokenDetailsKeyCachedTokens                                   = "cached_tokens"
 	InputTokenDetailsKeyAnthropicMessagesUsageCacheCreationInputTokens = "cache_creation_input_tokens"
 	InputTokenDetailsKeyAnthropicMessagesUsageCacheReadInputTokens     = "cache_read_input_tokens"
+	InputTokenDetailsKeyDeepSeekPromptCacheHitTokens                   = "prompt_cache_hit_tokens"
+	InputTokenDetailsKeyDeepSeekPromptCacheMissTokens                  = "prompt_cache_miss_tokens"
 	InputTokenDetailsKeyGeminiCachedContentTokenCount                  = "cached_content_token_count"
 	InputTokenDetailsKeyGeminiToolUsePromptTokenCount                  = "tool_use_prompt_token_count"
 
@@ -224,8 +230,30 @@ func ExtractInputTokenDetails(ctx wrapper.HttpContext, body []byte, u *TokenUsag
 		UsageInputTokensDetailsPathGemini,                // Gemini GenerateContent
 	}); inputTokenDetails != nil && inputTokenDetails.IsObject() {
 		for key, value := range inputTokenDetails.Map() {
+			if value.IsObject() || value.IsArray() {
+				continue
+			}
 			u.InputTokenDetails[key] = value.Int()
 		}
+	}
+
+	// Kimi
+	if cachedToken := wrapper.GetValueFromBody(body, []string{
+		UsageCachedTokensPathKimi,
+	}); cachedToken != nil {
+		u.InputTokenDetails[InputTokenDetailsKeyCachedTokens] = cachedToken.Int()
+	}
+
+	// DeepSeek
+	if promptCacheHitTokens := wrapper.GetValueFromBody(body, []string{
+		UsagePromptCacheHitTokensPathDeepSeek,
+	}); promptCacheHitTokens != nil {
+		u.InputTokenDetails[InputTokenDetailsKeyDeepSeekPromptCacheHitTokens] = promptCacheHitTokens.Int()
+	}
+	if promptCacheMissTokens := wrapper.GetValueFromBody(body, []string{
+		UsagePromptCacheMissTokensPathDeepSeek,
+	}); promptCacheMissTokens != nil {
+		u.InputTokenDetails[InputTokenDetailsKeyDeepSeekPromptCacheMissTokens] = promptCacheMissTokens.Int()
 	}
 
 	// Gemini GenerateContent

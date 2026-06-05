@@ -33,6 +33,137 @@ func TestProviderUsageMergesAcrossStreamingCallbacks(t *testing.T) {
 	}, usage.ProviderUsage)
 }
 
+func TestCacheAwareProviderUsageShapes(t *testing.T) {
+	tests := []struct {
+		name             string
+		body             []byte
+		wantInputToken   int64
+		wantOutputToken  int64
+		wantTotalToken   int64
+		wantInputDetails map[string]int64
+		wantUsage        map[string]any
+	}{
+		{
+			name:            "openai compatible cached prompt tokens",
+			body:            []byte(`{"model":"gpt-4o","usage":{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":3},"completion_tokens":4,"total_tokens":14}}`),
+			wantInputToken:  10,
+			wantOutputToken: 4,
+			wantTotalToken:  14,
+			wantInputDetails: map[string]int64{
+				"cached_tokens": 3,
+			},
+			wantUsage: map[string]any{
+				"prompt_tokens": float64(10),
+				"prompt_tokens_details": map[string]any{
+					"cached_tokens": float64(3),
+				},
+				"completion_tokens": float64(4),
+				"total_tokens":      float64(14),
+			},
+		},
+		{
+			name:            "kimi cached prompt tokens",
+			body:            []byte(`{"model":"moonshot-v1","usage":{"prompt_tokens":12,"cached_tokens":5,"completion_tokens":6,"total_tokens":18}}`),
+			wantInputToken:  12,
+			wantOutputToken: 6,
+			wantTotalToken:  18,
+			wantInputDetails: map[string]int64{
+				"cached_tokens": 5,
+			},
+			wantUsage: map[string]any{
+				"prompt_tokens":     float64(12),
+				"cached_tokens":     float64(5),
+				"completion_tokens": float64(6),
+				"total_tokens":      float64(18),
+			},
+		},
+		{
+			name:            "deepseek explicit cache split",
+			body:            []byte(`{"model":"deepseek-chat","usage":{"prompt_tokens":11,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":7,"completion_tokens":2,"total_tokens":13}}`),
+			wantInputToken:  11,
+			wantOutputToken: 2,
+			wantTotalToken:  13,
+			wantInputDetails: map[string]int64{
+				InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  4,
+				InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 7,
+			},
+			wantUsage: map[string]any{
+				"prompt_tokens":            float64(11),
+				"prompt_cache_hit_tokens":  float64(4),
+				"prompt_cache_miss_tokens": float64(7),
+				"completion_tokens":        float64(2),
+				"total_tokens":             float64(13),
+			},
+		},
+		{
+			name:            "qwen native cached details preserve cache creation",
+			body:            []byte(`{"model":"qwen-plus","usage":{"input_tokens":16,"output_tokens":5,"total_tokens":21,"prompt_tokens_details":{"cached_tokens":6,"cache_creation":{"ephemeral_5m_input_tokens":2}}}}`),
+			wantInputToken:  16,
+			wantOutputToken: 5,
+			wantTotalToken:  21,
+			wantInputDetails: map[string]int64{
+				"cached_tokens": 6,
+			},
+			wantUsage: map[string]any{
+				"input_tokens":  float64(16),
+				"output_tokens": float64(5),
+				"total_tokens":  float64(21),
+				"prompt_tokens_details": map[string]any{
+					"cached_tokens": float64(6),
+					"cache_creation": map[string]any{
+						"ephemeral_5m_input_tokens": float64(2),
+					},
+				},
+			},
+		},
+		{
+			name:            "anthropic cache read and creation tokens",
+			body:            []byte(`{"model":"claude-3-5-sonnet","usage":{"input_tokens":10,"output_tokens":7,"cache_creation_input_tokens":4,"cache_read_input_tokens":3}}`),
+			wantInputToken:  10,
+			wantOutputToken: 7,
+			wantTotalToken:  24,
+			wantInputDetails: map[string]int64{
+				InputTokenDetailsKeyAnthropicMessagesUsageCacheCreationInputTokens: 4,
+				InputTokenDetailsKeyAnthropicMessagesUsageCacheReadInputTokens:     3,
+			},
+			wantUsage: map[string]any{
+				"input_tokens":                float64(10),
+				"output_tokens":               float64(7),
+				"cache_creation_input_tokens": float64(4),
+				"cache_read_input_tokens":     float64(3),
+			},
+		},
+		{
+			name:            "gemini cached content tokens",
+			body:            []byte(`{"modelVersion":"gemini-2.5-pro","usageMetadata":{"promptTokenCount":20,"cachedContentTokenCount":9,"candidatesTokenCount":3,"totalTokenCount":23}}`),
+			wantInputToken:  20,
+			wantOutputToken: 3,
+			wantTotalToken:  23,
+			wantInputDetails: map[string]int64{
+				InputTokenDetailsKeyGeminiCachedContentTokenCount: 9,
+			},
+			wantUsage: map[string]any{
+				"promptTokenCount":        float64(20),
+				"cachedContentTokenCount": float64(9),
+				"candidatesTokenCount":    float64(3),
+				"totalTokenCount":         float64(23),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			usage := GetTokenUsage(newTokenUsageTestContext(), tc.body)
+
+			require.Equal(t, tc.wantInputToken, usage.InputToken)
+			require.Equal(t, tc.wantOutputToken, usage.OutputToken)
+			require.Equal(t, tc.wantTotalToken, usage.TotalToken)
+			require.Equal(t, tc.wantInputDetails, usage.InputTokenDetails)
+			require.Equal(t, tc.wantUsage, usage.ProviderUsage)
+		})
+	}
+}
+
 type tokenUsageTestContext struct {
 	values     map[string]any
 	attributes map[string]any
