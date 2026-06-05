@@ -496,6 +496,51 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("provider usage takes precedence over estimation and retains raw usage", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			action := host.CallOnHttpRequestBody([]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"a very long prompt that tokenizer estimation could count"}]}`))
+			require.Equal(t, types.ActionContinue, action)
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action = host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4o-mini","choices":[{"message":{"content":"a very long assistant answer that is structurally estimable"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, false, event["usage_missing"])
+			require.Equal(t, usageSourceProvider, event["usage_source"])
+
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 2, usage["input"])
+			require.EqualValues(t, 3, usage["output"])
+			require.EqualValues(t, 5, usage["total"])
+			require.Equal(t, map[string]interface{}{
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens":     float64(2),
+					"completion_tokens": float64(3),
+					"total_tokens":      float64(5),
+				},
+			}, usage["details"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
 		t.Run("matched rules emit resolved provider and quota scope", func(t *testing.T) {
 			config := mustBillingConfig(t, map[string]interface{}{
 				"quota_scope":          "global-scope",
