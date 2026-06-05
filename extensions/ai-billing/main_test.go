@@ -1806,6 +1806,54 @@ func TestBuildBillingEventEstimatedUsageIsBasicOnly(t *testing.T) {
 	require.ElementsMatch(t, []string{"unit", "input", "output", "total"}, mapKeys(usage))
 }
 
+func TestNonStreamingEstimatedUsageUsesUnknownModelFallback(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	inputText := "estimate this prompt with the fallback vocabulary"
+	outputText := "estimated answer text"
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	action := host.CallOnHttpRequestBody([]byte(`{"messages":[{"role":"user","content":"` + inputText + `"}]}`))
+	require.Equal(t, types.ActionContinue, action)
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "application/json"},
+	})
+	action = host.CallOnHttpResponseBody([]byte(`{"choices":[{"message":{"content":"` + outputText + `"}}]}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	expected, ok := estimateTextTokenUsage(tokenusage.ModelUnknown, inputText, outputText)
+	require.True(t, ok)
+
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.Equal(t, false, event["usage_missing"])
+	require.Equal(t, usageSourceEstimated, event["usage_source"])
+	requireObjectFactName(t, event, "model", tokenusage.ModelUnknown)
+
+	usage, ok := event["usage"].(map[string]interface{})
+	require.True(t, ok)
+	require.EqualValues(t, expected.InputToken, usage["input"])
+	require.EqualValues(t, expected.OutputToken, usage["output"])
+	require.EqualValues(t, expected.TotalToken, usage["total"])
+	require.ElementsMatch(t, []string{"unit", "input", "output", "total"}, mapKeys(usage))
+	require.NotContains(t, string(attrs[0].Body), "provider_usage")
+	require.NotContains(t, string(attrs[0].Body), "input_cache_hit_tokens")
+	require.NotContains(t, string(attrs[0].Body), "input_cache_miss_tokens")
+	require.NotContains(t, string(attrs[0].Body), "output_tokens")
+}
+
 func TestBuildBillingEventMissingUsageFallbackIsZero(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 	ctx.SetContext(ctxStartTime, int64(1))
