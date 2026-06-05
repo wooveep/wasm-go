@@ -442,6 +442,57 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("provider usage without supported cache fields emits only basic usage details", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":5,"prompt_tokens_details":{"audio_tokens":2},"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":3},"total_tokens":13}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 5, usage["input"])
+			require.EqualValues(t, 8, usage["output"])
+			require.EqualValues(t, 13, usage["total"])
+			require.NotContains(t, usage, "input_cache_hit_tokens")
+			require.NotContains(t, usage, "input_cache_miss_tokens")
+			require.NotContains(t, usage, "output_tokens")
+			require.Equal(t, map[string]interface{}{
+				"provider_usage": map[string]interface{}{
+					"prompt_tokens": float64(5),
+					"prompt_tokens_details": map[string]interface{}{
+						"audio_tokens": float64(2),
+					},
+					"completion_tokens": float64(8),
+					"completion_tokens_details": map[string]interface{}{
+						"reasoning_tokens": float64(3),
+					},
+					"total_tokens": float64(13),
+				},
+			}, usage["details"])
+			require.Equal(t, false, event["usage_missing"])
+			require.Equal(t, usageSourceProvider, event["usage_source"])
+
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
 		t.Run("matched rules emit resolved provider and quota scope", func(t *testing.T) {
 			config := mustBillingConfig(t, map[string]interface{}{
 				"quota_scope":          "global-scope",
@@ -975,10 +1026,6 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, map[string]interface{}{
 				"input": map[string]interface{}{
 					"cached_tokens": float64(2),
-					"audio_tokens":  float64(1),
-				},
-				"output": map[string]interface{}{
-					"reasoning_tokens": float64(3),
 				},
 				"provider_usage": map[string]interface{}{
 					"prompt_tokens": float64(5),

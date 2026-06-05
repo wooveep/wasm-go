@@ -321,7 +321,9 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 		return
 	}
 	inputTokens := usage.InputToken
+	hasCacheAwareUsage := false
 	if hitTokens, missTokens, ok := cacheAwareInputTokenSplit(usage.InputToken, usage.InputTokenDetails); ok {
+		hasCacheAwareUsage = true
 		inputTokens = hitTokens + missTokens
 		ctx.SetContext(ctxInputCacheHit, hitTokens)
 		ctx.SetContext(ctxInputCacheMiss, missTokens)
@@ -329,10 +331,10 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	ctx.SetContext(ctxInputToken, inputTokens)
 	ctx.SetContext(ctxOutputToken, usage.OutputToken)
 	ctx.SetContext(ctxTotalToken, usage.TotalToken)
-	if len(usage.InputTokenDetails) > 0 {
+	if hasCacheAwareUsage && len(usage.InputTokenDetails) > 0 {
 		ctx.SetContext(ctxInputDetails, mergeTokenDetailsFromContext(ctx.GetContext(ctxInputDetails), usage.InputTokenDetails))
 	}
-	if len(usage.OutputTokenDetails) > 0 {
+	if hasCacheAwareUsage && len(usage.OutputTokenDetails) > 0 {
 		ctx.SetContext(ctxOutputDetails, mergeTokenDetailsFromContext(ctx.GetContext(ctxOutputDetails), usage.OutputTokenDetails))
 	}
 	if len(usage.ProviderUsage) > 0 {
