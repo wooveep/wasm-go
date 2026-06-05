@@ -1528,6 +1528,7 @@ func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
 		}, false)
 
 		require.True(t, client.called)
+		require.True(t, ctx.GetBoolContext(ctxBillingDelivered, false))
 	})
 }
 

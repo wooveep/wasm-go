@@ -45,6 +45,7 @@ const (
 	ctxStatusCode       = "ai-billing-status-code"
 	ctxPriceVersion     = "ai-billing-price-version"
 	ctxIsStream         = "ai-billing-is-stream"
+	ctxBillingDelivered = "ai-billing-delivered"
 	ctxInputToken       = "ai-billing-input-token"
 	ctxOutputToken      = "ai-billing-output-token"
 	ctxTotalToken       = "ai-billing-total-token"
@@ -436,6 +437,7 @@ func responseModel(body []byte) string {
 }
 
 func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream bool) {
+	ctx.SetContext(ctxBillingDelivered, true)
 	event := buildBillingEvent(ctx, config, isStream)
 	sendBillingEvent(config, event)
 }
