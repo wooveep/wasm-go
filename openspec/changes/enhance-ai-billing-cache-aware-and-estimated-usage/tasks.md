@@ -31,7 +31,7 @@
 
 ## 5. Tests and Verification
 
-- [ ] 5.1 Add unit tests for each supported provider cache-aware field shape and clamping behavior.
+- [x] 5.1 Add unit tests for each supported provider cache-aware field shape and clamping behavior.
 - [ ] 5.2 Add unit tests proving provider usage takes precedence over tokenizer estimation and retains raw `provider_usage`.
 - [ ] 5.3 Add unit tests for non-streaming estimated usage, unknown-model `o200k_base` fallback, and estimated events excluding cache-aware and provider detail fields.
 - [ ] 5.4 Add streaming tests for normal end, missing final usage estimation, client interruption fallback, and duplicate prevention.

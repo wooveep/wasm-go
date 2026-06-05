@@ -1400,6 +1400,105 @@ func TestBillingDeliveryAcceptedStatusExcludesAuthFailures(t *testing.T) {
 	}
 }
 
+func TestQwenCacheAwareUsagePreservesCacheCreationDetails(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "application/json"},
+	})
+	action := host.CallOnHttpResponseBody([]byte(`{"model":"qwen-plus","usage":{"input_tokens":16,"output_tokens":5,"total_tokens":21,"prompt_tokens_details":{"cached_tokens":6,"cache_creation":{"ephemeral_5m_input_tokens":2}}}}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	requireObjectFactName(t, event, "model", "qwen-plus")
+	require.Equal(t, usageSourceProvider, event["usage_source"])
+
+	usage, ok := event["usage"].(map[string]interface{})
+	require.True(t, ok)
+	require.EqualValues(t, 16, usage["input"])
+	require.EqualValues(t, 5, usage["output"])
+	require.EqualValues(t, 21, usage["total"])
+	require.EqualValues(t, 6, usage["input_cache_hit_tokens"])
+	require.EqualValues(t, 10, usage["input_cache_miss_tokens"])
+	require.Equal(t, map[string]interface{}{
+		"input": map[string]interface{}{
+			"cached_tokens": float64(6),
+		},
+		"provider_usage": map[string]interface{}{
+			"input_tokens":  float64(16),
+			"output_tokens": float64(5),
+			"total_tokens":  float64(21),
+			"prompt_tokens_details": map[string]interface{}{
+				"cached_tokens": float64(6),
+				"cache_creation": map[string]interface{}{
+					"ephemeral_5m_input_tokens": float64(2),
+				},
+			},
+		},
+	}, usage["details"])
+}
+
+func TestGeminiCacheAwareUsageMapsCachedContentTokens(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "application/json"},
+	})
+	action := host.CallOnHttpResponseBody([]byte(`{"modelVersion":"gemini-2.5-pro","usageMetadata":{"promptTokenCount":20,"cachedContentTokenCount":9,"candidatesTokenCount":3,"totalTokenCount":23}}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	attrs := host.GetHttpCalloutAttributes()
+	require.Len(t, attrs, 1)
+
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	requireObjectFactName(t, event, "model", "gemini-2.5-pro")
+	require.Equal(t, usageSourceProvider, event["usage_source"])
+
+	usage, ok := event["usage"].(map[string]interface{})
+	require.True(t, ok)
+	require.EqualValues(t, 20, usage["input"])
+	require.EqualValues(t, 3, usage["output"])
+	require.EqualValues(t, 23, usage["total"])
+	require.EqualValues(t, 9, usage["input_cache_hit_tokens"])
+	require.EqualValues(t, 11, usage["input_cache_miss_tokens"])
+	require.Equal(t, map[string]interface{}{
+		"input": map[string]interface{}{
+			"cached_content_token_count": float64(9),
+		},
+		"provider_usage": map[string]interface{}{
+			"promptTokenCount":        float64(20),
+			"cachedContentTokenCount": float64(9),
+			"candidatesTokenCount":    float64(3),
+			"totalTokenCount":         float64(23),
+		},
+	}, usage["details"])
+}
+
 func TestCacheAwareInputTokenSplit(t *testing.T) {
 	tests := []struct {
 		name       string
