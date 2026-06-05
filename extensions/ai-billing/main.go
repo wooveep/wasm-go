@@ -30,32 +30,33 @@ const (
 
 	FailPolicyOpen = "open"
 
-	ctxBillingEnabled = "ai-billing-enabled"
-	ctxStartTime      = "ai-billing-start-time"
-	ctxEventID        = "ai-billing-event-id"
-	ctxIdempotencyKey = "ai-billing-idempotency-key"
-	ctxRequestPath    = "ai-billing-request-path"
-	ctxRequestID      = "ai-billing-request-id"
-	ctxTenant         = "ai-billing-tenant"
-	ctxConsumer       = "ai-billing-consumer"
-	ctxRoute          = "ai-billing-route"
-	ctxCluster        = "ai-billing-cluster"
-	ctxProvider       = "ai-billing-provider"
-	ctxQuotaScope     = "ai-billing-quota-scope"
-	ctxStatusCode     = "ai-billing-status-code"
-	ctxPriceVersion   = "ai-billing-price-version"
-	ctxIsStream       = "ai-billing-is-stream"
-	ctxInputToken     = "ai-billing-input-token"
-	ctxOutputToken    = "ai-billing-output-token"
-	ctxTotalToken     = "ai-billing-total-token"
-	ctxInputCacheHit  = "ai-billing-input-cache-hit-token"
-	ctxInputCacheMiss = "ai-billing-input-cache-miss-token"
-	ctxInputDetails   = "ai-billing-input-details"
-	ctxOutputDetails  = "ai-billing-output-details"
-	ctxModel          = "ai-billing-model"
-	ctxRequestText    = "ai-billing-request-text"
-	ctxUsageSource    = "ai-billing-usage-source"
-	ctxProviderUsage  = "ai-billing-provider-usage"
+	ctxBillingEnabled   = "ai-billing-enabled"
+	ctxStartTime        = "ai-billing-start-time"
+	ctxEventID          = "ai-billing-event-id"
+	ctxIdempotencyKey   = "ai-billing-idempotency-key"
+	ctxRequestPath      = "ai-billing-request-path"
+	ctxRequestID        = "ai-billing-request-id"
+	ctxTenant           = "ai-billing-tenant"
+	ctxConsumer         = "ai-billing-consumer"
+	ctxRoute            = "ai-billing-route"
+	ctxCluster          = "ai-billing-cluster"
+	ctxProvider         = "ai-billing-provider"
+	ctxQuotaScope       = "ai-billing-quota-scope"
+	ctxStatusCode       = "ai-billing-status-code"
+	ctxPriceVersion     = "ai-billing-price-version"
+	ctxIsStream         = "ai-billing-is-stream"
+	ctxInputToken       = "ai-billing-input-token"
+	ctxOutputToken      = "ai-billing-output-token"
+	ctxTotalToken       = "ai-billing-total-token"
+	ctxInputCacheHit    = "ai-billing-input-cache-hit-token"
+	ctxInputCacheMiss   = "ai-billing-input-cache-miss-token"
+	ctxInputDetails     = "ai-billing-input-details"
+	ctxOutputDetails    = "ai-billing-output-details"
+	ctxModel            = "ai-billing-model"
+	ctxRequestText      = "ai-billing-request-text"
+	ctxStreamOutputText = "ai-billing-stream-output-text"
+	ctxUsageSource      = "ai-billing-usage-source"
+	ctxProviderUsage    = "ai-billing-provider-usage"
 )
 
 const (
@@ -339,6 +340,7 @@ func onHttpStreamingResponseBody(ctx wrapper.HttpContext, config BillingConfig, 
 		return data
 	}
 	ctx.SetContext(ctxIsStream, true)
+	recordStreamingOutputText(ctx, data)
 	recordUsage(ctx, data)
 	if endOfStream {
 		deliverBillingEvent(ctx, config, true)
@@ -394,6 +396,14 @@ func recordNonStreamingEstimatedUsage(ctx wrapper.HttpContext, body []byte) bool
 		return false
 	}
 	return recordEstimatedUsage(ctx, responseModel(body), ctx.GetStringContext(ctxRequestText, ""), outputText)
+}
+
+func recordStreamingOutputText(ctx wrapper.HttpContext, data []byte) {
+	outputText, ok := extractStreamingResponseOutputText(data)
+	if !ok {
+		return
+	}
+	ctx.SetContext(ctxStreamOutputText, ctx.GetStringContext(ctxStreamOutputText, "")+outputText)
 }
 
 func recordEstimatedUsage(ctx wrapper.HttpContext, model, inputText, outputText string) bool {

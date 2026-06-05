@@ -1781,6 +1781,24 @@ func (r *recordingBillingHTTPClient) Call(method, rawURL string, headers [][2]st
 }
 func (r *recordingBillingHTTPClient) ClusterName() string { return "billing.static" }
 
+func TestOnHttpStreamingResponseBodyAccumulatesSentAssistantDeltas(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{
+		ctxBillingEnabled: true,
+	}}
+
+	firstChunk := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n")
+	returned := onHttpStreamingResponseBody(ctx, BillingConfig{}, firstChunk, false)
+	require.Equal(t, firstChunk, returned)
+
+	secondChunk := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n")
+	returned = onHttpStreamingResponseBody(ctx, BillingConfig{}, secondChunk, false)
+	require.Equal(t, secondChunk, returned)
+
+	require.True(t, ctx.GetBoolContext(ctxIsStream, false))
+	require.Equal(t, "Hello", ctx.GetStringContext(ctxStreamOutputText, ""))
+	require.Empty(t, ctx.GetStringContext(ctxUsageSource, ""))
+}
+
 type mockBillingHttpContext struct {
 	values map[string]interface{}
 }

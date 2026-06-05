@@ -198,3 +198,66 @@ func TestExtractResponseOutputTextFailsClosedForUnsupportedBodies(t *testing.T) 
 		})
 	}
 }
+
+func TestExtractStreamingResponseOutputTextFromSupportedDeltas(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "openai chat completion content deltas",
+			body: "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\r\n\r\ndata: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\r\n\r\n",
+			want: "Hello",
+		},
+		{
+			name: "openai responses output text delta",
+			body: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n",
+			want: "Hi",
+		},
+		{
+			name: "claude text delta",
+			body: "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\" there\"}}\n\n",
+			want: " there",
+		},
+		{
+			name: "legacy completions text delta",
+			body: "data: {\"choices\":[{\"text\":\" completion\"}]}\n\n",
+			want: " completion",
+		},
+		{
+			name: "gemini candidate parts",
+			body: "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"gemini\"}]}}]}",
+			want: "gemini",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractStreamingResponseOutputText([]byte(tc.body))
+			require.True(t, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestExtractStreamingResponseOutputTextFailsClosedForUnsupportedDeltas(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "done marker", body: "data: [DONE]\n\n"},
+		{name: "invalid json", body: "data: {\"choices\":\n\n"},
+		{name: "usage only", body: "data: {\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"},
+		{name: "tool call arguments only", body: "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\"}}]}}]}\n\n"},
+		{name: "claude tool input delta", body: "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\"\"}}\n\n"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractStreamingResponseOutputText([]byte(tc.body))
+			require.False(t, ok)
+			require.Empty(t, got)
+		})
+	}
+}

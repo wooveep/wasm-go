@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tiktoken-go/tokenizer"
 )
 
@@ -112,6 +113,66 @@ func extractResponseOutputText(body []byte) (string, bool) {
 	return "", false
 }
 
+func extractStreamingResponseOutputText(data []byte) (string, bool) {
+	parts := make([]string, 0)
+	for _, payload := range streamingJSONPayloads(data) {
+		object, ok := decodeJSONObject(payload)
+		if !ok {
+			continue
+		}
+		appendStreamingOutputText(&parts, object)
+	}
+	return concatTextParts(parts)
+}
+
+func streamingJSONPayloads(data []byte) [][]byte {
+	events := bytes.Split(bytes.TrimSpace(wrapper.UnifySSEChunk(data)), []byte("\n\n"))
+	payloads := make([][]byte, 0, len(events))
+	for _, event := range events {
+		payload, ok := streamingEventDataPayload(event)
+		if ok {
+			payloads = append(payloads, payload)
+		}
+	}
+	return payloads
+}
+
+func streamingEventDataPayload(event []byte) ([]byte, bool) {
+	event = bytes.TrimSpace(event)
+	if len(event) == 0 {
+		return nil, false
+	}
+
+	if bytes.HasPrefix(event, []byte("data:")) || bytes.Contains(event, []byte("\ndata:")) {
+		dataLines := make([][]byte, 0)
+		for _, line := range bytes.Split(event, []byte("\n")) {
+			line = bytes.TrimSpace(line)
+			if len(line) == 0 || bytes.HasPrefix(line, []byte(":")) {
+				continue
+			}
+			if bytes.HasPrefix(line, []byte("data:")) {
+				value := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+				if len(value) > 0 {
+					dataLines = append(dataLines, value)
+				}
+			}
+		}
+		if len(dataLines) == 0 {
+			return nil, false
+		}
+		payload := bytes.TrimSpace(bytes.Join(dataLines, []byte("\n")))
+		if bytes.Equal(payload, []byte("[DONE]")) {
+			return nil, false
+		}
+		return payload, true
+	}
+
+	if bytes.Equal(event, []byte("[DONE]")) {
+		return nil, false
+	}
+	return event, true
+}
+
 func decodeJSONObject(body []byte) (map[string]any, bool) {
 	var payload any
 	decoder := json.NewDecoder(bytes.NewReader(body))
@@ -189,6 +250,54 @@ func extractChoiceOutputText(value any) (string, bool) {
 	return joinTextParts(parts)
 }
 
+func appendStreamingOutputText(parts *[]string, object map[string]any) {
+	appendStreamingChoiceOutputText(parts, object["choices"])
+	appendStreamingDeltaText(parts, object["delta"])
+	appendStreamingGeminiCandidateText(parts, object["candidates"])
+}
+
+func appendStreamingChoiceOutputText(parts *[]string, value any) {
+	choices, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, choice := range choices {
+		choiceObject, ok := choice.(map[string]any)
+		if !ok {
+			continue
+		}
+		appendTextValue(parts, choiceObject["text"])
+		appendStreamingDeltaText(parts, choiceObject["delta"])
+	}
+}
+
+func appendStreamingDeltaText(parts *[]string, value any) {
+	switch typed := value.(type) {
+	case string:
+		*parts = append(*parts, typed)
+	case map[string]any:
+		appendTextValue(parts, typed["content"])
+		appendTextValue(parts, typed["text"])
+	}
+}
+
+func appendStreamingGeminiCandidateText(parts *[]string, value any) {
+	candidates, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, candidate := range candidates {
+		candidateObject, ok := candidate.(map[string]any)
+		if !ok {
+			continue
+		}
+		contentObject, ok := candidateObject["content"].(map[string]any)
+		if ok {
+			appendTextValue(parts, contentObject["parts"])
+		}
+	}
+}
+
 func extractTextFromValue(value any) (string, bool) {
 	parts := make([]string, 0)
 	appendTextValue(&parts, value)
@@ -239,4 +348,17 @@ func joinTextParts(parts []string) (string, bool) {
 		return "", false
 	}
 	return strings.Join(joinedParts, "\n"), true
+}
+
+func concatTextParts(parts []string) (string, bool) {
+	var builder strings.Builder
+	for _, part := range parts {
+		if part != "" {
+			builder.WriteString(part)
+		}
+	}
+	if builder.Len() == 0 {
+		return "", false
+	}
+	return builder.String(), true
 }
