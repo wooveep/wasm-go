@@ -357,6 +357,9 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			require.Equal(t, types.ActionContinue, action)
 
+			action = host.CallOnHttpStreamingRequestBody([]byte(`{"secret":"do-not-buffer"}`), false)
+			require.Equal(t, types.ActionContinue, action)
+
 			action = host.CallOnHttpResponseHeaders([][2]string{
 				{":status", "200"},
 				{"content-type", "application/json"},
@@ -1080,6 +1083,48 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotContains(t, string(attrs[0].Body), `"input_tokens":`)
 			require.NotContains(t, string(attrs[0].Body), `"output_tokens":`)
 			require.NotContains(t, string(attrs[0].Body), `"total_tokens":`)
+			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			host.CompleteHttp()
+		})
+
+		t.Run("request text is stored for estimation without raw payload details", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+				{"authorization", "Bearer sk-sensitive"},
+			})
+			action := host.CallOnHttpRequestBody([]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello input"}],"metadata":{"api_key":"sk-sensitive","trace":"raw-secret"}}`))
+			require.Equal(t, types.ActionContinue, action)
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4o-mini","choices":[{"message":{"content":"hello output"}}]}`))
+
+			attrs := host.GetHttpCalloutAttributes()
+			require.Len(t, attrs, 1)
+			require.NotContains(t, string(attrs[0].Body), "sk-sensitive")
+			require.NotContains(t, string(attrs[0].Body), "raw-secret")
+			require.NotContains(t, string(attrs[0].Body), "messages")
+
+			var event map[string]interface{}
+			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.Equal(t, false, event["usage_missing"])
+			require.Equal(t, usageSourceEstimated, event["usage_source"])
+			requireObjectFactName(t, event, "model", "gpt-4o-mini")
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.ElementsMatch(t, []string{"unit", "input", "output", "total"}, mapKeys(usage))
+			require.Greater(t, int64(usage["input"].(float64)), int64(0))
+			require.Greater(t, int64(usage["output"].(float64)), int64(0))
+
 			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
 			host.CompleteHttp()
 		})

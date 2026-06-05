@@ -53,6 +53,7 @@ const (
 	ctxInputDetails   = "ai-billing-input-details"
 	ctxOutputDetails  = "ai-billing-output-details"
 	ctxModel          = "ai-billing-model"
+	ctxRequestText    = "ai-billing-request-text"
 	ctxUsageSource    = "ai-billing-usage-source"
 	ctxProviderUsage  = "ai-billing-provider-usage"
 )
@@ -70,6 +71,7 @@ func init() {
 		pluginName,
 		wrapper.ParseOverrideConfig(parseConfig, parseRuleConfig),
 		wrapper.ProcessRequestHeaders(onHttpRequestHeaders),
+		wrapper.ProcessRequestBody(onHttpRequestBody),
 		wrapper.ProcessResponseHeaders(onHttpResponseHeaders),
 		wrapper.ProcessStreamingResponseBody(onHttpStreamingResponseBody),
 		wrapper.ProcessResponseBody(onHttpResponseBody),
@@ -255,6 +257,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	requestPath := ctx.Path()
 	if !isAIPathEnabled(requestPath, config.EnablePathSuffixes) {
 		ctx.SetContext(ctxBillingEnabled, false)
+		ctx.DontReadRequestBody()
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
@@ -269,6 +272,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, config.Provider, config.QuotaScope, priceVersion); err != nil {
 		log.Warnf("ai-billing event id generation failed open, request_id:%s err:%v", requestID, err)
 		ctx.SetContext(ctxBillingEnabled, false)
+		ctx.DontReadRequestBody()
 		ctx.DontReadResponseBody()
 	}
 	return types.ActionContinue
@@ -320,6 +324,16 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, config BillingConfig) types.
 	return types.ActionContinue
 }
 
+func onHttpRequestBody(ctx wrapper.HttpContext, config BillingConfig, body []byte) types.Action {
+	if !ctx.GetBoolContext(ctxBillingEnabled, false) {
+		return types.ActionContinue
+	}
+	if text, ok := extractRequestInputText(body); ok {
+		ctx.SetContext(ctxRequestText, text)
+	}
+	return types.ActionContinue
+}
+
 func onHttpStreamingResponseBody(ctx wrapper.HttpContext, config BillingConfig, data []byte, endOfStream bool) []byte {
 	if !ctx.GetBoolContext(ctxBillingEnabled, false) {
 		return data
@@ -338,6 +352,9 @@ func onHttpResponseBody(ctx wrapper.HttpContext, config BillingConfig, body []by
 	}
 	ctx.SetContext(ctxIsStream, false)
 	recordUsage(ctx, body)
+	if ctx.GetStringContext(ctxUsageSource, "") == "" {
+		recordNonStreamingEstimatedUsage(ctx, body)
+	}
 	deliverBillingEvent(ctx, config, false)
 	return types.ActionContinue
 }
@@ -371,6 +388,14 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	ctx.SetContext(ctxUsageSource, usageSourceProvider)
 }
 
+func recordNonStreamingEstimatedUsage(ctx wrapper.HttpContext, body []byte) bool {
+	outputText, ok := extractResponseOutputText(body)
+	if !ok {
+		return false
+	}
+	return recordEstimatedUsage(ctx, responseModel(body), ctx.GetStringContext(ctxRequestText, ""), outputText)
+}
+
 func recordEstimatedUsage(ctx wrapper.HttpContext, model, inputText, outputText string) bool {
 	usage, ok := estimateTextTokenUsage(model, inputText, outputText)
 	if !ok {
@@ -385,6 +410,19 @@ func recordEstimatedUsage(ctx wrapper.HttpContext, model, inputText, outputText 
 	ctx.SetContext(ctxModel, model)
 	ctx.SetContext(ctxUsageSource, usageSourceEstimated)
 	return true
+}
+
+func responseModel(body []byte) string {
+	var response struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return tokenusage.ModelUnknown
+	}
+	if strings.TrimSpace(response.Model) == "" {
+		return tokenusage.ModelUnknown
+	}
+	return response.Model
 }
 
 func deliverBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream bool) {
