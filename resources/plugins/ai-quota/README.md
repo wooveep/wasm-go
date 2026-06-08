@@ -1,12 +1,12 @@
 ---
 title: AI 金额配额
 keywords: [AI网关, AI配额, 金额配额]
-description: ai-quota 金额余额准入与响应后扣费插件配置参考
+description: ai-quota 只读金额余额准入插件配置参考
 ---
 
 ## 功能说明
 
-`ai-quota` 在 AI 请求进入上游前读取 Redis 热余额，余额大于 0 时放行，余额缺失或非正余额按策略处理。响应结束后，插件通过 `pkg/tokenusage` 独立解析 token usage 和 model，读取 Redis 中租户生效价格，并用 Lua `EVAL` 原子计算费用和扣减余额。
+`ai-quota` 在 AI 请求进入上游前读取 Console 派生的 Redis 热余额，余额大于等于 0 时放行，负余额按欠费拒绝，余额缺失按策略处理。插件只做请求准入，不在响应结束后解析 usage，不执行 Lua `EVAL`，也不扣减 Redis 余额。
 
 插件不再承担网关内 quota 管理职责。账户、余额、价格、账单流水、Redis 重建、幂等和对账由 Console 或 billing-service 负责。
 
@@ -19,15 +19,7 @@ description: ai-quota 金额余额准入与响应后扣费插件配置参考
 
 - 余额默认 key：`billing:balance:{tenant}:{quota_scope}:{consumer}`
 - 价格默认 key：`billing:effective_price:{tenant}:{provider}:{model}:{token_type}`
-- `token_type` 为 `input` 或 `output`
-- 金额和价格均为整数，默认按 `amount_scale: 1000000`、`price_unit_tokens: 1000000` 表示
-
-费用计算：
-
-```text
-ceil(input_tokens * input_price / price_unit_tokens)
-+ ceil(output_tokens * output_price / price_unit_tokens)
-```
+- 金额为 Console 或 billing-service 维护的有符号整数。
 
 ## 配置说明
 

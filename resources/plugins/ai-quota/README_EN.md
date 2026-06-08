@@ -1,12 +1,12 @@
 ---
 title: AI Monetary Quota
 keywords: [AI Gateway, AI Quota, Monetary Quota]
-description: Configuration reference for monetary balance admission and post-response deduction.
+description: Configuration reference for read-only monetary balance admission.
 ---
 
 ## Overview
 
-`ai-quota` checks a Redis hot balance before forwarding enabled AI requests. Requests with a positive balance continue; missing or non-positive balances follow the configured policy. After the response completes, the plugin parses token usage and model with `pkg/tokenusage`, reads tenant effective prices from Redis, then uses one Lua `EVAL` call to calculate and deduct the monetary cost.
+`ai-quota` checks a Console-derived Redis hot balance before forwarding enabled AI requests. Requests with a balance greater than or equal to zero continue; negative balances are rejected as arrears; missing balances follow the configured policy. The plugin is admission-only: it does not parse response usage, does not run Lua `EVAL`, and does not deduct Redis balances after responses.
 
 The plugin no longer owns in-gateway quota management. Account balances, prices, billing statements, Redis rebuilds, idempotency, and reconciliation are owned by Console or billing-service.
 
@@ -19,15 +19,7 @@ Plugin execution priority: `280`
 
 - Default balance key: `billing:balance:{tenant}:{quota_scope}:{consumer}`
 - Default price key: `billing:effective_price:{tenant}:{provider}:{model}:{token_type}`
-- `token_type` is `input` or `output`
-- Amounts and prices are integers, represented by default with `amount_scale: 1000000` and `price_unit_tokens: 1000000`
-
-Cost is calculated as:
-
-```text
-ceil(input_tokens * input_price / price_unit_tokens)
-+ ceil(output_tokens * output_price / price_unit_tokens)
-```
+- Amounts are signed integers owned by Console or billing-service.
 
 ## Configuration
 

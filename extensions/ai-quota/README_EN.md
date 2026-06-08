@@ -6,7 +6,7 @@ description: Configuration reference for monetary balance admission.
 
 ## Overview
 
-`ai-quota` reads Console-derived Redis hot balance before forwarding enabled AI requests. Requests with a positive balance continue; missing or non-positive balances follow the configured policy. The plugin is admission-only: it does not parse response usage, does not run Lua `EVAL`, and does not deduct Redis balances after responses.
+`ai-quota` reads Console-derived Redis hot balance before forwarding enabled AI requests. Requests with a balance greater than or equal to zero continue; negative balances are rejected as arrears; missing balances follow the configured policy. The plugin is admission-only: it does not parse response usage, does not run Lua `EVAL`, and does not deduct Redis balances after responses.
 
 The plugin no longer exposes gateway-hosted quota management APIs such as `/quota`, `/quota/refresh`, or `/quota/delta`. Account balances, prices, billing statements, and Redis rebuilds are owned by Console or billing-service.
 

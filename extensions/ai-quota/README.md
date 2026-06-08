@@ -6,7 +6,7 @@ description: ai-quota 金额余额准入插件配置参考
 
 ## 功能说明
 
-`ai-quota` 在 AI 请求进入上游前读取 Console 派生的 Redis 热余额，余额大于 0 时放行，余额缺失或非正余额按策略处理。插件只做请求准入，不在响应结束后解析 usage，不执行 Lua `EVAL`，也不扣减 Redis 余额。
+`ai-quota` 在 AI 请求进入上游前读取 Console 派生的 Redis 热余额，余额大于等于 0 时放行，负余额按欠费拒绝，余额缺失按策略处理。插件只做请求准入，不在响应结束后解析 usage，不执行 Lua `EVAL`，也不扣减 Redis 余额。
 
 插件不再提供 `/quota`、`/quota/refresh`、`/quota/delta` 等网关内管理接口，也不再支持 `admin_consumer`、`admin_path`、`redis_key_prefix`。账户、余额、价格、账单流水和 Redis 重建由 Console 或 billing-service 负责。
 

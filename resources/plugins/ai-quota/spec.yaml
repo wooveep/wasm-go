@@ -8,9 +8,9 @@ info:
   title: AI Monetary Quota
   x-title-i18n:
     zh-CN: AI 金额配额
-  description: Perform monetary balance admission for AI requests using Redis hot balances, then deduct monetary cost after response token usage and effective prices are available.
+  description: Perform read-only monetary balance admission for AI requests using Console-derived Redis hot balances.
   x-description-i18n:
-    zh-CN: 基于 Redis 热余额对 AI 请求进行金额余额准入，并在响应结束后根据 token usage 和生效价格扣减金额余额。
+    zh-CN: 基于 Console 派生的 Redis 热余额对 AI 请求进行只读金额余额准入。
   iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
   readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-quota/README.md
   x-readmeUrl-i18n:

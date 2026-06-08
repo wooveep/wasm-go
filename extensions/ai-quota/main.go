@@ -206,7 +206,7 @@ func onHttpRequestHeaders(context wrapper.HttpContext, config QuotaConfig) types
 			util.SendResponse(http.StatusServiceUnavailable, "ai-quota.redis_error", "text/plain", "Request denied by ai quota check. Invalid Redis balance.")
 			return
 		}
-		if balance <= 0 {
+		if balance < 0 {
 			deniedNoBalance()
 			return
 		}
