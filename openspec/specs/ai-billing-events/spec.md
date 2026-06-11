@@ -54,12 +54,12 @@ Define the `ai-billing` extension behavior for request-level AI billing events, 
 
 ### Requirement: Billing events are generated per completed AI request
 
-`ai-billing` SHALL generate a request-level billing event for enabled AI requests after response completion. The plugin SHALL generate an `event_id` at request start, store it in request context, and reuse it when building the response-completion event. The event `idempotency_key` SHALL default to the same value as `event_id`.
+`ai-billing` SHALL generate a request-level billing event for enabled AI requests after response completion or stream termination. The plugin SHALL generate an `event_id` at request start, store it in request context, and reuse it when building the response-completion event. The event `idempotency_key` SHALL default to the same value as `event_id`.
 
 #### Scenario: Successful event includes implemented request facts
 
 - **WHEN** an enabled AI request completes and `X-Mse-Consumer` or the configured consumer header is present
-- **THEN** `ai-billing` SHALL build an event containing `event_id`, `idempotency_key`, `request_id`, `tenant`, `consumer`, `quota_scope`, `route`, `provider`, `model`, `request_path`, `status_code`, `usage`, `usage_missing`, `start_time_ms`, `end_time_ms`, `is_stream`, `cluster`, and optional `price_version`
+- **THEN** `ai-billing` SHALL build an event containing `event_id`, `idempotency_key`, `request_id`, `tenant`, `consumer`, `quota_scope`, `route`, `provider`, `model`, `request_path`, `status_code`, `usage`, `usage_missing`, `usage_source`, `start_time_ms`, `end_time_ms`, `is_stream`, `cluster`, and optional `price_version`
 - **AND** `consumer` SHALL equal the configured consumer header value
 - **AND** `request_id` SHALL be read from `x-request-id` or the Higress `x_request_id` property and used only for trace correlation
 - **AND** the event SHALL NOT include raw API-key values, `tenant_id`, `user_id`, `api_key_id`, or `consumer_id` UUID fields
@@ -100,16 +100,25 @@ Define the `ai-billing` extension behavior for request-level AI billing events, 
 - **WHEN** `ai-billing` serializes a billing event
 - **THEN** the event SHALL NOT contain top-level `input_tokens`, top-level `output_tokens`, top-level `total_tokens`, or `gateway_calculated_cost`
 
-#### Scenario: Usage is structured
+#### Scenario: Provider usage is structured
 
-- **WHEN** an enabled AI request completes with usable token usage
-- **THEN** `ai-billing` SHALL emit `usage.unit` as `token`, numeric `usage.input`, `usage.output`, `usage.total`, and object `usage.details`
+- **WHEN** an enabled AI request completes with usable provider token usage
+- **THEN** `ai-billing` SHALL emit `usage.unit` as `token`, numeric `usage.input`, `usage.output`, `usage.total`, and `usage.details.provider_usage`
 - **AND** `usage_missing` SHALL be `false`
+- **AND** `usage_source` SHALL be `provider`
+
+#### Scenario: Estimated usage is structured
+
+- **WHEN** an enabled AI request completes without provider usage and tokenizer estimation succeeds
+- **THEN** `ai-billing` SHALL emit `usage.unit` as `token`, numeric `usage.input`, `usage.output`, and `usage.total`
+- **AND** `usage_missing` SHALL be `false`
+- **AND** `usage_source` SHALL be `estimated`
+- **AND** the event SHALL NOT include `usage.details.provider_usage`
 
 #### Scenario: Usage is missing
 
-- **WHEN** an enabled AI request completes without usable token usage
-- **THEN** `ai-billing` SHALL emit an event with `usage_missing` set to `true`, `usage.unit` set to `token`, zero token counts, and empty `usage.details`
+- **WHEN** an enabled AI request completes without usable provider token usage and tokenizer estimation fails
+- **THEN** `ai-billing` SHALL emit an event with `usage_missing` set to `true`, `usage_source` set to `missing`, `usage.unit` set to `token`, and zero token counts
 
 ### Requirement: Billing event delivery is fail-open by default
 
@@ -186,3 +195,150 @@ Define the `ai-billing` extension behavior for request-level AI billing events, 
 
 - **WHEN** `ai-billing` examples document `billing_service.auth_token`
 - **THEN** they SHALL use a placeholder such as `<shared-secret>` rather than a real token
+
+### Requirement: Provider usage is authoritative and cache-aware
+
+`ai-billing` SHALL use provider-reported usage as the authoritative usage source whenever usable provider usage is present. Provider-sourced events SHALL set `usage_source` to `provider`, SHALL set `usage_missing` to `false`, SHALL preserve the complete raw provider usage object at `usage.details.provider_usage`, and SHALL NOT replace provider counts with local tokenizer estimates.
+
+#### Scenario: Provider usage takes precedence over estimation
+
+- **WHEN** an enabled AI request completes with provider usage and local tokenizer estimation could also be performed
+- **THEN** `ai-billing` SHALL emit the provider usage counts
+- **AND** `usage_source` SHALL be `provider`
+- **AND** `usage.details.provider_usage` SHALL contain the complete raw provider usage object
+
+#### Scenario: Provider usage without cache-aware fields emits basic usage
+
+- **WHEN** provider usage contains usable input, output, or total token fields and no supported cache-aware fields
+- **THEN** `ai-billing` SHALL emit basic `usage.input`, `usage.output`, and `usage.total` token counts from provider usage
+- **AND** `usage.details.provider_usage` SHALL contain the complete raw provider usage object
+- **AND** the event SHALL NOT include `usage.input_cache_hit_tokens`, `usage.input_cache_miss_tokens`, or `usage.output_tokens` unless those values are provided or derived from supported provider fields
+
+#### Scenario: OpenAI-compatible cached prompt tokens are parsed
+
+- **WHEN** provider usage contains `prompt_tokens` and `prompt_tokens_details.cached_tokens`
+- **THEN** `ai-billing` SHALL set `usage.input_cache_hit_tokens` to `cached_tokens`
+- **AND** `ai-billing` SHALL set `usage.input_cache_miss_tokens` to `prompt_tokens - cached_tokens`
+- **AND** derived cache token counts SHALL be non-negative
+
+#### Scenario: Kimi cached prompt tokens are parsed
+
+- **WHEN** provider usage contains `prompt_tokens` and top-level `cached_tokens`
+- **THEN** `ai-billing` SHALL set `usage.input_cache_hit_tokens` to `cached_tokens`
+- **AND** `ai-billing` SHALL set `usage.input_cache_miss_tokens` to `prompt_tokens - cached_tokens`
+- **AND** derived cache token counts SHALL be non-negative
+
+#### Scenario: DeepSeek cache split is parsed directly
+
+- **WHEN** provider usage contains `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`
+- **THEN** `ai-billing` SHALL set `usage.input_cache_hit_tokens` to `prompt_cache_hit_tokens`
+- **AND** `ai-billing` SHALL set `usage.input_cache_miss_tokens` to `prompt_cache_miss_tokens`
+- **AND** the emitted values SHALL be non-negative
+
+#### Scenario: Qwen cache details are preserved
+
+- **WHEN** provider usage contains `prompt_tokens_details.cached_tokens` or `prompt_tokens_details.cache_creation`
+- **THEN** `ai-billing` SHALL preserve the complete Qwen `prompt_tokens_details` object inside `usage.details.provider_usage`
+- **AND** `prompt_tokens_details.cached_tokens` SHALL be interpreted as cache hit tokens using the OpenAI-compatible rule
+- **AND** `cache_creation` fields SHALL contribute to cache miss tokens only when the field names and values explicitly represent input cache creation token counts
+
+#### Scenario: Claude cache read and creation tokens are parsed
+
+- **WHEN** provider usage contains `input_tokens`, `cache_read_input_tokens`, and `cache_creation_input_tokens`
+- **THEN** `ai-billing` SHALL set `usage.input_cache_hit_tokens` to `cache_read_input_tokens`
+- **AND** `ai-billing` SHALL set `usage.input_cache_miss_tokens` to `input_tokens + cache_creation_input_tokens`
+- **AND** the emitted values SHALL be non-negative
+
+#### Scenario: Gemini cached content tokens are parsed
+
+- **WHEN** provider usage metadata contains `promptTokenCount` and `cachedContentTokenCount`
+- **THEN** `ai-billing` SHALL set `usage.input_cache_hit_tokens` to `cachedContentTokenCount`
+- **AND** `ai-billing` SHALL set `usage.input_cache_miss_tokens` to `promptTokenCount - cachedContentTokenCount`
+- **AND** derived cache token counts SHALL be non-negative
+
+#### Scenario: Cached token count is clamped to input tokens
+
+- **WHEN** provider usage reports cached input tokens greater than provider input tokens
+- **THEN** `ai-billing` SHALL clamp cache hit tokens to the input token count
+- **AND** `ai-billing` SHALL set derived cache miss tokens to zero
+
+### Requirement: Usage is estimated when provider usage is absent
+
+`ai-billing` SHALL estimate basic text token usage with `github.com/tiktoken-go/tokenizer` when provider usage is absent and structured request and response text can be extracted. Estimated events SHALL set `usage_source` to `estimated`, SHALL set `usage_missing` to `false`, and SHALL emit only `usage.unit`, `usage.input`, `usage.output`, and `usage.total`.
+
+#### Scenario: Non-streaming text response without provider usage is estimated
+
+- **WHEN** an enabled non-streaming AI request completes without provider usage
+- **AND** request input text and assistant output text can be structurally extracted
+- **THEN** `ai-billing` SHALL emit estimated `usage.input`, `usage.output`, and `usage.total`
+- **AND** `usage_source` SHALL be `estimated`
+- **AND** `usage_missing` SHALL be `false`
+
+#### Scenario: Streaming text response without final usage is estimated
+
+- **WHEN** an enabled streaming AI request reaches normal stream completion without final provider usage
+- **AND** request input text and streamed assistant output deltas can be structurally extracted
+- **THEN** `ai-billing` SHALL emit estimated `usage.input`, `usage.output`, and `usage.total`
+- **AND** `usage_source` SHALL be `estimated`
+
+#### Scenario: Estimated usage excludes cache-aware and provider detail fields
+
+- **WHEN** `ai-billing` emits estimated usage
+- **THEN** the event SHALL NOT include `usage.input_cache_hit_tokens`
+- **AND** the event SHALL NOT include `usage.input_cache_miss_tokens`
+- **AND** the event SHALL NOT include `usage.output_tokens`
+- **AND** the event SHALL NOT include `usage.details.provider_usage`
+
+#### Scenario: Unknown model uses o200k_base fallback
+
+- **WHEN** provider is unknown, model is empty, model mapping fails, or the model is not explicitly matched
+- **THEN** `ai-billing` SHALL estimate usage with the `o200k_base` tokenizer vocabulary
+
+#### Scenario: Recognized older OpenAI-compatible models can use cl100k_base
+
+- **WHEN** the request model is recognized as an older OpenAI-compatible model mapped to `cl100k_base`
+- **THEN** `ai-billing` SHALL estimate usage with the `cl100k_base` tokenizer vocabulary
+
+#### Scenario: Request text is extracted by API shape
+
+- **WHEN** tokenizer estimation runs for Chat Completions, Responses, or Completions request bodies
+- **THEN** Chat Completions input SHALL be extracted from text content in `messages[].content`
+- **AND** Responses input SHALL be extracted from text content in `input` and `instructions`
+- **AND** Completions input SHALL be extracted from text content in `prompt`
+
+#### Scenario: Unstructured request bodies are not tokenized wholesale
+
+- **WHEN** provider usage is absent and request text cannot be structurally extracted
+- **THEN** `ai-billing` SHALL NOT tokenize the complete raw JSON request body
+- **AND** `ai-billing` SHALL treat usage as missing unless output and input counts can otherwise be safely estimated
+
+#### Scenario: Missing estimation emits missing source
+
+- **WHEN** provider usage is absent and tokenizer estimation cannot produce usable basic counts
+- **THEN** `ai-billing` SHALL emit zero token counts
+- **AND** `usage_missing` SHALL be `true`
+- **AND** `usage_source` SHALL be `missing`
+
+### Requirement: Streaming billing event delivery is idempotent
+
+`ai-billing` SHALL deliver at most one billing event for each enabled streaming AI request. The plugin SHALL use a request-scoped delivered marker to coordinate normal response-body end-of-stream delivery and stream-done fallback delivery.
+
+#### Scenario: Normal stream end delivers once
+
+- **WHEN** an enabled streaming response reaches response body `endOfStream=true`
+- **THEN** `ai-billing` SHALL deliver the billing event from the response body path
+- **AND** `ai-billing` SHALL mark the request billing event as delivered
+
+#### Scenario: Stream done skips after normal delivery
+
+- **WHEN** the stream-done lifecycle runs after response body `endOfStream=true` already delivered a billing event
+- **THEN** `ai-billing` SHALL NOT send another billing event for the same request
+
+#### Scenario: Client interruption triggers fallback delivery
+
+- **WHEN** an enabled streaming response sends one or more response body chunks with `endOfStream=false`
+- **AND** the stream-done lifecycle runs before any billing event was delivered
+- **THEN** `ai-billing` SHALL attempt to deliver one fallback billing event
+- **AND** estimated output usage SHALL count only text deltas already sent to the client
+- **AND** `ai-billing` SHALL mark the request billing event as delivered
+

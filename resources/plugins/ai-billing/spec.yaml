@@ -8,14 +8,14 @@ info:
   title: AI Billing Events
   x-title-i18n:
     zh-CN: AI 账单事件
-  description: Generate request-level AI billing events after responses complete and deliver them to billing-service through fail-open Bearer-authenticated HTTP callouts.
+  description: Generate request-level AI billing events with provider-authoritative cache-aware token usage, tokenizer-based estimates when provider usage is absent, and fail-open Bearer-authenticated delivery to billing-service.
   x-description-i18n:
-    zh-CN: 在 AI 响应完成后生成请求级账单事件，并通过默认 fail-open、Bearer 鉴权的 HTTP callout 上报给 billing-service。
+    zh-CN: 生成请求级 AI 账单事件，优先使用 provider 上报的 cache-aware token usage，缺失时使用 tokenizer 估算，并通过默认 fail-open、Bearer 鉴权的 HTTP callout 上报给 billing-service。
   iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
   readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-billing/README.md
   x-readmeUrl-i18n:
     en-US: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-billing/README_EN.md
-  version: 0.1.0
+  version: 0.1.1
   contact:
     name: 2456868764
 spec:

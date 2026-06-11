@@ -6,7 +6,9 @@ description: Configuration reference for request-level AI billing event delivery
 
 ## Overview
 
-`ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and sends it to billing-service through an HTTP callout. The HTTP callout uses `billing_service.auth_token` to generate the `Authorization: Bearer <token>` header. Delivery is fail-open by default: timeouts, network failures, and delivery failure statuses are logged but do not block the user response.
+`ai-billing` parses token usage and model independently after an enabled AI response completes or a streaming request terminates, builds a request-level billing event, and sends it to billing-service through an HTTP callout. The HTTP callout uses `billing_service.auth_token` to generate the `Authorization: Bearer <token>` header. Delivery is fail-open by default: timeouts, network failures, and delivery failure statuses are logged but do not block the user response.
+
+The plugin uses provider-reported token usage first and marks the event with `usage_source=provider`. When provider usage is absent, it estimates basic usage with a tokenizer for Chat Completions, Responses, and Completions requests whose text can be extracted structurally, and marks `usage_source=estimated`. When neither provider usage nor safe local estimation is available, it emits zero token usage with `usage_missing=true` and `usage_source=missing`.
 
 The plugin does not calculate final authoritative costs, apply tenant discounts, apply override prices, deduct Redis balances, or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
 
@@ -29,13 +31,14 @@ Events include these fields:
 | `tenant` | Tenant identifier read from the configured `tenant_header` |
 | `consumer` | Consumer identifier read from the configured `consumer_header` |
 | `quota_scope` | Quota scope resolved for the matched request, from global config or a rule override |
-| `route` | Higress route name |
-| `provider` | AI provider identifier |
-| `model` | Response model, or the unknown-model marker when absent |
+| `route` | Higress route fact, usually an object containing `name` |
+| `provider` | AI provider fact, usually an object containing `name` |
+| `model` | Response model fact, or the unknown-model marker when absent, usually an object containing `name` |
 | `request_path` | Request path |
 | `status_code` | AI response status code |
-| `usage` | Structured token usage with `unit`, `input`, `output`, `total`, `details`, and cache-aware `input_cache_hit_tokens`, `input_cache_miss_tokens`, `output_tokens` when provider usage exposes cache details |
-| `usage_missing` | Whether usable token usage could not be parsed |
+| `usage` | Structured token usage with `unit`, `input`, `output`, and `total`; provider-sourced usage also keeps `details.provider_usage`, plus cache-aware `input_cache_hit_tokens`, `input_cache_miss_tokens`, and `output_tokens` when provider usage exposes cache details |
+| `usage_missing` | `true` when provider usage and local estimation are both unavailable |
+| `usage_source` | Usage source: `provider`, `estimated`, or `missing` |
 | `start_time_ms` / `end_time_ms` | Request start and event generation timestamps in milliseconds |
 | `is_stream` | Whether the response is streaming |
 | `cluster` | Upstream cluster name |
@@ -44,6 +47,20 @@ Events include these fields:
 Events do not emit top-level `input_tokens`, top-level `output_tokens`, top-level `total_tokens`, or `gateway_calculated_cost`. `tenant`, `consumer`, `provider`, and `quota_scope` are resolved from the config matched by the current request.
 
 Cache-aware token fields are nested inside `usage` as usage facts only. The plugin keeps legacy `usage.input`, `usage.output`, and `usage.total` for compatibility.
+
+## Usage Source
+
+| `usage_source` | Behavior |
+| --- | --- |
+| `provider` | Uses provider-reported usage as authoritative, sets `usage_missing=false`, and preserves the complete raw usage object in `usage.details.provider_usage` |
+| `estimated` | Estimates `usage.input`, `usage.output`, and `usage.total` with a tokenizer when provider usage is absent and structured text can be extracted; cache-aware fields and `details.provider_usage` are omitted |
+| `missing` | Emits zero token usage with `usage_missing=true` when provider usage is absent and safe estimation is unavailable |
+
+Provider usage supports common cache-aware field shapes from OpenAI-compatible/GLM, Kimi, DeepSeek, Qwen, Claude/Anthropic, and Gemini responses. Derived cache hit/miss counts are validated as non-negative, and cached input tokens are clamped to the provider input token count.
+
+Estimation only uses structurally extracted text: Chat Completions `messages[].content`, Responses `input` and `instructions`, Completions `prompt`, and corresponding text output. Unknown, empty, or unmapped models use the `o200k_base` tokenizer vocabulary by default; recognized older OpenAI-compatible models use `cl100k_base`. The plugin does not count the complete raw JSON request body as prompt text.
+
+For streaming responses, the normal `endOfStream=true` path delivers one billing event. If the client interrupts the stream or the final usage chunk is missing, the stream-done fallback attempts one delivery only when no event has already been delivered. Streaming estimates count only text deltas already sent to the client.
 
 ## Configuration
 
