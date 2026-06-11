@@ -378,23 +378,25 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config KeyAuthConfig, log log
 	// 以下需要认证：
 	// - 从 header 中获取 tokens 信息
 	// - 从 query 中获取 tokens 信息
-	tokens := extractCredentialCandidates(config)
+	candidates := extractCredentialCandidates(config)
+	candidatesByValue := groupCredentialCandidatesByValue(candidates)
 
 	// header/query
-	if len(tokens) > 1 {
+	if len(candidatesByValue) > 1 {
 		return deniedMultiKeyAuthData(config.Realm)
-	} else if len(tokens) <= 0 {
+	} else if len(candidatesByValue) <= 0 {
 		return deniedNoKeyAuthData(config.Realm)
 	}
+	credential, sameValueCandidates := singleCredentialCandidateGroup(candidatesByValue)
 
 	// 验证token
-	identity, ok := config.credentialIdentities[tokens[0].Value]
+	identity, ok := config.credentialIdentities[credential]
 	if !ok {
-		log.Warnf("credential %q is not configured", tokens[0].Value)
+		log.Warnf("credential %q is not configured", credential)
 		return deniedUnauthorizedConsumer(config.Realm)
 	}
-	if !candidateAllowedByPlan(tokens[0], identity.Plan) {
-		log.Warnf("credential %q is not allowed from %s %q", tokens[0].Value, tokens[0].Source, tokens[0].Key)
+	if !hasAllowedCredentialCandidate(sameValueCandidates, identity.Plan) {
+		log.Warnf("credential %q is not allowed from configured credential sources", credential)
 		return deniedUnauthorizedConsumer(config.Realm)
 	}
 	if !identity.Consumer {
@@ -562,6 +564,21 @@ func extractCredentialCandidates(config KeyAuthConfig) []credentialCandidate {
 	return candidates
 }
 
+func groupCredentialCandidatesByValue(candidates []credentialCandidate) map[string][]credentialCandidate {
+	groups := make(map[string][]credentialCandidate)
+	for _, candidate := range candidates {
+		groups[candidate.Value] = append(groups[candidate.Value], candidate)
+	}
+	return groups
+}
+
+func singleCredentialCandidateGroup(groups map[string][]credentialCandidate) (string, []credentialCandidate) {
+	for value, candidates := range groups {
+		return value, candidates
+	}
+	return "", nil
+}
+
 func uniqueExtractionPlans(config KeyAuthConfig) []extractionPlan {
 	seen := make(map[string]struct{})
 	var plans []extractionPlan
@@ -645,6 +662,15 @@ func normalizeHeaderCredential(key string, value string) string {
 	return value
 }
 
+func hasAllowedCredentialCandidate(candidates []credentialCandidate, plan extractionPlan) bool {
+	for _, candidate := range candidates {
+		if candidateAllowedByPlan(candidate, plan) {
+			return true
+		}
+	}
+	return false
+}
+
 func candidateAllowedByPlan(candidate credentialCandidate, plan extractionPlan) bool {
 	if candidate.Source == "header" && !plan.InHeader {
 		return false
@@ -670,7 +696,7 @@ func removeTrustedIdentityHeaders() {
 
 func deniedMultiKeyAuthData(realm string) types.Action {
 	_ = proxywasm.SendHttpResponseWithDetail(http.StatusUnauthorized, "key-auth.multi_key", WWWAuthenticateHeader(realm),
-		[]byte("Request denied by Key Auth check. Multi Key Authentication information found."), -1)
+		[]byte("Request denied by Key Auth check. Multiple distinct API keys found."), -1)
 	return types.ActionContinue
 }
 

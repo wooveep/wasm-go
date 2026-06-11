@@ -169,6 +169,8 @@ curl http://xxx.hello.com/test -H 'Authorization: Bearer real-api-key-1'
 
 当 `Authorization` 配置在 `keys` 中时，`Authorization: Bearer <api-key>` 会使用 Bearer 后面的 `<api-key>` 进行匹配；非 Bearer 的 `Authorization` 值会按原始值匹配。Bearer 前缀剥离只适用于 `Authorization` 来源，不会应用到其他请求头。
 
+同一个规范化后的 API Key 可以同时出现在多个已启用来源中，例如 `Authorization: Bearer real-api-key-1` 和 `x-api-key: real-api-key-1`。网关会按一个凭证处理该请求；如果请求中出现两个或更多不同的规范化 API Key，则会拒绝请求并返回 `key-auth.multi_key`。用于判断是否相同的 Bearer 前缀剥离只适用于配置为 `Authorization` 的来源，其他请求头会按原始值比较。
+
 ### 顶层 Credentials 认证模式
 
 如果只需要认证 API Key，不需要 consumer 身份和租户透传，可以使用顶层 `credentials`：
@@ -191,7 +193,7 @@ in_query: false
 
 | HTTP 状态码 | 出错信息                                                  | 原因说明                |
 | ----------- | --------------------------------------------------------- | ----------------------- |
-| 401         | Request denied by Key Auth check. Muti API key found in request | 请求提供多个 API Key      |
+| 401         | Request denied by Key Auth check. Multiple distinct API keys found in request | 请求提供多个不同的 API Key |
 | 401         | Request denied by Key Auth check. No API key found in request | 请求未提供 API Key      |
 | 401         | Request denied by Key Auth check. Invalid API key         | 不允许当前 API Key 访问 |
 | 403         | Request denied by Key Auth check. Unauthorized consumer   | 请求的调用方无访问权限  |

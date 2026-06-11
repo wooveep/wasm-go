@@ -243,6 +243,8 @@ func mustJSON(value map[string]interface{}) json.RawMessage {
 	return data
 }
 
+const multiKeyResponseBody = "Request denied by Key Auth check. Multiple distinct API keys found."
+
 func requestHeaders(extra ...[2]string) [][2]string {
 	headers := [][2]string{
 		{":authority", "example.com"},
@@ -954,6 +956,34 @@ func TestOnHTTPRequestHeadersLocalYAMLEnhancement(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("same credential across header and query authenticates", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+					},
+				},
+				"keys":        []string{"apikey"},
+				"in_header":   true,
+				"in_query":    true,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/test?apikey=token1"},
+				{":method", "GET"},
+				{"apikey", "token1"},
+			})
+
+			require.Nil(t, host.GetLocalResponse())
+			requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+			host.CompleteHttp()
+		})
+
 		t.Run("authorization bearer and raw values authenticate", func(t *testing.T) {
 			config := mustJSON(map[string]interface{}{
 				"consumers": []map[string]interface{}{
@@ -980,6 +1010,32 @@ func TestOnHTTPRequestHeadersLocalYAMLEnhancement(t *testing.T) {
 					host.CompleteHttp()
 				}()
 			}
+		})
+
+		t.Run("same credential across authorization and api key headers authenticates", func(t *testing.T) {
+			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "real-api-key",
+					},
+				},
+				"keys":        []string{"Authorization", "x-api-key", "apikey"},
+				"in_header":   true,
+				"global_auth": true,
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders(requestHeaders(
+				[2]string{"Authorization", "Bearer real-api-key"},
+				[2]string{"x-api-key", "real-api-key"},
+				[2]string{"apikey", "real-api-key"},
+			))
+
+			require.Nil(t, host.GetLocalResponse())
+			requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+			host.CompleteHttp()
 		})
 
 		t.Run("bearer prefix is not stripped from non-authorization headers", func(t *testing.T) {
@@ -1032,6 +1088,8 @@ func TestOnHTTPRequestHeadersLocalYAMLEnhancement(t *testing.T) {
 				localResponse := host.GetLocalResponse()
 				require.NotNil(t, localResponse)
 				require.Equal(t, uint32(401), localResponse.StatusCode)
+				require.Equal(t, "key-auth.multi_key", localResponse.StatusCodeDetail)
+				require.Equal(t, multiKeyResponseBody, string(localResponse.Data))
 				host.CompleteHttp()
 			}()
 
@@ -1044,9 +1102,76 @@ func TestOnHTTPRequestHeadersLocalYAMLEnhancement(t *testing.T) {
 					{":path", "/test?apikey=token1&apikey=token1"},
 					{":method", "GET"},
 				})
+				require.Nil(t, host.GetLocalResponse())
+				requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders([][2]string{
+					{":authority", "example.com"},
+					{":path", "/test?apikey=token1&apikey=token2"},
+					{":method", "GET"},
+				})
 				localResponse := host.GetLocalResponse()
 				require.NotNil(t, localResponse)
 				require.Equal(t, uint32(401), localResponse.StatusCode)
+				require.Equal(t, "key-auth.multi_key", localResponse.StatusCodeDetail)
+				require.Equal(t, multiKeyResponseBody, string(localResponse.Data))
+				host.CompleteHttp()
+			}()
+		})
+
+		t.Run("same credential duplicates respect consumer source isolation", func(t *testing.T) {
+			config := mustJSON(map[string]interface{}{
+				"consumers": []map[string]interface{}{
+					{
+						"name":       "consumer1",
+						"credential": "token1",
+						"keys":       []string{"Authorization"},
+						"in_header":  true,
+						"in_query":   false,
+					},
+					{
+						"name":       "consumer2",
+						"credential": "token2",
+						"keys":       []string{"x-api-key", "apikey"},
+						"in_header":  true,
+						"in_query":   false,
+					},
+				},
+				"keys":        []string{"Authorization", "x-api-key", "apikey"},
+				"in_header":   true,
+				"global_auth": true,
+			})
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders(requestHeaders(
+					[2]string{"Authorization", "Bearer token1"},
+					[2]string{"x-api-key", "token1"},
+				))
+				require.Nil(t, host.GetLocalResponse())
+				requireHeaderValue(t, host.GetRequestHeaders(), "x-mse-consumer", "consumer1")
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+				host.CallOnHttpRequestHeaders(requestHeaders(
+					[2]string{"x-api-key", "token1"},
+					[2]string{"apikey", "token1"},
+				))
+				localResponse := host.GetLocalResponse()
+				require.NotNil(t, localResponse)
+				require.Equal(t, uint32(403), localResponse.StatusCode)
 				host.CompleteHttp()
 			}()
 		})
@@ -1099,26 +1224,49 @@ func TestOnHTTPRequestHeadersLocalYAMLEnhancement(t *testing.T) {
 		})
 
 		t.Run("top-level credentials authenticate without identity headers", func(t *testing.T) {
-			host, status := test.NewTestHost(mustJSON(map[string]interface{}{
+			config := mustJSON(map[string]interface{}{
 				"credentials": []string{"token1"},
-				"keys":        []string{"x-api-key"},
+				"keys":        []string{"x-api-key", "apikey"},
 				"in_header":   true,
 				"global_auth": true,
-			}))
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
+			})
 
-			host.CallOnHttpRequestHeaders(requestHeaders(
-				[2]string{"x-api-key", "token1"},
-				[2]string{"X-Mse-Consumer", "spoofed"},
-				[2]string{"X-Mse-Tenant", "spoofed"},
-			))
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
 
-			require.Nil(t, host.GetLocalResponse())
-			headers := host.GetRequestHeaders()
-			requireNoHeader(t, headers, "x-mse-consumer")
-			requireNoHeader(t, headers, "x-mse-tenant")
-			host.CompleteHttp()
+				host.CallOnHttpRequestHeaders(requestHeaders(
+					[2]string{"x-api-key", "token1"},
+					[2]string{"X-Mse-Consumer", "spoofed"},
+					[2]string{"X-Mse-Tenant", "spoofed"},
+				))
+
+				require.Nil(t, host.GetLocalResponse())
+				headers := host.GetRequestHeaders()
+				requireNoHeader(t, headers, "x-mse-consumer")
+				requireNoHeader(t, headers, "x-mse-tenant")
+				host.CompleteHttp()
+			}()
+
+			func() {
+				host, status := test.NewTestHost(config)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+
+				host.CallOnHttpRequestHeaders(requestHeaders(
+					[2]string{"x-api-key", "token1"},
+					[2]string{"apikey", "token1"},
+					[2]string{"X-Mse-Consumer", "spoofed"},
+					[2]string{"X-Mse-Tenant", "spoofed"},
+				))
+
+				require.Nil(t, host.GetLocalResponse())
+				headers := host.GetRequestHeaders()
+				requireNoHeader(t, headers, "x-mse-consumer")
+				requireNoHeader(t, headers, "x-mse-tenant")
+				host.CompleteHttp()
+			}()
 		})
 
 		t.Run("spoofed identity headers are overwritten or removed", func(t *testing.T) {

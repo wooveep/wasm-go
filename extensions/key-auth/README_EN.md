@@ -155,6 +155,8 @@ curl http://xxx.hello.com/test -H 'Authorization: Bearer real-api-key-1'
 
 When `Authorization` is configured in `keys`, `Authorization: Bearer <api-key>` matches on the token after `Bearer `. Non-Bearer `Authorization` values are matched as raw values. Bearer stripping only applies to the `Authorization` source and is not applied to other headers.
 
+The same normalized API key may be presented through more than one enabled source, such as `Authorization: Bearer real-api-key-1` and `x-api-key: real-api-key-1`. The gateway treats that request as one credential presentation. If the request presents two or more distinct normalized API keys, it is rejected with `key-auth.multi_key`. Bearer stripping for equality comparison only applies to the configured `Authorization` source; non-Authorization headers are compared as raw values.
+
 ### Top-Level Credentials Mode
 Use top-level `credentials` when you only need API key authentication and do not need consumer identity or tenant propagation:
 
@@ -174,7 +176,7 @@ Top-level `credentials` mode does not inject `X-Mse-Consumer` or `X-Mse-Tenant`,
 ## Related Error Codes
 | HTTP Status Code | Error Message                                              | Reason Explanation                |
 | ---------------- | ---------------------------------------------------------- | --------------------------------- |
-| 401              | Request denied by Key Auth check. Multiple API keys found in request | Multiple API Keys provided in the request.      |
+| 401              | Request denied by Key Auth check. Multiple distinct API keys found in request | Multiple distinct API keys provided in the request. |
 | 401              | Request denied by Key Auth check. No API key found in request | API Key not provided in the request.      |
 | 401              | Request denied by Key Auth check. Invalid API key         | The current API Key is not authorized for access. |
 | 403              | Request denied by Key Auth check. Unauthorized consumer   | The caller does not have access permissions.  |
