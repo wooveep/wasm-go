@@ -5,12 +5,12 @@ metadata:
   namespace: higress-system
 spec:
   defaultConfig:
-    billing_service:
-      service_name: modelfusion-console.higress-system.svc.cluster.local
-      service_port: 8080
-      path: /internal/billing/events
-      timeout: 750
-      auth_token: <shared-secret>
+    redis_stream:
+      service_name: redis-stack-server.higress-system.svc.cluster.local
+      service_port: 6379
+      database: 0
+      timeout: 500
+      stream: billing:events
     quota_scope: global
     provider: default
     tenant_header: x-mse-tenant

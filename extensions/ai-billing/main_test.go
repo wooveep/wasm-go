@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/higress-group/wasm-go/pkg/tokenusage"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/resp"
 )
 
 var billingConfig = func() json.RawMessage {
@@ -22,12 +24,12 @@ var billingConfig = func() json.RawMessage {
 		"provider":        "openai",
 		"tenant_header":   "x-tenant-id",
 		"consumer_header": "x-consumer-id",
-		"billing_service": map[string]interface{}{
-			"service_name": "billing.static",
-			"service_port": 8080,
-			"path":         "/internal/billing/events",
+		"redis_stream": map[string]interface{}{
+			"service_name": "redis.static",
+			"service_port": 6379,
+			"database":     2,
 			"timeout":      750,
-			"auth_token":   "<shared-secret>",
+			"stream":       "billing:events",
 		},
 		"enable_path_suffixes": []string{
 			"/v1/chat/completions",
@@ -42,12 +44,10 @@ var billingConfigDefaultConsumer = func() json.RawMessage {
 		"quota_scope":   "global",
 		"provider":      "openai",
 		"tenant_header": "x-tenant-id",
-		"billing_service": map[string]interface{}{
-			"service_name": "billing.static",
-			"service_port": 8080,
-			"path":         "/internal/billing/events",
+		"redis_stream": map[string]interface{}{
+			"service_name": "redis.static",
+			"service_port": 6379,
 			"timeout":      750,
-			"auth_token":   "<shared-secret>",
 		},
 		"enable_path_suffixes": []string{
 			"/v1/chat/completions",
@@ -57,17 +57,16 @@ var billingConfigDefaultConsumer = func() json.RawMessage {
 	return data
 }()
 
-var billingConfigWithoutPath = func() json.RawMessage {
+var billingConfigWithRedisDefaults = func() json.RawMessage {
 	data, _ := json.Marshal(map[string]interface{}{
 		"quota_scope":     "global",
 		"provider":        "openai",
 		"tenant_header":   "x-tenant-id",
 		"consumer_header": "x-consumer-id",
-		"billing_service": map[string]interface{}{
-			"service_name": "billing.static",
-			"service_port": 8080,
+		"redis_stream": map[string]interface{}{
+			"service_name": "redis.static",
+			"service_port": 6379,
 			"timeout":      750,
-			"auth_token":   "<shared-secret>",
 		},
 	})
 	return data
@@ -82,7 +81,7 @@ func mustBillingConfig(t *testing.T, value map[string]interface{}) json.RawMessa
 
 func TestParseConfig(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
-		t.Run("billing service target and default fail policy", func(t *testing.T) {
+		t.Run("redis stream target and default fail policy", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
 
@@ -91,11 +90,11 @@ func TestParseConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
-			require.Equal(t, 8080, billingConfig.BillingService.ServicePort)
-			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
-			require.Equal(t, uint32(750), billingConfig.BillingService.Timeout)
-			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, "redis.static", billingConfig.RedisStream.ServiceName)
+			require.Equal(t, 6379, billingConfig.RedisStream.ServicePort)
+			require.Equal(t, 2, billingConfig.RedisStream.Database)
+			require.Equal(t, int64(750), billingConfig.RedisStream.Timeout)
+			require.Equal(t, "billing:events", billingConfig.RedisStream.Stream)
 			require.Equal(t, "global", billingConfig.QuotaScope)
 			require.Equal(t, "openai", billingConfig.Provider)
 			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)
@@ -103,8 +102,8 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
 		})
 
-		t.Run("billing service path defaults to internal endpoint", func(t *testing.T) {
-			host, status := test.NewTestHost(billingConfigWithoutPath)
+		t.Run("redis stream defaults optional fields", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfigWithRedisDefaults)
 			defer host.Reset()
 
 			require.Equal(t, types.OnPluginStartStatusOK, status)
@@ -112,7 +111,10 @@ func TestParseConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
+			require.Equal(t, 6379, billingConfig.RedisStream.ServicePort)
+			require.Equal(t, 0, billingConfig.RedisStream.Database)
+			require.Equal(t, int64(750), billingConfig.RedisStream.Timeout)
+			require.Equal(t, defaultRedisStream, billingConfig.RedisStream.Stream)
 		})
 
 		t.Run("default consumer header", func(t *testing.T) {
@@ -124,14 +126,13 @@ func TestParseConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
 			require.Equal(t, defaultConsumerHeader, billingConfig.ConsumerHeader)
 		})
 
-		t.Run("global billing service with defaultable fields", func(t *testing.T) {
+		t.Run("global redis stream with defaultable fields", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
 				},
 			}))
 			defer host.Reset()
@@ -141,10 +142,10 @@ func TestParseConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
-			require.Equal(t, 80, billingConfig.BillingService.ServicePort)
-			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
-			require.Equal(t, defaultTimeout, billingConfig.BillingService.Timeout)
+			require.Equal(t, "redis.static", billingConfig.RedisStream.ServiceName)
+			require.Equal(t, defaultRedisPort, billingConfig.RedisStream.ServicePort)
+			require.Equal(t, int64(defaultRedisTimeout), billingConfig.RedisStream.Timeout)
+			require.Equal(t, defaultRedisStream, billingConfig.RedisStream.Stream)
 			require.Equal(t, defaultQuotaScope, billingConfig.QuotaScope)
 			require.Equal(t, defaultProvider, billingConfig.Provider)
 			require.Equal(t, defaultTenantHeader, billingConfig.TenantHeader)
@@ -153,7 +154,7 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
 		})
 
-		t.Run("partial rule inherits billing service and overrides selected fields", func(t *testing.T) {
+		t.Run("partial rule inherits redis stream and overrides selected fields", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"quota_scope":          "global-scope",
 				"provider":             "openai",
@@ -161,12 +162,10 @@ func TestParseConfig(t *testing.T) {
 				"consumer_header":      "x-consumer-id",
 				"enable_path_suffixes": []string{"/v1/chat/completions"},
 				"fail_policy":          FailPolicyOpen,
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
-					"service_port": 8080,
-					"path":         "/internal/billing/events",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+					"service_port": 6379,
 					"timeout":      750,
-					"auth_token":   "<shared-secret>",
 				},
 				"_rules_": []map[string]interface{}{
 					{
@@ -184,11 +183,10 @@ func TestParseConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
-			require.Equal(t, 8080, billingConfig.BillingService.ServicePort)
-			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
-			require.Equal(t, uint32(750), billingConfig.BillingService.Timeout)
-			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, "redis.static", billingConfig.RedisStream.ServiceName)
+			require.Equal(t, 6379, billingConfig.RedisStream.ServicePort)
+			require.Equal(t, int64(750), billingConfig.RedisStream.Timeout)
+			require.Equal(t, defaultRedisStream, billingConfig.RedisStream.Stream)
 			require.Equal(t, "route-scope", billingConfig.QuotaScope)
 			require.Equal(t, "anthropic", billingConfig.Provider)
 			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)
@@ -197,7 +195,7 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, FailPolicyOpen, billingConfig.FailPolicy)
 		})
 
-		t.Run("partial rule only overrides provider and inherits billing service", func(t *testing.T) {
+		t.Run("partial rule only overrides provider and inherits redis stream", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"quota_scope":          "global-scope",
 				"provider":             "openai",
@@ -205,12 +203,10 @@ func TestParseConfig(t *testing.T) {
 				"consumer_header":      "x-consumer-id",
 				"enable_path_suffixes": []string{"/v1/chat/completions"},
 				"fail_policy":          FailPolicyOpen,
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
-					"service_port": 8080,
-					"path":         "/internal/billing/events",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+					"service_port": 6379,
 					"timeout":      750,
-					"auth_token":   "<shared-secret>",
 				},
 				"_rules_": []map[string]interface{}{
 					{
@@ -227,11 +223,10 @@ func TestParseConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "billing.static", billingConfig.BillingService.ServiceName)
-			require.Equal(t, 8080, billingConfig.BillingService.ServicePort)
-			require.Equal(t, "/internal/billing/events", billingConfig.BillingService.Path)
-			require.Equal(t, uint32(750), billingConfig.BillingService.Timeout)
-			require.Equal(t, "<shared-secret>", billingConfig.BillingService.AuthToken)
+			require.Equal(t, "redis.static", billingConfig.RedisStream.ServiceName)
+			require.Equal(t, 6379, billingConfig.RedisStream.ServicePort)
+			require.Equal(t, int64(750), billingConfig.RedisStream.Timeout)
+			require.Equal(t, defaultRedisStream, billingConfig.RedisStream.Stream)
 			require.Equal(t, "global-scope", billingConfig.QuotaScope)
 			require.Equal(t, "anthropic", billingConfig.Provider)
 			require.Equal(t, "x-tenant-id", billingConfig.TenantHeader)
@@ -245,8 +240,8 @@ func TestParseConfig(t *testing.T) {
 				"provider":             "openai",
 				"enable_path_suffixes": []string{"/v1/chat/completions"},
 				"fail_policy":          FailPolicyOpen,
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
 				},
 				"_rules_": []map[string]interface{}{
 					{
@@ -273,8 +268,8 @@ func TestParseConfig(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"provider":    "openai",
 				"fail_policy": FailPolicyOpen,
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
 				},
 				"_rules_": []map[string]interface{}{
 					{
@@ -288,50 +283,37 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, types.OnPluginStartStatusFailed, status)
 		})
 
-		t.Run("full rule config remains valid and can override billing service", func(t *testing.T) {
+		t.Run("rule-level redis stream is rejected", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"provider": "openai",
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
 				},
 				"_rules_": []map[string]interface{}{
 					{
 						"_match_route_": []string{"route-full"},
 						"provider":      "dashscope",
-						"billing_service": map[string]interface{}{
-							"service_name": "billing.route",
-							"service_port": 9090,
-							"path":         "/route/events",
+						"redis_stream": map[string]interface{}{
+							"service_name": "redis.route",
+							"service_port": 6380,
 							"timeout":      900,
-							"auth_token":   "<route-secret>",
 						},
 					},
 				},
 			}))
 			defer host.Reset()
 
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-			require.NoError(t, host.SetRouteName("route-full"))
-			config, err := host.GetMatchConfig()
-			require.NoError(t, err)
-
-			billingConfig := config.(*BillingConfig)
-			require.Equal(t, "billing.route", billingConfig.BillingService.ServiceName)
-			require.Equal(t, 9090, billingConfig.BillingService.ServicePort)
-			require.Equal(t, "/route/events", billingConfig.BillingService.Path)
-			require.Equal(t, uint32(900), billingConfig.BillingService.Timeout)
-			require.Equal(t, "<route-secret>", billingConfig.BillingService.AuthToken)
-			require.Equal(t, "dashscope", billingConfig.Provider)
+			require.Equal(t, types.OnPluginStartStatusFailed, status)
 		})
 
-		t.Run("missing global billing service fails even when rule has billing service", func(t *testing.T) {
+		t.Run("missing global redis stream fails even when rule has redis stream", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"provider": "openai",
 				"_rules_": []map[string]interface{}{
 					{
 						"_match_route_": []string{"route-full"},
-						"billing_service": map[string]interface{}{
-							"service_name": "billing.route",
+						"redis_stream": map[string]interface{}{
+							"service_name": "redis.route",
 						},
 					},
 				},
@@ -368,7 +350,7 @@ func TestBillingEventDelivery(t *testing.T) {
 
 			action = host.CallOnHttpResponseBody([]byte(`{"ok":true}`))
 			require.Equal(t, types.ActionContinue, action)
-			require.Empty(t, host.GetHttpCalloutAttributes())
+			require.Empty(t, host.GetRedisCalloutAttributes())
 		})
 
 		t.Run("successful event includes request facts", func(t *testing.T) {
@@ -399,13 +381,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":5,"completion_tokens":8,"total_tokens":13}}`))
 			require.Equal(t, types.ActionContinue, action)
 
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			require.Equal(t, "outbound|8080||billing.static", attrs[0].Upstream)
-			require.Contains(t, attrs[0].Headers, [2]string{"content-type", "application/json"})
-			require.Contains(t, attrs[0].Headers, [2]string{"Authorization", "Bearer <shared-secret>"})
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			require.NotEmpty(t, event["event_id"])
 			require.Equal(t, "req-1", event["request_id"])
 			require.NotEmpty(t, event["idempotency_key"])
@@ -441,7 +417,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotContains(t, event, "total_tokens")
 			require.NotContains(t, event, "gateway_calculated_cost")
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -463,11 +439,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":5,"prompt_tokens_details":{"audio_tokens":2},"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":3},"total_tokens":13}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
 			require.EqualValues(t, 5, usage["input"])
@@ -492,7 +464,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, usageSourceProvider, event["usage_source"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -516,11 +488,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action = host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4o-mini","choices":[{"message":{"content":"a very long assistant answer that is structurally estimable"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, usageSourceProvider, event["usage_source"])
 
@@ -537,7 +505,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				},
 			}, usage["details"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -548,12 +516,10 @@ func TestBillingEventDelivery(t *testing.T) {
 				"tenant_header":        "x-tenant-id",
 				"consumer_header":      "x-consumer-id",
 				"enable_path_suffixes": []string{"/v1/chat/completions"},
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
-					"service_port": 8080,
-					"path":         "/internal/billing/events",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+					"service_port": 6379,
 					"timeout":      750,
-					"auth_token":   "<shared-secret>",
 				},
 				"_rules_": []map[string]interface{}{
 					{
@@ -577,65 +543,32 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, "route-scope", anthropicEvent["quota_scope"])
 		})
 
-		t.Run("full rule config uses rule billing service at runtime", func(t *testing.T) {
+		t.Run("rule-level redis stream config fails to start", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"provider":             "openai",
 				"tenant_header":        "x-tenant-id",
 				"consumer_header":      "x-consumer-id",
 				"enable_path_suffixes": []string{"/v1/chat/completions"},
-				"billing_service": map[string]interface{}{
-					"service_name": "billing.static",
-					"service_port": 8080,
-					"path":         "/internal/billing/events",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+					"service_port": 6379,
 					"timeout":      750,
-					"auth_token":   "<shared-secret>",
 				},
 				"_rules_": []map[string]interface{}{
 					{
 						"_match_route_": []string{"route-full-runtime"},
 						"provider":      "dashscope",
-						"billing_service": map[string]interface{}{
-							"service_name": "billing.route",
-							"service_port": 9090,
-							"path":         "/route/events",
+						"redis_stream": map[string]interface{}{
+							"service_name": "redis.route",
+							"service_port": 6380,
 							"timeout":      900,
-							"auth_token":   "<route-secret>",
 						},
 					},
 				},
 			}))
 			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-			require.NoError(t, host.SetRouteName("route-full-runtime"))
-
-			action := host.CallOnHttpRequestHeaders([][2]string{
-				{":authority", "example.com"},
-				{":path", "/v1/chat/completions"},
-				{":method", "POST"},
-				{"x-request-id", "req-route-service"},
-				{"x-tenant-id", "tenant-a"},
-				{"x-consumer-id", "consumer-a"},
-			})
-			require.Equal(t, types.ActionContinue, action)
-			action = host.CallOnHttpResponseHeaders([][2]string{
-				{":status", "200"},
-				{"content-type", "application/json"},
-			})
-			require.Equal(t, types.ActionContinue, action)
-			action = host.CallOnHttpResponseBody([]byte(`{"model":"qwen-plus","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
-			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			require.Equal(t, "outbound|9090||billing.route", attrs[0].Upstream)
-			require.Contains(t, attrs[0].Headers, [2]string{"Authorization", "Bearer <route-secret>"})
-			require.Contains(t, attrs[0].Headers, [2]string{":path", "/route/events"})
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
-			requireObjectFactName(t, event, "provider", "dashscope")
-
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
-			host.CompleteHttp()
+			require.Equal(t, types.OnPluginStartStatusFailed, status)
+			require.Empty(t, host.GetRedisCalloutAttributes())
 		})
 
 		t.Run("each ai request gets new event identity", func(t *testing.T) {
@@ -657,11 +590,7 @@ func TestBillingEventDelivery(t *testing.T) {
 					{"content-type", "application/json"},
 				})
 				host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
-
-				attrs := host.GetHttpCalloutAttributes()
-				require.Len(t, attrs, 1)
-				var event map[string]interface{}
-				require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+				event := requireRedisBillingEvent(t, host)
 				eventID, ok := event["event_id"].(string)
 				require.True(t, ok)
 				require.NotEmpty(t, eventID)
@@ -711,11 +640,10 @@ func TestBillingEventDelivery(t *testing.T) {
 			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
 			require.Equal(t, types.ActionContinue, action)
 
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			body := string(attrs[0].Body)
+			bodyBytes := requireRedisBillingEventBody(t, host)
+			body := string(bodyBytes)
 			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.NoError(t, json.Unmarshal(bodyBytes, &event))
 
 			forbiddenFields := []string{
 				"tenant_id",
@@ -732,7 +660,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotContains(t, body, "<raw-api-key>")
 			require.NotContains(t, body, "<api-key-id>")
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -760,14 +688,10 @@ func TestBillingEventDelivery(t *testing.T) {
 
 			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			require.Equal(t, "header-request-id", event["request_id"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -794,14 +718,10 @@ func TestBillingEventDelivery(t *testing.T) {
 
 			action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			require.Equal(t, "property-request-id", event["request_id"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -826,13 +746,9 @@ func TestBillingEventDelivery(t *testing.T) {
 
 			action = host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			require.Equal(t, "consumer-a", event["consumer"])
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -863,11 +779,9 @@ func TestBillingEventDelivery(t *testing.T) {
 			action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\"}\n\n"), true)
 			require.Equal(t, types.ActionContinue, action)
 
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			require.Contains(t, string(attrs[0].Body), `"is_stream":true`)
+			require.Contains(t, string(requireRedisBillingEventBody(t, host)), `"is_stream":true`)
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -889,11 +803,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":9,\"prompt_tokens_details\":{\"cached_tokens\":4},\"completion_tokens\":6,\"total_tokens\":15}}\n\n"), true)
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			require.Equal(t, true, event["is_stream"])
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
@@ -904,7 +814,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 5, usage["input_cache_miss_tokens"])
 			require.EqualValues(t, 6, usage["output_tokens"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -926,11 +836,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action := host.CallOnHttpResponseBody([]byte(`{"model":"moonshot-v1","usage":{"prompt_tokens":12,"cached_tokens":5,"completion_tokens":6,"total_tokens":18}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
 			require.EqualValues(t, 12, usage["input"])
@@ -951,7 +857,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				},
 			}, usage["details"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -973,11 +879,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":5,"prompt_tokens_details":{"cached_tokens":8},"completion_tokens":2,"total_tokens":7}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
 			require.EqualValues(t, 5, usage["input"])
@@ -985,7 +887,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 0, usage["input_cache_miss_tokens"])
 			require.EqualValues(t, 2, usage["output_tokens"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -1007,11 +909,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action := host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-chat","usage":{"prompt_tokens":11,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":7,"completion_tokens":2,"total_tokens":13}}`))
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
 			require.EqualValues(t, 11, usage["input"])
@@ -1034,7 +932,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				},
 			}, usage["details"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -1059,11 +957,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, types.ActionContinue, action)
 			action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"completion_tokens\":8,\"total_tokens\":13,\"prompt_tokens_details\":{\"audio_tokens\":1},\"completion_tokens_details\":{\"reasoning_tokens\":3}}}\n\n"), true)
 			require.Equal(t, types.ActionContinue, action)
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
 			require.EqualValues(t, 5, usage["input"])
@@ -1089,7 +983,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				},
 			}, details)
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -1110,11 +1004,9 @@ func TestBillingEventDelivery(t *testing.T) {
 				{"content-type", "application/json"},
 			})
 			host.CallOnHttpResponseBody([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
+			body := requireRedisBillingEventBody(t, host)
 			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.NoError(t, json.Unmarshal(body, &event))
 			require.Equal(t, true, event["usage_missing"])
 			require.Equal(t, "missing", event["usage_source"])
 
@@ -1125,10 +1017,10 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.EqualValues(t, 0, usage["output"])
 			require.EqualValues(t, 0, usage["total"])
 			require.Equal(t, map[string]interface{}{}, usage["details"])
-			require.NotContains(t, string(attrs[0].Body), `"input_tokens":`)
-			require.NotContains(t, string(attrs[0].Body), `"output_tokens":`)
-			require.NotContains(t, string(attrs[0].Body), `"total_tokens":`)
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			require.NotContains(t, string(body), `"input_tokens":`)
+			require.NotContains(t, string(body), `"output_tokens":`)
+			require.NotContains(t, string(body), `"total_tokens":`)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -1153,14 +1045,13 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4o-mini","choices":[{"message":{"content":"hello output"}}]}`))
 
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			require.NotContains(t, string(attrs[0].Body), "sk-sensitive")
-			require.NotContains(t, string(attrs[0].Body), "raw-secret")
-			require.NotContains(t, string(attrs[0].Body), "messages")
+			body := requireRedisBillingEventBody(t, host)
+			require.NotContains(t, string(body), "sk-sensitive")
+			require.NotContains(t, string(body), "raw-secret")
+			require.NotContains(t, string(body), "messages")
 
 			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			require.NoError(t, json.Unmarshal(body, &event))
 			require.Equal(t, false, event["usage_missing"])
 			require.Equal(t, usageSourceEstimated, event["usage_source"])
 			requireObjectFactName(t, event, "model", "gpt-4o-mini")
@@ -1170,7 +1061,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Greater(t, int64(usage["input"].(float64)), int64(0))
 			require.Greater(t, int64(usage["output"].(float64)), int64(0))
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -1191,11 +1082,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				{"content-type", "application/json"},
 			})
 			host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":5,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":3}}}`))
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
@@ -1225,7 +1112,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
@@ -1246,11 +1133,7 @@ func TestBillingEventDelivery(t *testing.T) {
 				{"content-type", "application/json"},
 			})
 			host.CallOnHttpResponseBody([]byte(`{"message":{"model":"claude-3-5-sonnet","usage":{"input_tokens":10,"output_tokens":7}},"usage":{"cache_creation_input_tokens":4,"cache_read_input_tokens":3}}`))
-
-			attrs := host.GetHttpCalloutAttributes()
-			require.Len(t, attrs, 1)
-			var event map[string]interface{}
-			require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+			event := requireRedisBillingEvent(t, host)
 
 			usage, ok := event["usage"].(map[string]interface{})
 			require.True(t, ok)
@@ -1274,54 +1157,36 @@ func TestBillingEventDelivery(t *testing.T) {
 			}, usage["details"])
 			require.Equal(t, false, event["usage_missing"])
 
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 
-		t.Run("delivery failures are fail open", func(t *testing.T) {
-			cases := []struct {
-				name       string
-				statusCode int
-			}{
-				{name: "unauthorized", statusCode: http.StatusUnauthorized},
-				{name: "forbidden", statusCode: http.StatusForbidden},
-				{name: "request timeout", statusCode: http.StatusRequestTimeout},
-				{name: "too many requests", statusCode: http.StatusTooManyRequests},
-				{name: "internal server error", statusCode: http.StatusInternalServerError},
-				{name: "bad gateway", statusCode: http.StatusBadGateway},
-				{name: "service unavailable", statusCode: http.StatusServiceUnavailable},
-				{name: "gateway timeout", statusCode: http.StatusGatewayTimeout},
-			}
-			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					require.False(t, isBillingDeliveryAcceptedStatus(tc.statusCode), "status %d", tc.statusCode)
-					host, status := test.NewTestHost(billingConfig)
-					defer host.Reset()
-					require.Equal(t, types.OnPluginStartStatusOK, status)
+		t.Run("redis delivery response errors are fail open", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
 
-					host.CallOnHttpRequestHeaders([][2]string{
-						{":authority", "example.com"},
-						{":path", "/v1/chat/completions"},
-						{":method", "POST"},
-						{"x-tenant-id", "tenant-a"},
-						{"x-consumer-id", "consumer-a"},
-					})
-					host.CallOnHttpResponseHeaders([][2]string{
-						{":status", "200"},
-						{"content-type", "application/json"},
-					})
-					action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
-					require.Equal(t, types.ActionContinue, action)
-					require.Len(t, host.GetHttpCalloutAttributes(), 1)
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+			require.Equal(t, types.ActionContinue, action)
+			require.Len(t, host.GetRedisCalloutAttributes(), 1)
 
-					host.CallOnHttpCall([][2]string{{":status", strconv.Itoa(tc.statusCode)}}, []byte(`{"error":"temporary"}`))
-					require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
-					host.CompleteHttp()
-				})
-			}
+			host.CallOnRedisCall(0, test.CreateRedisRespError("temporary"))
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			host.CompleteHttp()
 		})
 
-		t.Run("billing plugin does not mutate redis balance", func(t *testing.T) {
+		t.Run("billing plugin only appends redis stream event", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusOK, status)
@@ -1339,8 +1204,12 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 
-			require.Empty(t, host.GetRedisCalloutAttributes())
-			host.CallOnHttpCall([][2]string{{":status", "202"}}, nil)
+			attrs := host.GetRedisCalloutAttributes()
+			require.Len(t, attrs, 1)
+			command := redisCommand(t, attrs[0].Query)
+			require.Equal(t, "xadd", command[0])
+			require.Equal(t, defaultRedisStream, command[1])
+			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
 		})
 	})
@@ -1371,12 +1240,8 @@ func deliverTestBillingEvent(t *testing.T, config json.RawMessage, routeName, re
 
 	action = host.CallOnHttpResponseBody([]byte(`{"id":"chat-1","model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
 	require.Equal(t, types.ActionContinue, action)
-
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-	var event map[string]interface{}
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
-	host.CallOnHttpCall([][2]string{{":status", "202"}}, []byte(`{"ok":true}`))
+	event := requireRedisBillingEvent(t, host)
+	ackRedisBillingEvent(t, host)
 	host.CompleteHttp()
 	return event
 }
@@ -1390,6 +1255,50 @@ func requireObjectFactName(t *testing.T, event map[string]interface{}, key, name
 	require.False(t, hasID, "%s.id should be omitted when no stable Console id is available", key)
 }
 
+func requireRedisBillingEvent(t *testing.T, host test.TestHost) map[string]interface{} {
+	t.Helper()
+	body := requireRedisBillingEventBody(t, host)
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &event))
+	return event
+}
+
+func requireRedisBillingEventStruct(t *testing.T, host test.TestHost) BillingEvent {
+	t.Helper()
+	body := requireRedisBillingEventBody(t, host)
+	var event BillingEvent
+	require.NoError(t, json.Unmarshal(body, &event))
+	return event
+}
+
+func requireRedisBillingEventBody(t *testing.T, host test.TestHost) []byte {
+	t.Helper()
+	attrs := host.GetRedisCalloutAttributes()
+	require.Len(t, attrs, 1)
+	require.Equal(t, "outbound|6379||redis.static", attrs[0].Upstream)
+	command := redisCommand(t, attrs[0].Query)
+	require.Equal(t, []string{"xadd", "billing:events", "*", "event"}, command[:4])
+	return []byte(command[4])
+}
+
+func redisCommand(t *testing.T, query []byte) []string {
+	t.Helper()
+	value, _, err := resp.NewReader(bytes.NewReader(query)).ReadValue()
+	require.NoError(t, err)
+	values := value.Array()
+	require.Len(t, values, 5)
+	command := make([]string, 0, len(values))
+	for _, value := range values {
+		command = append(command, value.String())
+	}
+	return command
+}
+
+func ackRedisBillingEvent(t *testing.T, host test.TestHost) {
+	t.Helper()
+	host.CallOnRedisCall(0, test.CreateRedisRespString("1700000000000-0"))
+}
+
 func mapKeys(values map[string]interface{}) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -1401,48 +1310,6 @@ func mapKeys(values map[string]interface{}) []string {
 func TestPathFiltering(t *testing.T) {
 	require.True(t, isAIPathEnabled("/proxy/v1/chat/completions?x=1", []string{"/v1/chat/completions"}))
 	require.False(t, isAIPathEnabled("/proxy/not-ai", []string{"/v1/chat/completions"}))
-}
-
-func TestStatusCodeFromHeaders(t *testing.T) {
-	require.Equal(t, http.StatusAccepted, statusCodeFromHeaders([][2]string{{":status", "202"}}))
-	require.Equal(t, http.StatusBadGateway, statusCodeFromHeaders(nil))
-}
-
-func TestBillingDeliveryFailureStatusClassification(t *testing.T) {
-	failureStatuses := []int{
-		http.StatusUnauthorized,
-		http.StatusForbidden,
-		http.StatusRequestTimeout,
-		http.StatusTooManyRequests,
-		http.StatusInternalServerError,
-		http.StatusBadGateway,
-		http.StatusServiceUnavailable,
-		http.StatusGatewayTimeout,
-	}
-	for _, statusCode := range failureStatuses {
-		require.True(t, isBillingDeliveryFailureStatus(statusCode), "status %d", statusCode)
-	}
-
-	acceptedStatuses := []int{
-		http.StatusOK,
-		http.StatusCreated,
-		http.StatusAccepted,
-		http.StatusBadRequest,
-		http.StatusNotFound,
-	}
-	for _, statusCode := range acceptedStatuses {
-		require.False(t, isBillingDeliveryFailureStatus(statusCode), "status %d", statusCode)
-	}
-}
-
-func TestBillingDeliveryAcceptedStatusExcludesAuthFailures(t *testing.T) {
-	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden} {
-		require.False(t, isBillingDeliveryAcceptedStatus(statusCode), "status %d", statusCode)
-	}
-
-	for _, statusCode := range []int{http.StatusOK, http.StatusCreated, http.StatusAccepted} {
-		require.True(t, isBillingDeliveryAcceptedStatus(statusCode), "status %d", statusCode)
-	}
 }
 
 func TestQwenCacheAwareUsagePreservesCacheCreationDetails(t *testing.T) {
@@ -1463,12 +1330,7 @@ func TestQwenCacheAwareUsagePreservesCacheCreationDetails(t *testing.T) {
 	})
 	action := host.CallOnHttpResponseBody([]byte(`{"model":"qwen-plus","usage":{"input_tokens":16,"output_tokens":5,"total_tokens":21,"prompt_tokens_details":{"cached_tokens":6,"cache_creation":{"ephemeral_5m_input_tokens":2}}}}`))
 	require.Equal(t, types.ActionContinue, action)
-
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
-	var event map[string]interface{}
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEvent(t, host)
 	requireObjectFactName(t, event, "model", "qwen-plus")
 	require.Equal(t, usageSourceProvider, event["usage_source"])
 
@@ -1515,12 +1377,7 @@ func TestGeminiCacheAwareUsageMapsCachedContentTokens(t *testing.T) {
 	})
 	action := host.CallOnHttpResponseBody([]byte(`{"modelVersion":"gemini-2.5-pro","usageMetadata":{"promptTokenCount":20,"cachedContentTokenCount":9,"candidatesTokenCount":3,"totalTokenCount":23}}`))
 	require.Equal(t, types.ActionContinue, action)
-
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
-	var event map[string]interface{}
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEvent(t, host)
 	requireObjectFactName(t, event, "model", "gemini-2.5-pro")
 	require.Equal(t, usageSourceProvider, event["usage_source"])
 
@@ -1647,11 +1504,7 @@ func TestCacheAwareInputTokenSplit(t *testing.T) {
 
 func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
-		host, status := test.NewTestHost(billingConfig)
-		defer host.Reset()
-		require.Equal(t, types.OnPluginStartStatusOK, status)
-
-		client := &failingBillingHTTPClient{err: errors.New("network unavailable")}
+		client := &recordingBillingRedisClient{err: errors.New("network unavailable")}
 		ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 		eventID, err := initBillingRequestContext(ctx, "/v1/chat/completions", "req-dispatch", "tenant-a", "consumer-a", "openai", "global", "")
 		require.NoError(t, err)
@@ -1663,21 +1516,19 @@ func TestDeliverBillingEventDispatchErrorIsFailOpen(t *testing.T) {
 
 		deliverBillingEvent(ctx, BillingConfig{
 			Provider: "openai",
-			BillingService: BillingService{
-				Path:      "/internal/billing/events",
-				Timeout:   750,
-				AuthToken: "<shared-secret>",
+			RedisStream: RedisStream{
+				Stream: defaultRedisStream,
 			},
-			httpClient: client,
+			redisClient: client,
 		}, false)
 
-		require.True(t, client.called)
+		require.Len(t, client.commands, 1)
 		require.True(t, ctx.GetBoolContext(ctxBillingDelivered, false))
 	})
 }
 
 func TestSendBillingEventReusesEventIdempotencyKey(t *testing.T) {
-	client := &recordingBillingHTTPClient{}
+	client := &recordingBillingRedisClient{}
 	event := BillingEvent{
 		EventID:        "018f4c7c-1111-7abc-8111-111111111111",
 		IdempotencyKey: "018f4c7c-1111-7abc-8111-111111111111",
@@ -1700,29 +1551,24 @@ func TestSendBillingEventReusesEventIdempotencyKey(t *testing.T) {
 		Cluster:     "cluster-a",
 	}
 	config := BillingConfig{
-		BillingService: BillingService{
-			Path:      "/internal/billing/events",
-			Timeout:   750,
-			AuthToken: "<shared-secret>",
+		RedisStream: RedisStream{
+			Stream: defaultRedisStream,
 		},
-		httpClient: client,
+		redisClient: client,
 	}
 
 	sendBillingEvent(config, event)
 	sendBillingEvent(config, event)
 
-	require.Len(t, client.bodies, 2)
-	require.Equal(t, []string{"/internal/billing/events", "/internal/billing/events"}, client.paths)
-	require.Len(t, client.headers, 2)
-	for _, body := range client.bodies {
+	require.Len(t, client.commands, 2)
+	for _, command := range client.commands {
+		require.Equal(t, []interface{}{"xadd", defaultRedisStream, "*", "event"}, command[:4])
+		body, ok := command[4].(string)
+		require.True(t, ok)
 		var sent BillingEvent
-		require.NoError(t, json.Unmarshal(body, &sent))
+		require.NoError(t, json.Unmarshal([]byte(body), &sent))
 		require.Equal(t, event.IdempotencyKey, sent.IdempotencyKey)
 		require.Equal(t, event.EventID, sent.EventID)
-	}
-	for _, headers := range client.headers {
-		require.Contains(t, headers, [2]string{"content-type", "application/json"})
-		require.Contains(t, headers, [2]string{"Authorization", "Bearer <shared-secret>"})
 	}
 }
 
@@ -1830,14 +1676,13 @@ func TestNonStreamingEstimatedUsageUsesUnknownModelFallback(t *testing.T) {
 	action = host.CallOnHttpResponseBody([]byte(`{"choices":[{"message":{"content":"` + outputText + `"}}]}`))
 	require.Equal(t, types.ActionContinue, action)
 
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
+	body := requireRedisBillingEventBody(t, host)
 
 	expected, ok := estimateTextTokenUsage(tokenusage.ModelUnknown, inputText, outputText)
 	require.True(t, ok)
 
 	var event map[string]interface{}
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	require.NoError(t, json.Unmarshal(body, &event))
 	require.Equal(t, false, event["usage_missing"])
 	require.Equal(t, usageSourceEstimated, event["usage_source"])
 	requireObjectFactName(t, event, "model", tokenusage.ModelUnknown)
@@ -1848,10 +1693,10 @@ func TestNonStreamingEstimatedUsageUsesUnknownModelFallback(t *testing.T) {
 	require.EqualValues(t, expected.OutputToken, usage["output"])
 	require.EqualValues(t, expected.TotalToken, usage["total"])
 	require.ElementsMatch(t, []string{"unit", "input", "output", "total"}, mapKeys(usage))
-	require.NotContains(t, string(attrs[0].Body), "provider_usage")
-	require.NotContains(t, string(attrs[0].Body), "input_cache_hit_tokens")
-	require.NotContains(t, string(attrs[0].Body), "input_cache_miss_tokens")
-	require.NotContains(t, string(attrs[0].Body), "output_tokens")
+	require.NotContains(t, string(body), "provider_usage")
+	require.NotContains(t, string(body), "input_cache_hit_tokens")
+	require.NotContains(t, string(body), "input_cache_miss_tokens")
+	require.NotContains(t, string(body), "output_tokens")
 }
 
 func TestBuildBillingEventMissingUsageFallbackIsZero(t *testing.T) {
@@ -1895,84 +1740,16 @@ func TestBuildBillingEventMissingUsageFallbackIsZero(t *testing.T) {
 	require.NotContains(t, usage, "output_tokens")
 }
 
-type failingBillingHTTPClient struct {
-	err    error
-	called bool
+type recordingBillingRedisClient struct {
+	wrapper.RedisClient
+	err      error
+	commands [][]interface{}
 }
 
-func (f *failingBillingHTTPClient) Get(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
+func (r *recordingBillingRedisClient) Command(cmds []interface{}, callback wrapper.RedisResponseCallback) error {
+	r.commands = append(r.commands, append([]interface{}(nil), cmds...))
+	return r.err
 }
-func (f *failingBillingHTTPClient) Head(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Options(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Post(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	f.called = true
-	return f.err
-}
-func (f *failingBillingHTTPClient) Put(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Patch(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Delete(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Connect(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Trace(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) Call(method, rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (f *failingBillingHTTPClient) ClusterName() string { return "billing.static" }
-
-type recordingBillingHTTPClient struct {
-	paths   []string
-	headers [][][2]string
-	bodies  [][]byte
-}
-
-func (r *recordingBillingHTTPClient) Get(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Head(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Options(rawURL string, headers [][2]string, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Post(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	r.paths = append(r.paths, rawURL)
-	r.headers = append(r.headers, append([][2]string(nil), headers...))
-	r.bodies = append(r.bodies, append([]byte(nil), body...))
-	return nil
-}
-func (r *recordingBillingHTTPClient) Put(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Patch(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Delete(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Connect(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Trace(rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) Call(method, rawURL string, headers [][2]string, body []byte, cb wrapper.ResponseCallback, timeoutMillisecond ...uint32) error {
-	return nil
-}
-func (r *recordingBillingHTTPClient) ClusterName() string { return "billing.static" }
 
 func TestOnHttpStreamingResponseBodyAccumulatesSentAssistantDeltas(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{
@@ -1993,7 +1770,7 @@ func TestOnHttpStreamingResponseBodyAccumulatesSentAssistantDeltas(t *testing.T)
 }
 
 func TestOnHttpStreamingResponseBodyEndOfStreamDeliversAndMarksDelivered(t *testing.T) {
-	client := &recordingBillingHTTPClient{}
+	client := &recordingBillingRedisClient{}
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{
 		ctxBillingEnabled: true,
 		ctxStartTime:      int64(1),
@@ -2013,20 +1790,20 @@ func TestOnHttpStreamingResponseBodyEndOfStreamDeliversAndMarksDelivered(t *test
 	chunk := []byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n")
 	returned := onHttpStreamingResponseBody(ctx, BillingConfig{
 		Provider: "openai",
-		BillingService: BillingService{
-			Path:      "/internal/billing/events",
-			Timeout:   750,
-			AuthToken: "<shared-secret>",
+		RedisStream: RedisStream{
+			Stream: defaultRedisStream,
 		},
-		httpClient: client,
+		redisClient: client,
 	}, chunk, true)
 
 	require.Equal(t, chunk, returned)
 	require.True(t, ctx.GetBoolContext(ctxBillingDelivered, false))
-	require.Len(t, client.bodies, 1)
+	require.Len(t, client.commands, 1)
 
 	var event BillingEvent
-	require.NoError(t, json.Unmarshal(client.bodies[0], &event))
+	body, ok := client.commands[0][4].(string)
+	require.True(t, ok)
+	require.NoError(t, json.Unmarshal([]byte(body), &event))
 	require.True(t, event.IsStream)
 	require.False(t, event.UsageMissing)
 	require.Equal(t, usageSourceProvider, event.UsageSource)
@@ -2059,14 +1836,10 @@ func TestStreamingNormalEndWithoutProviderUsageIsEstimated(t *testing.T) {
 	action = host.CallOnHttpStreamingResponseBody([]byte("data: {\"choices\":[{\"delta\":{\"content\":\""+outputText+"\"}}]}\n\n"), true)
 	require.Equal(t, types.ActionContinue, action)
 
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
 	expected, ok := estimateTextTokenUsage("", inputText, outputText)
 	require.True(t, ok)
 
-	var event BillingEvent
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEventStruct(t, host)
 	require.True(t, event.IsStream)
 	require.False(t, event.UsageMissing)
 	require.Equal(t, usageSourceEstimated, event.UsageSource)
@@ -2076,7 +1849,7 @@ func TestStreamingNormalEndWithoutProviderUsageIsEstimated(t *testing.T) {
 	require.Nil(t, event.Usage.Details)
 
 	host.CompleteHttp()
-	require.Len(t, host.GetHttpCalloutAttributes(), 1)
+	require.Len(t, host.GetRedisCalloutAttributes(), 1)
 }
 
 func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
@@ -2106,12 +1879,7 @@ func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
 	require.Equal(t, types.ActionContinue, action)
 
 	host.CompleteHttp()
-
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
-	var event BillingEvent
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEventStruct(t, host)
 	require.True(t, event.IsStream)
 	require.False(t, event.UsageMissing)
 	require.Equal(t, usageSourceEstimated, event.UsageSource)
@@ -2153,17 +1921,13 @@ func TestStreamDoneFallbackEstimatesOnlySentDeltas(t *testing.T) {
 
 	host.CompleteHttp()
 
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
 	sentUsage, ok := estimateTextTokenUsage("", requestText, sentText)
 	require.True(t, ok)
 	unsentUsage, ok := estimateTextTokenUsage("", requestText, sentText+unsentText)
 	require.True(t, ok)
 	require.Greater(t, unsentUsage.OutputToken, sentUsage.OutputToken)
 
-	var event BillingEvent
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEventStruct(t, host)
 	require.Equal(t, usageSourceEstimated, event.UsageSource)
 	require.Equal(t, sentUsage.InputToken, event.Usage.Input)
 	require.Equal(t, sentUsage.OutputToken, event.Usage.Output)
@@ -2191,12 +1955,7 @@ func TestStreamDoneFallbackDeliversProviderUsage(t *testing.T) {
 	require.Equal(t, types.ActionContinue, action)
 
 	host.CompleteHttp()
-
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
-	var event BillingEvent
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEventStruct(t, host)
 	require.True(t, event.IsStream)
 	require.False(t, event.UsageMissing)
 	require.Equal(t, usageSourceProvider, event.UsageSource)
@@ -2226,12 +1985,7 @@ func TestStreamDoneFallbackDeliversMissingUsage(t *testing.T) {
 	require.Equal(t, types.ActionContinue, action)
 
 	host.CompleteHttp()
-
-	attrs := host.GetHttpCalloutAttributes()
-	require.Len(t, attrs, 1)
-
-	var event BillingEvent
-	require.NoError(t, json.Unmarshal(attrs[0].Body, &event))
+	event := requireRedisBillingEventStruct(t, host)
 	require.True(t, event.IsStream)
 	require.True(t, event.UsageMissing)
 	require.Equal(t, usageSourceMissing, event.UsageSource)
@@ -2259,11 +2013,11 @@ func TestStreamDoneFallbackSkipsAfterNormalDelivery(t *testing.T) {
 	})
 	action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"), true)
 	require.Equal(t, types.ActionContinue, action)
-	require.Len(t, host.GetHttpCalloutAttributes(), 1)
+	require.Len(t, host.GetRedisCalloutAttributes(), 1)
 
 	host.CompleteHttp()
 
-	require.Len(t, host.GetHttpCalloutAttributes(), 1)
+	require.Len(t, host.GetRedisCalloutAttributes(), 1)
 }
 
 type mockBillingHttpContext struct {

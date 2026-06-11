@@ -16,6 +16,7 @@ import (
 	"github.com/higress-group/wasm-go/pkg/tokenusage"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/resp"
 )
 
 const (
@@ -25,8 +26,9 @@ const (
 	defaultProvider       = "default"
 	defaultTenantHeader   = "x-mse-tenant"
 	defaultConsumerHeader = "x-mse-consumer"
-	defaultBillingPath    = "/internal/billing/events"
-	defaultTimeout        = uint32(500)
+	defaultRedisPort      = 6379
+	defaultRedisTimeout   = int64(500)
+	defaultRedisStream    = "billing:events"
 
 	FailPolicyOpen = "open"
 
@@ -82,22 +84,24 @@ func init() {
 }
 
 type BillingConfig struct {
-	BillingService     BillingService `yaml:"billing_service"`
-	QuotaScope         string         `yaml:"quota_scope"`
-	Provider           string         `yaml:"provider"`
-	TenantHeader       string         `yaml:"tenant_header"`
-	ConsumerHeader     string         `yaml:"consumer_header"`
-	EnablePathSuffixes []string       `yaml:"enable_path_suffixes"`
-	FailPolicy         string         `yaml:"fail_policy"`
-	httpClient         wrapper.HttpClient
+	RedisStream        RedisStream `yaml:"redis_stream"`
+	QuotaScope         string      `yaml:"quota_scope"`
+	Provider           string      `yaml:"provider"`
+	TenantHeader       string      `yaml:"tenant_header"`
+	ConsumerHeader     string      `yaml:"consumer_header"`
+	EnablePathSuffixes []string    `yaml:"enable_path_suffixes"`
+	FailPolicy         string      `yaml:"fail_policy"`
+	redisClient        wrapper.RedisClient
 }
 
-type BillingService struct {
+type RedisStream struct {
 	ServiceName string `yaml:"service_name" json:"service_name"`
 	ServicePort int    `yaml:"service_port" json:"service_port"`
-	Path        string `yaml:"path" json:"path"`
-	Timeout     uint32 `yaml:"timeout" json:"timeout"`
-	AuthToken   string `yaml:"auth_token" json:"auth_token"`
+	Username    string `yaml:"username" json:"username"`
+	Password    string `yaml:"password" json:"password"`
+	Database    int    `yaml:"database" json:"database"`
+	Timeout     int64  `yaml:"timeout" json:"timeout"`
+	Stream      string `yaml:"stream" json:"stream"`
 }
 
 type BillingEvent struct {
@@ -169,12 +173,21 @@ func parseConfig(configJson gjson.Result, config *BillingConfig) error {
 	if err := parseConfigFields(configJson, config); err != nil {
 		return err
 	}
-	return parseBillingService(configJson.Get("billing_service"), config)
+	if configJson.Get("billing_service").Exists() {
+		return errors.New("billing_service is no longer supported; use redis_stream")
+	}
+	return parseRedisStream(configJson.Get("redis_stream"), config)
 }
 
 func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *BillingConfig) error {
-	if global.BillingService.ServiceName == "" {
-		return errors.New("missing billing_service in config")
+	if global.RedisStream.ServiceName == "" {
+		return errors.New("missing redis_stream in config")
+	}
+	if configJson.Get("billing_service").Exists() {
+		return errors.New("billing_service is no longer supported; use redis_stream")
+	}
+	if configJson.Get("redis_stream").Exists() {
+		return errors.New("redis_stream must be configured globally")
 	}
 	*config = global
 	if value := configJson.Get("quota_scope"); value.Exists() {
@@ -202,9 +215,6 @@ func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *Bill
 		}
 		config.EnablePathSuffixes = suffixes
 	}
-	if service := configJson.Get("billing_service"); service.Exists() {
-		return parseBillingService(service, config)
-	}
 	return nil
 }
 
@@ -225,35 +235,40 @@ func parseConfigFields(configJson gjson.Result, config *BillingConfig) error {
 	return nil
 }
 
-func parseBillingService(service gjson.Result, config *BillingConfig) error {
-	if !service.Exists() {
-		return errors.New("missing billing_service in config")
+func parseRedisStream(redisStream gjson.Result, config *BillingConfig) error {
+	if !redisStream.Exists() {
+		return errors.New("missing redis_stream in config")
 	}
-	serviceName := service.Get("service_name").String()
+	serviceName := redisStream.Get("service_name").String()
 	if serviceName == "" {
-		return errors.New("billing_service.service_name must not be empty")
+		return errors.New("redis_stream.service_name must not be empty")
 	}
-	servicePort := int(service.Get("service_port").Int())
+	servicePort := int(redisStream.Get("service_port").Int())
 	if servicePort == 0 {
-		servicePort = 80
+		servicePort = defaultRedisPort
 	}
-	path := stringDefault(service.Get("path").String(), defaultBillingPath)
-	timeout := uint32(service.Get("timeout").Uint())
+	timeout := redisStream.Get("timeout").Int()
 	if timeout == 0 {
-		timeout = defaultTimeout
+		timeout = defaultRedisTimeout
 	}
-	config.BillingService = BillingService{
+	stream := stringDefault(redisStream.Get("stream").String(), defaultRedisStream)
+	username := redisStream.Get("username").String()
+	password := redisStream.Get("password").String()
+	database := int(redisStream.Get("database").Int())
+	config.RedisStream = RedisStream{
 		ServiceName: serviceName,
 		ServicePort: servicePort,
-		Path:        path,
+		Username:    username,
+		Password:    password,
+		Database:    database,
 		Timeout:     timeout,
-		AuthToken:   service.Get("auth_token").String(),
+		Stream:      stream,
 	}
-	config.httpClient = wrapper.NewClusterClient(wrapper.FQDNCluster{
+	config.redisClient = wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
 		FQDN: serviceName,
 		Port: int64(servicePort),
 	})
-	return nil
+	return config.redisClient.Init(username, password, timeout, wrapper.WithDataBase(database))
 }
 
 func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.Action {
@@ -477,19 +492,22 @@ func sendBillingEvent(config BillingConfig, event BillingEvent) {
 		log.Errorf("ai-billing marshal event failed: %v", err)
 		return
 	}
-	headers := [][2]string{
-		{"content-type", "application/json"},
-		{"Authorization", "Bearer " + config.BillingService.AuthToken},
+	if config.redisClient == nil {
+		log.Warnf("ai-billing redis dispatch skipped fail open, request_id:%s err:redis client is nil", event.RequestID)
+		return
 	}
-	err = config.httpClient.Post(config.BillingService.Path, headers, body, func(statusCode int, _ http.Header, _ []byte) {
-		if !isBillingDeliveryAcceptedStatus(statusCode) {
-			log.Warnf("ai-billing delivery failed open, status:%d request_id:%s", statusCode, event.RequestID)
-			return
-		}
-		log.Debugf("ai-billing delivery accepted, status:%d request_id:%s", statusCode, event.RequestID)
-	}, config.BillingService.Timeout)
+	err = config.redisClient.Command(
+		[]interface{}{"xadd", config.RedisStream.Stream, "*", "event", string(body)},
+		func(response resp.Value) {
+			if response.Error() != nil {
+				log.Warnf("ai-billing redis delivery failed open, request_id:%s err:%v", event.RequestID, response.Error())
+				return
+			}
+			log.Debugf("ai-billing redis delivery accepted, stream:%s request_id:%s id:%s", config.RedisStream.Stream, event.RequestID, response.String())
+		},
+	)
 	if err != nil {
-		log.Warnf("ai-billing dispatch failed open, request_id:%s err:%v", event.RequestID, err)
+		log.Warnf("ai-billing redis dispatch failed open, request_id:%s err:%v", event.RequestID, err)
 	}
 }
 
@@ -672,33 +690,6 @@ func isAIPathEnabled(requestPath string, enabledSuffixes []string) bool {
 		}
 	}
 	return false
-}
-
-func statusCodeFromHeaders(headers [][2]string) int {
-	for _, header := range headers {
-		if header[0] != ":status" {
-			continue
-		}
-		statusCode, err := strconv.Atoi(header[1])
-		if err != nil {
-			return http.StatusBadGateway
-		}
-		return statusCode
-	}
-	return http.StatusBadGateway
-}
-
-func isBillingDeliveryFailureStatus(statusCode int) bool {
-	switch statusCode {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestTimeout, http.StatusTooManyRequests:
-		return true
-	default:
-		return statusCode >= http.StatusInternalServerError
-	}
-}
-
-func isBillingDeliveryAcceptedStatus(statusCode int) bool {
-	return !isBillingDeliveryFailureStatus(statusCode)
 }
 
 func parsePathSuffixes(result gjson.Result) ([]string, error) {

@@ -6,20 +6,20 @@ description: Configuration reference for request-level AI billing event delivery
 
 ## Overview
 
-`ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and sends it to Console's internal billing-service through an HTTP callout. The callout uses `billing_service.auth_token` to send `Authorization: Bearer <token>`. Delivery is fail-open by default: timeouts, network failures, and 5xx responses are logged but do not block the user response.
+`ai-billing` parses token usage and model independently after an enabled AI response completes, builds a request-level billing event, and writes it to Console/billing-service settlement through Redis Streams. The plugin uses Redis `XADD <stream> * event <BillingEvent JSON>` and defaults to `billing:events`. Delivery is fail-open by default: Redis timeouts, network failures, and error responses are logged but do not block the user response.
 
-The plugin does not calculate final authoritative costs, apply tenant discounts, apply override prices, deduct Redis balances, or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to billing-service.
+The plugin does not calculate final authoritative costs, apply tenant discounts, apply override prices, deduct Redis balances, or update account databases. Idempotency, settlement, statements, balance projection, and reconciliation belong to Console/billing-service.
 
 ## Example
 
 ```yaml
 defaultConfig:
-  billing_service:
-    service_name: modelfusion-console.higress-system.svc.cluster.local
-    service_port: 8080
-    path: /internal/billing/events
-    timeout: 750
-    auth_token: <shared-secret>
+  redis_stream:
+    service_name: redis-stack-server.higress-system.svc.cluster.local
+    service_port: 6379
+    database: 0
+    timeout: 500
+    stream: billing:events
   quota_scope: global
   provider: default
   tenant_header: x-mse-tenant
@@ -42,8 +42,27 @@ When provider usage exposes cache details, `usage` also includes `input_cache_hi
 
 `route`, `provider`, and `model` use Console-native object facts: `{ "id"?: "...", "name"?: "..." }`. Gateways usually do not know Console UUIDs, so the plugin populates runtime `name` values by default.
 
-The global `defaultConfig` must contain the complete `billing_service`, and should hold shared tenant, consumer, path suffix, and fail-open defaults. `matchRules[].config` can contain only route-specific differences such as `provider`, `quota_scope`, `enable_path_suffixes`, or `fail_policy`; omitted fields inherit from the global config. For backward compatibility, a rule-level `billing_service` is still accepted and creates a rule-specific HTTP callout client.
+Configuration fields:
 
-`billing_service.path` defaults to `/internal/billing/events` and uses the configured Bearer token for Console internal settlement authentication. Console validates that token against `CONSOLE_INTERNAL_BILLING_TOKEN`.
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| `redis_stream` | object | none | Redis Stream delivery target |
+| `redis_stream.service_name` | string | none | Redis service name or Console-managed registry name |
+| `redis_stream.service_port` | integer | `6379` | Redis service port |
+| `redis_stream.username` | string | empty | Redis username |
+| `redis_stream.password` | string | empty | Redis password; treat as sensitive |
+| `redis_stream.database` | integer | `0` | Redis database |
+| `redis_stream.timeout` | integer | `500` | Redis callout timeout in milliseconds |
+| `redis_stream.stream` | string | `billing:events` | Redis Stream name |
+| `quota_scope` | string | `global` | Quota scope for the current route or rule |
+| `provider` | string | `default` | AI provider identifier |
+| `tenant_header` | string | `x-mse-tenant` | Tenant identity request header |
+| `consumer_header` | string | `x-mse-consumer` | Consumer identity request header |
+| `enable_path_suffixes` | []string | `/v1/chat/completions`, `/v1/messages` | Enabled path suffixes |
+| `fail_policy` | string | `open` | Delivery failure policy; currently only `open` is supported |
+
+The global `defaultConfig` must contain `redis_stream.service_name`, and should hold shared tenant, consumer, path suffix, and fail-open defaults. `matchRules[].config` can contain only route-specific differences such as `provider`, `quota_scope`, `enable_path_suffixes`, or `fail_policy`; omitted fields inherit from the global config. Rule-level `redis_stream` is not supported because the Redis Stream target is shared plugin-instance configuration.
+
+Console-managed `ai-billing` configuration projects the Redis service to an McpBridge registry name, such as `redis-stack-server.dns`. The old `billing_service`, `path`, and `auth_token` configuration has been removed; when upgrading from the HTTP transport, delete and recreate existing HTTP-shaped `WasmPlugin` objects or reproject Console-managed bindings.
 
 `ai-billing`, `ai-quota`, and `ai-statistics` can be deployed independently. Balance debit and Redis projection refresh remain owned by Console/billing-service.
