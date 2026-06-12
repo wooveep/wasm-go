@@ -199,8 +199,7 @@ func (v *vertexProvider) TransformRequestHeaders(ctx wrapper.HttpContext, apiNam
 
 	// 剥除 Anthropic 客户端携带的凭据头和协议头.
 	// 凭据头: vertex 一律用 OAuth Bearer 或 ?key= 鉴权, 留着只会把 sk-ant-... 泄漏到上游日志.
-	headers.Del("x-api-key")
-	headers.Del("anthropic-api-key")
+	util.RemoveClientAuthHeaders(headers)
 	// 协议头: vertex 的 Anthropic 端点不接受这些头 —
 	//   anthropic-beta  → vertex 不支持 Anthropic beta feature flags, 会 400
 	//   anthropic-version → vertex 的版本通过 body 里的 anthropic_version 字段传递,

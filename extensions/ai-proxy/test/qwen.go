@@ -475,6 +475,34 @@ func RunQwenOnHttpRequestHeadersTests(t *testing.T) {
 			require.Contains(t, pathValue, "/compatible-mode/v1/responses", "Path should use compatible mode responses path")
 		})
 
+		t.Run("qwen compatible mode strips client auth headers", func(t *testing.T) {
+			host, status := test.NewTestHost(qwenEnableCompatibleConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/messages"},
+				{":method", "POST"},
+				{"Content-Type", "application/json"},
+				{"x-api-key", "client-api-key"},
+				{"anthropic-api-key", "client-anthropic-key"},
+				{"x-authorization", "Bearer client-alt-token"},
+			})
+
+			require.Equal(t, types.HeaderStopIteration, action)
+
+			requestHeaders := host.GetRequestHeaders()
+			require.NotNil(t, requestHeaders)
+
+			authValue, hasAuth := test.GetHeaderValue(requestHeaders, "Authorization")
+			require.True(t, hasAuth, "Authorization header should exist")
+			require.Equal(t, "Bearer sk-qwen-compatible", authValue)
+			require.False(t, test.HasHeader(requestHeaders, "x-api-key"), "x-api-key must not be forwarded to qwen")
+			require.False(t, test.HasHeader(requestHeaders, "anthropic-api-key"), "anthropic-api-key must not be forwarded to qwen")
+			require.False(t, test.HasHeader(requestHeaders, "x-authorization"), "x-authorization must not be forwarded to qwen")
+		})
+
 		// 测试qwen兼容模式请求头处理（reranks接口）
 		t.Run("qwen compatible mode reranks request headers", func(t *testing.T) {
 			host, status := test.NewTestHost(qwenEnableCompatibleConfig)

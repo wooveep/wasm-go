@@ -526,6 +526,7 @@ func TestVertexTransformRequestHeaders_StripsAnthropicHeaders(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("x-api-key", "sk-ant-api03-secret")
 	headers.Set("anthropic-api-key", "sk-ant-api03-secret")
+	headers.Set("x-authorization", "Bearer client-token")
 	headers.Set("anthropic-beta", "advanced-tool-use-2025-11-20,prompt-caching-scope-2026-01-05")
 	headers.Set("anthropic-version", "2023-06-01")
 	headers.Set("content-type", "application/json")
@@ -534,6 +535,7 @@ func TestVertexTransformRequestHeaders_StripsAnthropicHeaders(t *testing.T) {
 
 	assert.Empty(t, headers.Get("x-api-key"), "x-api-key must be stripped before forwarding to vertex")
 	assert.Empty(t, headers.Get("anthropic-api-key"), "anthropic-api-key must be stripped before forwarding to vertex")
+	assert.Empty(t, headers.Get("x-authorization"), "x-authorization must be stripped before forwarding to vertex")
 	assert.Empty(t, headers.Get("anthropic-beta"), "anthropic-beta must be stripped — vertex rejects unknown beta flags with 400")
 	assert.Empty(t, headers.Get("anthropic-version"), "anthropic-version must be stripped — vertex uses body-level anthropic_version instead")
 	// Sanity: unrelated headers untouched.

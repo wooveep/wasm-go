@@ -352,8 +352,7 @@ func (c *claudeProvider) TransformRequestHeaders(ctx wrapper.HttpContext, apiNam
 	if c.config.claudeCodeMode {
 		// Claude Code mode: use OAuth token with Bearer authorization
 		token := c.config.GetApiTokenInUse(ctx)
-		headers.Set("authorization", "Bearer "+token)
-		headers.Del("x-api-key")
+		util.OverwriteRequestAuthorizationHeader(headers, "Bearer "+token)
 
 		// Set Claude Code specific headers
 		headers.Set("user-agent", claudeCodeUserAgent)
