@@ -1654,6 +1654,60 @@ func TestBuildBillingEventLeavesProviderEmptyWhenClusterIdentityIsUnknown(t *tes
 	require.Equal(t, "cluster-a", event.Cluster)
 }
 
+func TestBuildBillingEventDerivesProviderFromClusterForms(t *testing.T) {
+	tests := []struct {
+		name         string
+		cluster      string
+		wantProvider string
+		wantCluster  string
+	}{
+		{
+			name:         "direct host",
+			cluster:      "llm-qwen-019ebb2c.internal.dns",
+			wantProvider: "qwen-019ebb2c",
+			wantCluster:  "llm-qwen-019ebb2c.internal.dns",
+		},
+		{
+			name:         "envoy outbound cluster",
+			cluster:      "outbound|443||llm-qwen-019ebb2c.internal.dns",
+			wantProvider: "qwen-019ebb2c",
+			wantCluster:  "outbound|443||llm-qwen-019ebb2c.internal.dns",
+		},
+		{
+			name:         "short host",
+			cluster:      "llm-qwen-019ebb2c.dns",
+			wantProvider: "qwen-019ebb2c",
+			wantCluster:  "llm-qwen-019ebb2c.dns",
+		},
+		{
+			name:         "whitespace trimming",
+			cluster:      "  llm-qwen-019ebb2c.internal.dns  ",
+			wantProvider: "qwen-019ebb2c",
+			wantCluster:  "  llm-qwen-019ebb2c.internal.dns  ",
+		},
+		{
+			name:         "unknown cluster",
+			cluster:      "cluster-a",
+			wantProvider: "",
+			wantCluster:  "cluster-a",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+			ctx.SetContext(ctxProvider, "route-provider")
+			ctx.SetContext(ctxCluster, tc.cluster)
+			ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+			event := buildBillingEvent(ctx, BillingConfig{Provider: "openai"}, false)
+
+			require.Equal(t, tc.wantProvider, event.Provider.Name)
+			require.Equal(t, tc.wantCluster, event.Cluster)
+		})
+	}
+}
+
 func TestBuildBillingEventEstimatedUsageIsBasicOnly(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 	ctx.SetContext(ctxStartTime, int64(1))
