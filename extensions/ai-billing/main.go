@@ -552,6 +552,11 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	requestID := ctx.GetStringContext(ctxRequestID, "")
 	eventID := ctx.GetStringContext(ctxEventID, "")
 	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, eventID)
+	cluster := ctx.GetStringContext(ctxCluster, "-")
+	provider := ctx.GetStringContext(ctxProvider, config.Provider)
+	if clusterProvider := providerSlugFromCluster(cluster); clusterProvider != "" {
+		provider = clusterProvider
+	}
 	event := BillingEvent{
 		EventID:        eventID,
 		IdempotencyKey: idempotencyKey,
@@ -559,7 +564,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		Tenant:         ctx.GetStringContext(ctxTenant, ""),
 		Consumer:       ctx.GetStringContext(ctxConsumer, ""),
 		Route:          namedBillingFact(ctx.GetStringContext(ctxRoute, "-")),
-		Provider:       namedBillingFact(ctx.GetStringContext(ctxProvider, config.Provider)),
+		Provider:       namedBillingFact(provider),
 		QuotaScope:     ctx.GetStringContext(ctxQuotaScope, config.QuotaScope),
 		Model:          namedBillingFact(ctx.GetStringContext(ctxModel, tokenusage.ModelUnknown)),
 		RequestPath:    ctx.GetStringContext(ctxRequestPath, ""),
@@ -579,7 +584,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		IsStream:     ctx.GetBoolContext(ctxIsStream, isStream),
 		UsageMissing: usageMissing,
 		UsageSource:  usageSource,
-		Cluster:      ctx.GetStringContext(ctxCluster, "-"),
+		Cluster:      cluster,
 		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
 	}
 	return event

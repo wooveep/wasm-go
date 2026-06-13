@@ -1626,6 +1626,18 @@ func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
 	require.NotEqual(t, event.RequestID, "200")
 }
 
+func TestBuildBillingEventUsesClusterDerivedProviderAndPreservesRawCluster(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxProvider, "deepseek-019ebb2c")
+	ctx.SetContext(ctxCluster, "outbound|443||llm-qwen-019ebb2c.internal.dns")
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+	event := buildBillingEvent(ctx, BillingConfig{Provider: "openai"}, false)
+
+	require.Equal(t, "qwen-019ebb2c", event.Provider.Name)
+	require.Equal(t, "outbound|443||llm-qwen-019ebb2c.internal.dns", event.Cluster)
+}
+
 func TestBuildBillingEventEstimatedUsageIsBasicOnly(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 	ctx.SetContext(ctxStartTime, int64(1))
