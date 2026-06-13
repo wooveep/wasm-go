@@ -553,7 +553,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	eventID := ctx.GetStringContext(ctxEventID, "")
 	idempotencyKey := ctx.GetStringContext(ctxIdempotencyKey, eventID)
 	cluster := ctx.GetStringContext(ctxCluster, "-")
-	provider := ctx.GetStringContext(ctxProvider, config.Provider)
+	provider := ""
 	if clusterProvider := providerSlugFromCluster(cluster); clusterProvider != "" {
 		provider = clusterProvider
 	}

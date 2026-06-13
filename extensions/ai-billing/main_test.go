@@ -388,7 +388,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.NotEqual(t, "req-1", event["idempotency_key"])
 			require.Equal(t, "tenant-a", event["tenant"])
 			require.Equal(t, "consumer-a", event["consumer"])
-			requireObjectFactName(t, event, "provider", "openai")
+			requireObjectFactName(t, event, "provider", "")
 			requireObjectFactName(t, event, "model", "gpt-4")
 			requireObjectFactName(t, event, "route", "route-a")
 			require.Equal(t, "cluster-a", event["cluster"])
@@ -509,7 +509,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
-		t.Run("matched rules emit resolved provider and quota scope", func(t *testing.T) {
+		t.Run("matched rules keep provider empty and preserve quota scope", func(t *testing.T) {
 			config := mustBillingConfig(t, map[string]interface{}{
 				"quota_scope":          "global-scope",
 				"provider":             "openai",
@@ -535,11 +535,11 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 
 			openaiEvent := deliverTestBillingEvent(t, config, "route-openai", "req-openai")
-			requireObjectFactName(t, openaiEvent, "provider", "openai-route")
+			requireObjectFactName(t, openaiEvent, "provider", "")
 			require.Equal(t, "global-scope", openaiEvent["quota_scope"])
 
 			anthropicEvent := deliverTestBillingEvent(t, config, "route-anthropic", "req-anthropic")
-			requireObjectFactName(t, anthropicEvent, "provider", "anthropic-route")
+			requireObjectFactName(t, anthropicEvent, "provider", "")
 			require.Equal(t, "route-scope", anthropicEvent["quota_scope"])
 		})
 
@@ -1250,6 +1250,10 @@ func requireObjectFactName(t *testing.T, event map[string]interface{}, key, name
 	t.Helper()
 	value, ok := event[key].(map[string]interface{})
 	require.True(t, ok, "%s must be serialized as an object", key)
+	if name == "" {
+		require.Empty(t, value)
+		return
+	}
 	require.Equal(t, name, value["name"])
 	_, hasID := value["id"]
 	require.False(t, hasID, "%s.id should be omitted when no stable Console id is available", key)
@@ -1636,6 +1640,18 @@ func TestBuildBillingEventUsesClusterDerivedProviderAndPreservesRawCluster(t *te
 
 	require.Equal(t, "qwen-019ebb2c", event.Provider.Name)
 	require.Equal(t, "outbound|443||llm-qwen-019ebb2c.internal.dns", event.Cluster)
+}
+
+func TestBuildBillingEventLeavesProviderEmptyWhenClusterIdentityIsUnknown(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxProvider, "deepseek-019ebb2c")
+	ctx.SetContext(ctxCluster, "cluster-a")
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+	event := buildBillingEvent(ctx, BillingConfig{Provider: "deepseek-019ebb2c"}, false)
+
+	require.Empty(t, event.Provider.Name)
+	require.Equal(t, "cluster-a", event.Cluster)
 }
 
 func TestBuildBillingEventEstimatedUsageIsBasicOnly(t *testing.T) {
