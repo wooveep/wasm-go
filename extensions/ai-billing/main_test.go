@@ -1312,6 +1312,23 @@ func TestPathFiltering(t *testing.T) {
 	require.False(t, isAIPathEnabled("/proxy/not-ai", []string{"/v1/chat/completions"}))
 }
 
+func TestProviderSlugFromCluster(t *testing.T) {
+	require.Equal(t, "qwen-019ebb2c", providerSlugFromCluster("llm-qwen-019ebb2c.internal.dns"))
+	require.Equal(t, "qwen-019ebb2c", providerSlugFromCluster("outbound|443||llm-qwen-019ebb2c.internal.dns"))
+	require.Equal(t, "qwen-019ebb2c", providerSlugFromCluster("llm-qwen-019ebb2c.dns"))
+	require.Equal(t, "qwen-019ebb2c", providerSlugFromCluster("  llm-qwen-019ebb2c.internal.dns  "))
+	require.Empty(t, providerSlugFromCluster("outbound|bogus||llm-qwen.internal.dns"))
+	require.Empty(t, providerSlugFromCluster("llm-qwen|beta.internal.dns"))
+	require.Empty(t, providerSlugFromCluster("llm--.dns"))
+	require.Empty(t, providerSlugFromCluster("llm-a-.dns"))
+	require.Empty(t, providerSlugFromCluster("llm-a-.internal.dns"))
+	require.Empty(t, providerSlugFromCluster("outbound|443||llm--.internal.dns"))
+	require.Empty(t, providerSlugFromCluster(""))
+	require.Empty(t, providerSlugFromCluster("cluster-a"))
+	require.Empty(t, providerSlugFromCluster("llm-.internal.dns"))
+	require.Empty(t, providerSlugFromCluster("outbound|443||cluster-a"))
+}
+
 func TestQwenCacheAwareUsagePreservesCacheCreationDetails(t *testing.T) {
 	host, status := test.NewTestHost(billingConfig)
 	defer host.Reset()

@@ -589,6 +589,57 @@ func namedBillingFact(name string) BillingFact {
 	return BillingFact{Name: strings.TrimSpace(name)}
 }
 
+func providerSlugFromCluster(cluster string) string {
+	cluster = strings.TrimSpace(cluster)
+	if cluster == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(cluster, "outbound|") {
+		parts := strings.Split(cluster, "|")
+		if len(parts) != 4 || parts[0] != "outbound" || parts[2] != "" {
+			return ""
+		}
+		if port, err := strconv.Atoi(parts[1]); err != nil || port <= 0 || port > 65535 {
+			return ""
+		}
+		return providerSlugFromCluster(parts[3])
+	}
+
+	slug, ok := strings.CutPrefix(cluster, "llm-")
+	if !ok {
+		return ""
+	}
+	switch {
+	case strings.HasSuffix(slug, ".internal.dns"):
+		slug = strings.TrimSuffix(slug, ".internal.dns")
+	case strings.HasSuffix(slug, ".dns"):
+		slug = strings.TrimSuffix(slug, ".dns")
+	default:
+		return ""
+	}
+	if slug == "" || !isValidProviderSlug(slug) {
+		return ""
+	}
+	return slug
+}
+
+func isValidProviderSlug(slug string) bool {
+	if slug == "" || slug[0] == '-' || slug[len(slug)-1] == '-' {
+		return false
+	}
+	for _, r := range slug {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func billingUsageDetails(ctx wrapper.HttpContext) map[string]any {
 	details := map[string]any{}
 	if inputDetails := tokenDetailsFromContext(ctx.GetContext(ctxInputDetails)); len(inputDetails) > 0 {
