@@ -9,12 +9,12 @@
 
 ## 2. Tests First
 
-- [ ] 2.1 Add Qwen provider unit tests for OpenAI image generation request conversion into DashScope multimodal-generation JSON.
-- [ ] 2.2 Add Qwen provider unit tests for image parameter mapping, including model mapping, `n`, `seed`, and `size` normalization from `WIDTHxHEIGHT` to `WIDTH*HEIGHT`.
-- [ ] 2.3 Add Qwen provider unit tests for DashScope image response conversion into OpenAI-style `created` and `data[].url` JSON.
-- [ ] 2.4 Add Qwen provider unit tests for OpenAI audio speech request conversion into DashScope Qwen-TTS JSON, including model mapping.
-- [ ] 2.5 Add Qwen provider unit tests for optional DashScope TTS extension fields such as `language_type`, `instructions`, and `optimize_instructions`.
-- [ ] 2.6 Add Qwen provider unit tests for DashScope audio response conversion into documented audio URL success JSON.
+- [x] 2.1 Add Qwen provider unit tests for OpenAI image generation request conversion into DashScope multimodal-generation JSON.
+- [x] 2.2 Add Qwen provider unit tests for image parameter mapping, including model mapping, `n`, `seed`, and `size` normalization from `WIDTHxHEIGHT` to `WIDTH*HEIGHT`.
+- [x] 2.3 Add Qwen provider unit tests for DashScope image response conversion into OpenAI-style `created` and `data[].url` JSON.
+- [x] 2.4 Add Qwen provider unit tests for OpenAI audio speech request conversion into DashScope Qwen-TTS JSON, including model mapping.
+- [x] 2.5 Add Qwen provider unit tests for optional DashScope TTS extension fields such as `language_type`, `instructions`, and `optimize_instructions`.
+- [x] 2.6 Add Qwen provider unit tests for DashScope audio response conversion into documented audio URL success JSON.
 - [ ] 2.7 Add ai-proxy integration tests proving explicit `openai/v1/imagegeneration` and `openai/v1/audiospeech` capabilities enable DashScope-native media conversion when `qwenEnableCompatible` is disabled.
 - [ ] 2.8 Add integration tests proving configured media capability paths are used for upstream routing and Qwen default capabilities do not synthesize image or audio speech support.
 - [ ] 2.9 Add regression tests proving missing media capabilities remain unsupported.
