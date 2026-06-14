@@ -583,6 +583,70 @@ Response Example:
 }
 ```
 
+**Image Generation and Audio Speech Media Capabilities**
+
+Qwen default capabilities do not automatically enable `/v1/images/generations` or `/v1/audio/speech`. To call synchronous DashScope media APIs through OpenAI-style paths, configure `capabilities` explicitly and keep `qwenEnableCompatible: false`. Image generation is converted to DashScope `multimodal-generation/generation`, supporting `prompt`, `n`, `seed`, and `size`; `size` is normalized from OpenAI `WIDTHxHEIGHT` to DashScope `WIDTH*HEIGHT`. Image models can map to synchronous text-to-image models such as `qwen-image-2.0-pro` or `wan2.6-t2i`. Audio speech is converted to the non-streaming Qwen-TTS request shape, supporting `input`, `voice`, and extension fields such as `language_type`, `instructions`, and `optimize_instructions`.
+
+```yaml
+provider:
+  type: qwen
+  apiTokens:
+    - "YOUR_QWEN_API_TOKEN"
+  qwenEnableCompatible: false
+  modelMapping:
+    'gpt-image-1': "qwen-image-2.0-pro" # or wan2.6-t2i
+    'tts-1': "qwen3-tts-flash"
+  capabilities:
+    'openai/v1/imagegeneration': "/api/v1/services/aigc/multimodal-generation/generation"
+    'openai/v1/audiospeech': "/api/v1/services/aigc/multimodal-generation/generation"
+```
+
+Image generation request example:
+
+```json
+{
+  "model": "gpt-image-1",
+  "prompt": "a quiet lake at sunrise",
+  "n": 1,
+  "seed": 42,
+  "size": "1280x720"
+}
+```
+
+Audio speech request example:
+
+```json
+{
+  "model": "tts-1",
+  "input": "Today is a wonderful day to build something people love.",
+  "voice": "Cherry",
+  "language_type": "English",
+  "instructions": "Speak warmly.",
+  "optimize_instructions": true
+}
+```
+
+The current audio speech response contract returns JSON containing a downloadable audio URL, not an OpenAI binary audio stream:
+
+```json
+{
+  "created": 1766113409,
+  "data": {
+    "url": "https://dashscope-result.example/audio.wav",
+    "id": "audio_123",
+    "expires_at": 1766113409
+  },
+  "usage": {
+    "input_tokens": 76,
+    "output_tokens": 1045,
+    "characters": 0,
+    "total_tokens": 1121
+  }
+}
+```
+
+When `qwenEnableCompatible: true` is enabled, explicitly configured media capabilities remain Qwen-compatible pass-through and do not use the DashScope-native request/response conversion above. OpenAI audio fields such as `response_format` and `speed` are not part of the Qwen-TTS native conversion yet.
+
 **Text Embedding Request Example**
 
 URL: http://your-domain/v1/embeddings

@@ -19,6 +19,9 @@
 - `text-to-image-v2.md`
   - 万相-文生图V2版API参考
   - https://help.aliyun.com/zh/model-studio/text-to-image-v2-api-reference
+- `qwen-tts.md`
+  - 非实时语音合成（Qwen-TTS）API参考
+  - https://help.aliyun.com/zh/model-studio/qwen-tts-api
 - `image-to-video.md`
   - 万相-图生视频API参考
   - https://help.aliyun.com/zh/model-studio/image-to-video-general-api-reference

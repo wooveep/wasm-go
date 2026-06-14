@@ -621,6 +621,70 @@ URL: <http://your-domain/v1/chat/completions>
 }
 ```
 
+**图片生成与语音合成媒体能力配置**
+
+Qwen 默认能力不会自动启用 `/v1/images/generations` 或 `/v1/audio/speech`。如需通过 OpenAI 风格路径调用 DashScope 同步媒体接口，需要显式配置 `capabilities`，并保持 `qwenEnableCompatible: false`。图片生成会转换为 DashScope `multimodal-generation/generation` 请求，支持 `prompt`、`n`、`seed`、`size`，其中 `size` 会从 OpenAI 的 `WIDTHxHEIGHT` 转换为 DashScope 的 `WIDTH*HEIGHT`。模型可映射到 `qwen-image-2.0-pro`、`wan2.6-t2i` 等同步文生图模型。语音合成会转换为 Qwen-TTS 非流式请求，支持 `input`、`voice` 以及扩展字段 `language_type`、`instructions`、`optimize_instructions`。
+
+```yaml
+provider:
+  type: qwen
+  apiTokens:
+    - 'YOUR_QWEN_API_TOKEN'
+  qwenEnableCompatible: false
+  modelMapping:
+    'gpt-image-1': 'qwen-image-2.0-pro' # 或 wan2.6-t2i
+    'tts-1': 'qwen3-tts-flash'
+  capabilities:
+    'openai/v1/imagegeneration': '/api/v1/services/aigc/multimodal-generation/generation'
+    'openai/v1/audiospeech': '/api/v1/services/aigc/multimodal-generation/generation'
+```
+
+图片生成请求示例：
+
+```json
+{
+  "model": "gpt-image-1",
+  "prompt": "a quiet lake at sunrise",
+  "n": 1,
+  "seed": 42,
+  "size": "1280x720"
+}
+```
+
+语音合成请求示例：
+
+```json
+{
+  "model": "tts-1",
+  "input": "Today is a wonderful day to build something people love.",
+  "voice": "Cherry",
+  "language_type": "English",
+  "instructions": "Speak warmly.",
+  "optimize_instructions": true
+}
+```
+
+当前语音合成响应返回可下载音频 URL 的 JSON，而不是 OpenAI 二进制音频直出：
+
+```json
+{
+  "created": 1766113409,
+  "data": {
+    "url": "https://dashscope-result.example/audio.wav",
+    "id": "audio_123",
+    "expires_at": 1766113409
+  },
+  "usage": {
+    "input_tokens": 76,
+    "output_tokens": 1045,
+    "characters": 0,
+    "total_tokens": 1121
+  }
+}
+```
+
+启用 `qwenEnableCompatible: true` 时，显式配置的媒体能力仍按 Qwen 兼容模式透传，不执行上述 DashScope-native 请求/响应转换。`response_format`、`speed` 等 OpenAI 音频字段暂不参与 Qwen-TTS native 转换。
+
 **文本向量请求示例**
 
 URL: <http://your-domain/v1/embeddings>

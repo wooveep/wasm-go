@@ -34,11 +34,11 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 Update ai-proxy README documentation with Qwen/DashScope media capability examples for image generation and audio speech.
-- [ ] 4.2 Document supported synchronous DashScope media model expectations and show model-mapping examples for Qwen-Image/Wan image and Qwen-TTS.
-- [ ] 4.3 Document the first-pass audio speech response contract, including that strict OpenAI binary audio relay is not implemented in this change.
-- [ ] 4.4 Add or refresh local DashScope Qwen-TTS documentation references if they are missing from `docs/AIproviderAPI/qwen/`.
-- [ ] 4.5 Update any provider capability examples that mention `openai/v1/imagegeneration` or `openai/v1/audiospeech` so they match the new Qwen behavior.
+- [x] 4.1 Update ai-proxy README documentation with Qwen/DashScope media capability examples for image generation and audio speech.
+- [x] 4.2 Document supported synchronous DashScope media model expectations and show model-mapping examples for Qwen-Image/Wan image and Qwen-TTS.
+- [x] 4.3 Document the first-pass audio speech response contract, including that strict OpenAI binary audio relay is not implemented in this change.
+- [x] 4.4 Add or refresh local DashScope Qwen-TTS documentation references if they are missing from `docs/AIproviderAPI/qwen/`.
+- [x] 4.5 Update any provider capability examples that mention `openai/v1/imagegeneration` or `openai/v1/audiospeech` so they match the new Qwen behavior.
 
 ## 5. Verification
 
