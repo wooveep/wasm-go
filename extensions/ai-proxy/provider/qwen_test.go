@@ -249,6 +249,23 @@ func TestQwenProviderTransformImageGenerationResponseBody(t *testing.T) {
 	assert.False(t, gjson.GetBytes(modifiedBody, "output").Exists(), "DashScope native output must not leak into OpenAI image response")
 }
 
+func TestQwenProviderTransformImageGenerationResponseBodyPreservesProviderError(t *testing.T) {
+	provider := newQwenMediaTestProvider()
+	body := []byte(`{
+		"request_id": "req-image-error",
+		"code": "InvalidParameter",
+		"message": "image prompt is invalid"
+	}`)
+
+	modifiedBody, err := provider.TransformResponseBody(newMockMultipartHttpContext(), ApiNameImageGeneration, body)
+	require.NoError(t, err)
+
+	assert.Equal(t, body, modifiedBody)
+	assert.Equal(t, "InvalidParameter", gjson.GetBytes(modifiedBody, "code").String())
+	assert.Equal(t, "image prompt is invalid", gjson.GetBytes(modifiedBody, "message").String())
+	assert.False(t, gjson.GetBytes(modifiedBody, "data").Exists(), "provider errors must not be converted into OpenAI success responses")
+}
+
 func TestQwenProviderTransformAudioSpeechRequestBodyHeaders(t *testing.T) {
 	provider := newQwenMediaTestProvider()
 	ctx := newMockMultipartHttpContext()
@@ -318,6 +335,24 @@ func TestQwenProviderTransformAudioSpeechResponseBody(t *testing.T) {
 	assert.Equal(t, int64(1045), gjson.GetBytes(modifiedBody, "usage.output_tokens").Int())
 	assert.Equal(t, int64(1121), gjson.GetBytes(modifiedBody, "usage.total_tokens").Int())
 	assert.False(t, gjson.GetBytes(modifiedBody, "output").Exists(), "DashScope native output must not leak into gateway audio response")
+}
+
+func TestQwenProviderTransformAudioSpeechResponseBodyPreservesProviderError(t *testing.T) {
+	provider := newQwenMediaTestProvider()
+	body := []byte(`{
+		"status_code": 200,
+		"request_id": "req-audio-error",
+		"code": "InvalidParameter",
+		"message": "audio voice is invalid"
+	}`)
+
+	modifiedBody, err := provider.TransformResponseBody(newMockMultipartHttpContext(), ApiNameAudioSpeech, body)
+	require.NoError(t, err)
+
+	assert.Equal(t, body, modifiedBody)
+	assert.Equal(t, "InvalidParameter", gjson.GetBytes(modifiedBody, "code").String())
+	assert.Equal(t, "audio voice is invalid", gjson.GetBytes(modifiedBody, "message").String())
+	assert.False(t, gjson.GetBytes(modifiedBody, "data").Exists(), "provider errors must not be converted into audio URL success responses")
 }
 
 func TestTransformRequestBodyHeadersCompatibleModeEnablesPreserveThinkingAfterModelMapping(t *testing.T) {
