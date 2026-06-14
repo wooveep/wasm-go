@@ -15,11 +15,11 @@
 - [x] 2.4 Add Qwen provider unit tests for OpenAI audio speech request conversion into DashScope Qwen-TTS JSON, including model mapping.
 - [x] 2.5 Add Qwen provider unit tests for optional DashScope TTS extension fields such as `language_type`, `instructions`, and `optimize_instructions`.
 - [x] 2.6 Add Qwen provider unit tests for DashScope audio response conversion into documented audio URL success JSON.
-- [ ] 2.7 Add ai-proxy integration tests proving explicit `openai/v1/imagegeneration` and `openai/v1/audiospeech` capabilities enable DashScope-native media conversion when `qwenEnableCompatible` is disabled.
-- [ ] 2.8 Add integration tests proving configured media capability paths are used for upstream routing and Qwen default capabilities do not synthesize image or audio speech support.
-- [ ] 2.9 Add regression tests proving missing media capabilities remain unsupported.
-- [ ] 2.10 Add regression tests proving existing Qwen chat, embeddings, rerank, async APIs, Anthropic messages, and compatible-mode behavior remain unchanged.
-- [ ] 2.11 Add compatible-mode media tests proving explicit media capabilities remain pass-through rather than DashScope-native body conversion.
+- [x] 2.7 Add ai-proxy integration tests proving explicit `openai/v1/imagegeneration` and `openai/v1/audiospeech` capabilities enable DashScope-native media conversion when `qwenEnableCompatible` is disabled.
+- [x] 2.8 Add integration tests proving configured media capability paths are used for upstream routing and Qwen default capabilities do not synthesize image or audio speech support.
+- [x] 2.9 Add regression tests proving missing media capabilities remain unsupported.
+- [x] 2.10 Add regression tests proving existing Qwen chat, embeddings, rerank, async APIs, Anthropic messages, and compatible-mode behavior remain unchanged.
+- [x] 2.11 Add compatible-mode media tests proving explicit media capabilities remain pass-through rather than DashScope-native body conversion.
 
 ## 3. Qwen Provider Implementation
 
