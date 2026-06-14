@@ -42,12 +42,12 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run focused Qwen provider Go tests.
-- [ ] 5.2 Run focused ai-proxy Go tests covering media conversion and regressions.
-- [ ] 5.3 Run `openspec validate support-qwen-dashscope-openai-media-conversion --strict`.
-- [ ] 5.4 Run `git diff --check`.
-- [ ] 5.5 Run `graphify update .` after code or documentation changes are complete.
-- [ ] 5.6 Run `gitnexus detect_changes` before handoff or commit.
+- [x] 5.1 Run focused Qwen provider Go tests.
+- [x] 5.2 Run focused ai-proxy Go tests covering media conversion and regressions.
+- [x] 5.3 Run `openspec validate support-qwen-dashscope-openai-media-conversion --strict`.
+- [x] 5.4 Run `git diff --check`.
+- [x] 5.5 Run `graphify update .` after code or documentation changes are complete.
+- [x] 5.6 Run `gitnexus detect_changes` before handoff or commit.
 
 ## 6. Optional Live Compatibility Check
 
