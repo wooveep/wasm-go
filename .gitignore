@@ -12,5 +12,7 @@ coverage.xml
 .specify/
 .pr/
 specs/
+!openspec/changes/support-qwen-dashscope-openai-media-conversion/specs/
+!openspec/changes/support-qwen-dashscope-openai-media-conversion/specs/**/*.md
 graphify-out/*
 build/
