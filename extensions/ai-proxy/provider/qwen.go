@@ -153,6 +153,10 @@ func (m *qwenProvider) TransformRequestBodyHeaders(ctx wrapper.HttpContext, apiN
 		return m.onChatCompletionRequestBody(ctx, body, headers)
 	case ApiNameEmbeddings:
 		return m.onEmbeddingsRequestBody(ctx, body)
+	case ApiNameImageGeneration:
+		return m.onImageGenerationRequestBody(ctx, body, headers)
+	case ApiNameAudioSpeech:
+		return m.onAudioSpeechRequestBody(ctx, body, headers)
 	default:
 		return m.config.defaultTransformRequestBody(ctx, apiName, body)
 	}
@@ -217,6 +221,35 @@ func (m *qwenProvider) onEmbeddingsRequestBody(ctx wrapper.HttpContext, body []b
 	return json.Marshal(qwenRequest)
 }
 
+func (m *qwenProvider) onImageGenerationRequestBody(ctx wrapper.HttpContext, body []byte, headers http.Header) ([]byte, error) {
+	request := &imageGenerationRequest{}
+	if err := m.config.parseRequestAndMapModel(ctx, request, body); err != nil {
+		return nil, err
+	}
+
+	headers.Set("Accept", "*/*")
+	headers.Del("X-DashScope-SSE")
+
+	qwenRequest := m.buildQwenImageGenerationRequest(request, body)
+	return json.Marshal(qwenRequest)
+}
+
+func (m *qwenProvider) onAudioSpeechRequestBody(ctx wrapper.HttpContext, body []byte, headers http.Header) ([]byte, error) {
+	request := &qwenOpenAIAudioSpeechRequest{}
+	if err := json.Unmarshal(body, request); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal Qwen audio speech request: %v", err)
+	}
+	if err := m.config.mapModel(ctx, &request.Model); err != nil {
+		return nil, err
+	}
+
+	headers.Set("Accept", "*/*")
+	headers.Del("X-DashScope-SSE")
+
+	qwenRequest := m.buildQwenAudioSpeechRequest(request)
+	return json.Marshal(qwenRequest)
+}
+
 func (m *qwenProvider) OnStreamingEvent(ctx wrapper.HttpContext, name ApiName, event StreamEvent) ([]StreamEvent, error) {
 	if m.config.qwenEnableCompatible || name != ApiNameChatCompletion {
 		return nil, nil
@@ -255,6 +288,12 @@ func (m *qwenProvider) TransformResponseBody(ctx wrapper.HttpContext, apiName Ap
 	if apiName == ApiNameEmbeddings {
 		return m.onEmbeddingsResponseBody(ctx, body)
 	}
+	if apiName == ApiNameImageGeneration {
+		return m.onImageGenerationResponseBody(ctx, body)
+	}
+	if apiName == ApiNameAudioSpeech {
+		return m.onAudioSpeechResponseBody(ctx, body)
+	}
 	if m.config.isSupportedAPI(apiName) {
 		return body, nil
 	}
@@ -276,6 +315,32 @@ func (m *qwenProvider) onEmbeddingsResponseBody(ctx wrapper.HttpContext, body []
 		return nil, fmt.Errorf("unable to unmarshal Qwen response: %v", err)
 	}
 	response := m.buildEmbeddingsResponse(ctx, qwenResponse)
+	return json.Marshal(response)
+}
+
+func (m *qwenProvider) onImageGenerationResponseBody(ctx wrapper.HttpContext, body []byte) ([]byte, error) {
+	qwenResponse := &qwenImageGenerationResponse{}
+	if err := json.Unmarshal(body, qwenResponse); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal Qwen image response: %v", err)
+	}
+	if qwenResponse.hasProviderError() {
+		return body, nil
+	}
+
+	response := m.buildImageGenerationResponse(qwenResponse)
+	return json.Marshal(response)
+}
+
+func (m *qwenProvider) onAudioSpeechResponseBody(ctx wrapper.HttpContext, body []byte) ([]byte, error) {
+	qwenResponse := &qwenAudioSpeechResponse{}
+	if err := json.Unmarshal(body, qwenResponse); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal Qwen audio speech response: %v", err)
+	}
+	if qwenResponse.hasProviderError() || qwenResponse.Output.Audio.URL == "" {
+		return body, nil
+	}
+
+	response := m.buildAudioSpeechResponse(qwenResponse)
 	return json.Marshal(response)
 }
 
@@ -553,6 +618,90 @@ func (m *qwenProvider) buildEmbeddingsResponse(ctx wrapper.HttpContext, qwenResp
 	}
 }
 
+func (m *qwenProvider) buildQwenImageGenerationRequest(request *imageGenerationRequest, body []byte) *qwenImageGenerationRequest {
+	parameters := qwenImageGenerationParameters{
+		N:    request.N,
+		Size: qwenNormalizeImageSize(request.Size),
+	}
+	if seed := gjson.GetBytes(body, "seed"); seed.Exists() {
+		seedValue := seed.Int()
+		parameters.Seed = &seedValue
+	}
+
+	return &qwenImageGenerationRequest{
+		Model: request.Model,
+		Input: qwenImageGenerationInput{
+			Messages: []qwenMessage{
+				{
+					Role: roleUser,
+					Content: []qwenVlMessageContent{
+						{Text: request.Prompt},
+					},
+				},
+			},
+		},
+		Parameters: parameters,
+	}
+}
+
+func (m *qwenProvider) buildQwenAudioSpeechRequest(request *qwenOpenAIAudioSpeechRequest) *qwenAudioSpeechRequest {
+	return &qwenAudioSpeechRequest{
+		Model: request.Model,
+		Input: qwenAudioSpeechInput{
+			Text:                 request.Input,
+			Voice:                request.Voice,
+			LanguageType:         request.LanguageType,
+			Instructions:         request.Instructions,
+			OptimizeInstructions: request.OptimizeInstructions,
+		},
+	}
+}
+
+func (m *qwenProvider) buildImageGenerationResponse(qwenResponse *qwenImageGenerationResponse) *imageGenerationResponse {
+	data := make([]imageGenerationData, 0)
+	for _, choice := range qwenResponse.Output.Choices {
+		for _, content := range choice.Message.Content {
+			if content.Image == "" {
+				continue
+			}
+			data = append(data, imageGenerationData{
+				URL: content.Image,
+			})
+		}
+	}
+
+	var usage *imageGenerationUsage
+	if qwenResponse.Usage != nil {
+		usage = &imageGenerationUsage{
+			TotalTokens:  qwenResponse.Usage.TotalTokens,
+			InputTokens:  qwenResponse.Usage.InputTokens,
+			OutputTokens: qwenResponse.Usage.OutputTokens,
+		}
+	}
+
+	return &imageGenerationResponse{
+		Created: time.Now().UnixMilli() / 1000,
+		Data:    data,
+		Usage:   usage,
+	}
+}
+
+func (m *qwenProvider) buildAudioSpeechResponse(qwenResponse *qwenAudioSpeechResponse) *qwenAudioSpeechGatewayResponse {
+	return &qwenAudioSpeechGatewayResponse{
+		Created: time.Now().UnixMilli() / 1000,
+		Data: qwenAudioSpeechGatewayData{
+			URL:       qwenResponse.Output.Audio.URL,
+			ID:        qwenResponse.Output.Audio.ID,
+			ExpiresAt: qwenResponse.Output.Audio.ExpiresAt,
+		},
+		Usage: qwenResponse.Usage,
+	}
+}
+
+func qwenNormalizeImageSize(size string) string {
+	return strings.NewReplacer("x", "*", "X", "*").Replace(size)
+}
+
 type qwenTextGenRequest struct {
 	Model      string                `json:"model"`
 	Input      qwenTextGenInput      `json:"input"`
@@ -597,6 +746,113 @@ type qwenUsage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 	TotalTokens  int `json:"total_tokens"`
+}
+
+type qwenImageGenerationRequest struct {
+	Model      string                        `json:"model"`
+	Input      qwenImageGenerationInput      `json:"input"`
+	Parameters qwenImageGenerationParameters `json:"parameters,omitempty"`
+}
+
+type qwenImageGenerationInput struct {
+	Messages []qwenMessage `json:"messages"`
+}
+
+type qwenImageGenerationParameters struct {
+	N    int    `json:"n,omitempty"`
+	Seed *int64 `json:"seed,omitempty"`
+	Size string `json:"size,omitempty"`
+}
+
+type qwenImageGenerationResponse struct {
+	RequestID string                    `json:"request_id"`
+	Code      string                    `json:"code,omitempty"`
+	Message   string                    `json:"message,omitempty"`
+	Output    qwenImageGenerationOutput `json:"output"`
+	Usage     *qwenUsage                `json:"usage,omitempty"`
+}
+
+func (r *qwenImageGenerationResponse) hasProviderError() bool {
+	return r.Code != ""
+}
+
+type qwenImageGenerationOutput struct {
+	Choices []qwenImageGenerationChoice `json:"choices"`
+}
+
+type qwenImageGenerationChoice struct {
+	FinishReason string                     `json:"finish_reason"`
+	Message      qwenImageGenerationMessage `json:"message"`
+}
+
+type qwenImageGenerationMessage struct {
+	Role    string                 `json:"role"`
+	Content []qwenVlMessageContent `json:"content"`
+}
+
+type qwenOpenAIAudioSpeechRequest struct {
+	Model                string `json:"model"`
+	Input                string `json:"input"`
+	Voice                string `json:"voice"`
+	LanguageType         string `json:"language_type,omitempty"`
+	Instructions         string `json:"instructions,omitempty"`
+	OptimizeInstructions *bool  `json:"optimize_instructions,omitempty"`
+}
+
+type qwenAudioSpeechRequest struct {
+	Model string               `json:"model"`
+	Input qwenAudioSpeechInput `json:"input"`
+}
+
+type qwenAudioSpeechInput struct {
+	Text                 string `json:"text"`
+	Voice                string `json:"voice"`
+	LanguageType         string `json:"language_type,omitempty"`
+	Instructions         string `json:"instructions,omitempty"`
+	OptimizeInstructions *bool  `json:"optimize_instructions,omitempty"`
+}
+
+type qwenAudioSpeechResponse struct {
+	StatusCode int                   `json:"status_code,omitempty"`
+	RequestID  string                `json:"request_id"`
+	Code       string                `json:"code,omitempty"`
+	Message    string                `json:"message,omitempty"`
+	Output     qwenAudioSpeechOutput `json:"output"`
+	Usage      *qwenAudioSpeechUsage `json:"usage,omitempty"`
+}
+
+func (r *qwenAudioSpeechResponse) hasProviderError() bool {
+	return r.Code != "" || r.StatusCode >= http.StatusBadRequest
+}
+
+type qwenAudioSpeechOutput struct {
+	Audio qwenAudioSpeechAudio `json:"audio"`
+}
+
+type qwenAudioSpeechAudio struct {
+	Data      string `json:"data,omitempty"`
+	URL       string `json:"url,omitempty"`
+	ID        string `json:"id,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+}
+
+type qwenAudioSpeechUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	Characters   int `json:"characters"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+type qwenAudioSpeechGatewayResponse struct {
+	Created int64                      `json:"created"`
+	Data    qwenAudioSpeechGatewayData `json:"data"`
+	Usage   *qwenAudioSpeechUsage      `json:"usage,omitempty"`
+}
+
+type qwenAudioSpeechGatewayData struct {
+	URL       string `json:"url"`
+	ID        string `json:"id,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
 }
 
 type qwenMessage struct {

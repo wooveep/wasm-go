@@ -1575,6 +1575,8 @@ func RunQwenOnHttpResponseBodyTests(t *testing.T) {
 			requestBody := `{"model":"image-alias","prompt":"a quiet lake at sunrise"}`
 			host.CallOnHttpRequestBody([]byte(requestBody))
 
+			require.NoError(t, host.SetProperty([]string{"response", "code_details"}, []byte("via_upstream")))
+
 			responseHeaders := [][2]string{
 				{":status", "200"},
 				{"Content-Type", "application/json"},
@@ -1627,6 +1629,8 @@ func RunQwenOnHttpResponseBodyTests(t *testing.T) {
 
 			requestBody := `{"model":"tts-alias","input":"hello","voice":"Cherry"}`
 			host.CallOnHttpRequestBody([]byte(requestBody))
+
+			require.NoError(t, host.SetProperty([]string{"response", "code_details"}, []byte("via_upstream")))
 
 			responseHeaders := [][2]string{
 				{":status", "200"},
@@ -1770,6 +1774,8 @@ func RunQwenOnHttpResponseBodyTests(t *testing.T) {
 					})
 
 					host.CallOnHttpRequestBody([]byte(tc.request))
+
+					require.NoError(t, host.SetProperty([]string{"response", "code_details"}, []byte("via_upstream")))
 
 					responseHeaders := [][2]string{
 						{":status", "200"},

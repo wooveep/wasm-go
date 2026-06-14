@@ -23,14 +23,14 @@
 
 ## 3. Qwen Provider Implementation
 
-- [ ] 3.1 Add Qwen media request and response model structs needed for DashScope image generation and Qwen-TTS conversion.
-- [ ] 3.2 Implement Qwen image generation request conversion behind `ApiNameImageGeneration`.
-- [ ] 3.3 Implement Qwen image generation response conversion with provider-error handling.
-- [ ] 3.4 Implement Qwen audio speech request conversion behind `ApiNameAudioSpeech`.
-- [ ] 3.5 Implement Qwen audio speech response conversion with provider-error handling and documented audio URL JSON.
-- [ ] 3.6 Ensure request headers, content type, accept headers, authorization, domain override, and configured capability paths are preserved correctly.
-- [ ] 3.7 Reuse existing model-mapping behavior for both image and audio model names without changing `getMappedModel`.
-- [ ] 3.8 Ensure Qwen compatible mode continues to pass through existing compatible-mode APIs and explicitly configured media APIs unchanged.
+- [x] 3.1 Add Qwen media request and response model structs needed for DashScope image generation and Qwen-TTS conversion.
+- [x] 3.2 Implement Qwen image generation request conversion behind `ApiNameImageGeneration`.
+- [x] 3.3 Implement Qwen image generation response conversion with provider-error handling.
+- [x] 3.4 Implement Qwen audio speech request conversion behind `ApiNameAudioSpeech`.
+- [x] 3.5 Implement Qwen audio speech response conversion with provider-error handling and documented audio URL JSON.
+- [x] 3.6 Ensure request headers, content type, accept headers, authorization, domain override, and configured capability paths are preserved correctly.
+- [x] 3.7 Reuse existing model-mapping behavior for both image and audio model names without changing `getMappedModel`.
+- [x] 3.8 Ensure Qwen compatible mode continues to pass through existing compatible-mode APIs and explicitly configured media APIs unchanged.
 
 ## 4. Documentation
 
