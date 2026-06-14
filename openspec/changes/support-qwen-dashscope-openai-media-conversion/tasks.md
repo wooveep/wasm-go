@@ -1,7 +1,7 @@
 ## 1. Governance and Context
 
 - [x] 1.1 Run `openspec validate support-qwen-dashscope-openai-media-conversion --strict` before implementation starts.
-- [ ] 1.2 Read the accepted OpenSpec specs that apply to ai-proxy behavior and documentation before touching code.
+- [x] 1.2 Read the accepted OpenSpec specs that apply to ai-proxy behavior and documentation before touching code.
 - [ ] 1.3 Recheck current DashScope Qwen-Image, Wan image-generation, and Qwen-TTS HTTP docs for endpoint, request, response, region, and model support before finalizing mappings.
 - [ ] 1.4 Run GitNexus upstream impact analysis before editing each Qwen provider function, method, or model type involved in media conversion.
 - [ ] 1.5 Treat `ProviderConfig.handleRequestBody`, `ProviderConfig.isSupportedAPI`, and `getMappedModel` as no-change shared helpers unless a separate impact review explicitly approves touching them.
