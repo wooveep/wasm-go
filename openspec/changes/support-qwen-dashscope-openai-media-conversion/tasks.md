@@ -5,7 +5,7 @@
 - [x] 1.3 Recheck current DashScope Qwen-Image, Wan image-generation, and Qwen-TTS HTTP docs for endpoint, request, response, region, and model support before finalizing mappings.
 - [x] 1.4 Run GitNexus upstream impact analysis before editing each Qwen provider function, method, or model type involved in media conversion.
 - [x] 1.5 Treat `ProviderConfig.handleRequestBody`, `ProviderConfig.isSupportedAPI`, and `getMappedModel` as no-change shared helpers unless a separate impact review explicitly approves touching them.
-- [ ] 1.6 Keep unrelated dirty files such as `AGENTS.md` and `CLAUDE.md` out of the implementation diff.
+- [x] 1.6 Keep unrelated dirty files such as `AGENTS.md` and `CLAUDE.md` out of the implementation diff.
 
 ## 2. Tests First
 
