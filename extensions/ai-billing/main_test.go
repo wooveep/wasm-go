@@ -468,6 +468,100 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("provider usage prefers prompt and completion tokens over zero input output aliases", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-pro","usage":{"prompt_tokens":9,"completion_tokens":146,"completion_tokens_details":{"reasoning_tokens":136,"text_tokens":0},"input_tokens":0,"output_tokens":0,"total_tokens":155}}`))
+			require.Equal(t, types.ActionContinue, action)
+			event := requireRedisBillingEvent(t, host)
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 9, usage["input"])
+			require.EqualValues(t, 146, usage["output"])
+			require.EqualValues(t, 155, usage["total"])
+			require.Equal(t, usageSourceProvider, event["usage_source"])
+
+			ackRedisBillingEvent(t, host)
+			host.CompleteHttp()
+		})
+
+		t.Run("provider usage derives missing input from total and output tokens", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-pro","usage":{"input_tokens":0,"completion_tokens":146,"output_tokens":0,"total_tokens":155}}`))
+			require.Equal(t, types.ActionContinue, action)
+			event := requireRedisBillingEvent(t, host)
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 9, usage["input"])
+			require.EqualValues(t, 146, usage["output"])
+			require.EqualValues(t, 155, usage["total"])
+			require.Equal(t, usageSourceProvider, event["usage_source"])
+
+			ackRedisBillingEvent(t, host)
+			host.CompleteHttp()
+		})
+
+		t.Run("provider usage estimates missing input when only output tokens are present", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			inputText := "hello input"
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			action := host.CallOnHttpRequestBody([]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"` + inputText + `"}]}`))
+			require.Equal(t, types.ActionContinue, action)
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action = host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4o-mini","usage":{"completion_tokens":3}}`))
+			require.Equal(t, types.ActionContinue, action)
+			event := requireRedisBillingEvent(t, host)
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.Greater(t, int64(usage["input"].(float64)), int64(0))
+			require.EqualValues(t, 3, usage["output"])
+			require.Equal(t, usage["input"].(float64)+usage["output"].(float64), usage["total"])
+			require.Equal(t, usageSourceEstimated, event["usage_source"])
+
+			ackRedisBillingEvent(t, host)
+			host.CompleteHttp()
+		})
+
 		t.Run("provider usage takes precedence over estimation and retains raw usage", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -1630,6 +1724,21 @@ func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
 	require.NotEqual(t, event.RequestID, "200")
 }
 
+func TestBuildBillingEventDerivesMissingInputFromTotalAndOutput(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxInputToken, int64(0))
+	ctx.SetContext(ctxOutputToken, int64(146))
+	ctx.SetContext(ctxTotalToken, int64(155))
+	ctx.SetContext(ctxUsageSource, usageSourceProvider)
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+
+	event := buildBillingEvent(ctx, BillingConfig{Provider: "openai"}, false)
+
+	require.EqualValues(t, 9, event.Usage.Input)
+	require.EqualValues(t, 146, event.Usage.Output)
+	require.EqualValues(t, 155, event.Usage.Total)
+}
+
 func TestBuildBillingEventUsesClusterDerivedProviderAndPreservesRawCluster(t *testing.T) {
 	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
 	ctx.SetContext(ctxProvider, "deepseek-019ebb2c")
@@ -1985,6 +2094,42 @@ func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
 	require.Greater(t, event.Usage.Input, int64(0))
 	require.Greater(t, event.Usage.Output, int64(0))
 	require.Equal(t, event.Usage.Input+event.Usage.Output, event.Usage.Total)
+	require.Nil(t, event.Usage.Details)
+}
+
+func TestStreamDoneFallbackEstimatesInputWhenInterruptedBeforeOutput(t *testing.T) {
+	host, status := test.NewTestHost(billingConfig)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	inputText := "hello input"
+
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/chat/completions"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpRequestBody([]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"` + inputText + `"}]}`))
+	require.Equal(t, types.ActionContinue, action)
+
+	action = host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "text/event-stream"},
+	})
+	require.Equal(t, types.ActionContinue, action)
+
+	host.CompleteHttp()
+	event := requireRedisBillingEventStruct(t, host)
+	require.True(t, event.IsStream)
+	require.False(t, event.UsageMissing)
+	require.Equal(t, usageSourceEstimated, event.UsageSource)
+	require.Greater(t, event.Usage.Input, int64(0))
+	require.EqualValues(t, 0, event.Usage.Output)
+	require.Equal(t, event.Usage.Input, event.Usage.Total)
 	require.Nil(t, event.Usage.Details)
 }
 

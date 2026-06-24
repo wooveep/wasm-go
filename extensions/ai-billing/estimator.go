@@ -21,7 +21,7 @@ type estimatedTokenUsage struct {
 }
 
 func estimateTextTokenUsage(model, inputText, outputText string) (estimatedTokenUsage, bool) {
-	if inputText == "" || outputText == "" {
+	if inputText == "" {
 		return estimatedTokenUsage{}, false
 	}
 	codec, err := tokenizerForModel(model)
@@ -32,9 +32,12 @@ func estimateTextTokenUsage(model, inputText, outputText string) (estimatedToken
 	if err != nil {
 		return estimatedTokenUsage{}, false
 	}
-	outputTokens, err := codec.Count(outputText)
-	if err != nil {
-		return estimatedTokenUsage{}, false
+	outputTokens := 0
+	if outputText != "" {
+		outputTokens, err = codec.Count(outputText)
+		if err != nil {
+			return estimatedTokenUsage{}, false
+		}
 	}
 	usage := estimatedTokenUsage{
 		InputToken:  int64(inputTokens),

@@ -398,7 +398,19 @@ func onHttpResponseBody(ctx wrapper.HttpContext, config BillingConfig, body []by
 }
 
 func recordUsage(ctx wrapper.HttpContext, body []byte) {
-	usage := tokenusage.GetTokenUsage(ctx, body)
+	usage := normalizeProviderTokenUsage(tokenusage.GetTokenUsage(ctx, body))
+	usageSource := usageSourceProvider
+	if usage.InputToken <= 0 && len(usage.ProviderUsage) > 0 {
+		if estimated, ok := estimateTextTokenUsage(usage.Model, ctx.GetStringContext(ctxRequestText, ""), ""); ok {
+			usage.InputToken = estimated.InputToken
+			usage.OutputToken = nonNegativeInt64(usage.OutputToken)
+			usage.TotalToken = usage.InputToken + usage.OutputToken
+			usageSource = usageSourceEstimated
+		}
+	}
+	if usage.InputToken <= 0 && len(usage.ProviderUsage) > 0 {
+		return
+	}
 	if usage.TotalToken <= 0 {
 		return
 	}
@@ -423,15 +435,48 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 		ctx.SetContext(ctxProviderUsage, usage.ProviderUsage)
 	}
 	ctx.SetContext(ctxModel, usage.Model)
-	ctx.SetContext(ctxUsageSource, usageSourceProvider)
+	ctx.SetContext(ctxUsageSource, usageSource)
 }
 
 func recordNonStreamingEstimatedUsage(ctx wrapper.HttpContext, body []byte) bool {
-	outputText, ok := extractResponseOutputText(body)
-	if !ok {
-		return false
-	}
+	outputText, _ := extractResponseOutputText(body)
 	return recordEstimatedUsage(ctx, responseModel(body), ctx.GetStringContext(ctxRequestText, ""), outputText)
+}
+
+func normalizeProviderTokenUsage(usage tokenusage.TokenUsage) tokenusage.TokenUsage {
+	if inputTokens, ok := firstPositiveProviderUsageInt64(usage.ProviderUsage,
+		"prompt_tokens",
+		"input_tokens",
+		"promptTokenCount",
+	); ok {
+		usage.InputToken = inputTokens
+	}
+	if outputTokens, ok := firstPositiveProviderUsageInt64(usage.ProviderUsage,
+		"completion_tokens",
+		"output_tokens",
+		"candidatesTokenCount",
+	); ok {
+		usage.OutputToken = outputTokens
+	}
+	if totalTokens, ok := firstPositiveProviderUsageInt64(usage.ProviderUsage,
+		"total_tokens",
+		"totalTokenCount",
+	); ok {
+		usage.TotalToken = totalTokens
+	}
+	if usage.InputToken <= 0 {
+		if hitTokens, missTokens, ok := cacheAwareInputTokenSplit(usage.InputToken, usage.InputTokenDetails); ok {
+			if inputTokens := hitTokens + missTokens; inputTokens > 0 {
+				usage.InputToken = inputTokens
+			}
+		}
+	}
+	usage.InputToken, usage.OutputToken, usage.TotalToken = normalizeBillingUsageTotals(
+		usage.InputToken,
+		usage.OutputToken,
+		usage.TotalToken,
+	)
+	return usage
 }
 
 func recordStreamingOutputText(ctx wrapper.HttpContext, data []byte) {
@@ -515,15 +560,18 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	inputTokens := int64FromContext(ctx.GetContext(ctxInputToken))
 	outputTokens := int64FromContext(ctx.GetContext(ctxOutputToken))
 	totalTokens := int64FromContext(ctx.GetContext(ctxTotalToken))
-	usageMissing := totalTokens <= 0
 	usageSource := ctx.GetStringContext(ctxUsageSource, "")
 	if usageSource == "" {
-		if usageMissing {
+		if totalTokens <= 0 {
 			usageSource = usageSourceMissing
 		} else {
 			usageSource = usageSourceProvider
 		}
 	}
+	if usageSource != usageSourceMissing {
+		inputTokens, outputTokens, totalTokens = normalizeBillingUsageTotals(inputTokens, outputTokens, totalTokens)
+	}
+	usageMissing := usageSource == usageSourceMissing || totalTokens <= 0
 	if usageMissing {
 		inputTokens = 0
 		outputTokens = 0
@@ -588,6 +636,69 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
 	}
 	return event
+}
+
+func normalizeBillingUsageTotals(inputTokens, outputTokens, totalTokens int64) (int64, int64, int64) {
+	inputTokens = nonNegativeInt64(inputTokens)
+	outputTokens = nonNegativeInt64(outputTokens)
+	totalTokens = nonNegativeInt64(totalTokens)
+	if totalTokens <= 0 {
+		if inputTokens > 0 || outputTokens > 0 {
+			totalTokens = inputTokens + outputTokens
+		}
+		return inputTokens, outputTokens, totalTokens
+	}
+	if inputTokens == 0 && totalTokens >= outputTokens {
+		inputTokens = totalTokens - outputTokens
+	}
+	if outputTokens == 0 && totalTokens >= inputTokens {
+		outputTokens = totalTokens - inputTokens
+	}
+	return inputTokens, outputTokens, totalTokens
+}
+
+func firstPositiveProviderUsageInt64(providerUsage map[string]any, keys ...string) (int64, bool) {
+	for _, key := range keys {
+		value, ok := providerUsageInt64(providerUsage, key)
+		if ok && value > 0 {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+func providerUsageInt64(providerUsage map[string]any, key string) (int64, bool) {
+	if len(providerUsage) == 0 {
+		return 0, false
+	}
+	switch value := providerUsage[key].(type) {
+	case int:
+		return nonNegativeProviderUsageInt64(int64(value))
+	case int64:
+		return nonNegativeProviderUsageInt64(value)
+	case int32:
+		return nonNegativeProviderUsageInt64(int64(value))
+	case float64:
+		if value != float64(int64(value)) {
+			return 0, false
+		}
+		return nonNegativeProviderUsageInt64(int64(value))
+	case json.Number:
+		parsed, err := value.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return nonNegativeProviderUsageInt64(parsed)
+	default:
+		return 0, false
+	}
+}
+
+func nonNegativeProviderUsageInt64(value int64) (int64, bool) {
+	if value < 0 {
+		return 0, false
+	}
+	return value, true
 }
 
 func namedBillingFact(name string) BillingFact {
