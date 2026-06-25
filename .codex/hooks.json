@@ -6,31 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /home/cloudyi/CodeWorkspace/ocloudxmodel/.codex/hooks/gitnexus-hook.js",
+            "command": "node /home/cloudyi/CodeWorkspace/higress-plugin/wasm-go/.codex/hooks/gitnexus-hook.js",
             "timeout": 10,
             "statusMessage": "Enriching with GitNexus graph context..."
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/cloudyi/.local/bin/graphify hook-check"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /home/cloudyi/CodeWorkspace/ocloudxmodel/.codex/hooks/gitnexus-hook.js",
-            "timeout": 10,
-            "statusMessage": "Checking GitNexus index freshness..."
           }
         ]
       }
