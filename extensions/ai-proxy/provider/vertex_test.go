@@ -2,6 +2,7 @@ package provider
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-proxy/util"
@@ -579,4 +580,208 @@ func TestVertexAnthropicPassthrough_MaxTokensDefault(t *testing.T) {
 		assert.Equal(t, int64(1024), gjson.GetBytes(out, "max_tokens").Int(),
 			"client-supplied max_tokens must not be overwritten by the default")
 	})
+}
+
+func TestVertexProviderPreservesFunctionCallThoughtSignature(t *testing.T) {
+	v := &vertexProvider{}
+	ctx := newMockMultipartHttpContext()
+	ctx.SetContext(ctxKeyFinalRequestModel, "gemini-3.1-pro-preview")
+
+	response := v.buildChatCompletionResponse(ctx, &vertexChatResponse{
+		ResponseId: "vertex-response-id",
+		Candidates: []vertexChatCandidate{
+			{
+				Index: 0,
+				Content: vertexChatContent{
+					Role: "model",
+					Parts: []vertexPart{
+						{
+							FunctionCall: &vertexFunctionCall{
+								Name: "Skill",
+								Args: map[string]interface{}{"query": "intelligentization"},
+							},
+							ThoughtSignature: "thought-signature-from-vertex",
+						},
+					},
+				},
+				FinishReason: "STOP",
+			},
+		},
+	})
+
+	require.Len(t, response.Choices, 1)
+	require.NotNil(t, response.Choices[0].Message)
+	require.Len(t, response.Choices[0].Message.ToolCalls, 1)
+	assert.NotEmpty(t, response.Choices[0].Message.ToolCalls[0].Id)
+	assert.True(t, strings.HasPrefix(response.Choices[0].Message.ToolCalls[0].Id, "call_"))
+	assert.Equal(t, "thought-signature-from-vertex", response.Choices[0].Message.ToolCalls[0].ThoughtSignature)
+	assert.Equal(
+		t,
+		"thought-signature-from-vertex",
+		getNestedString(response.Choices[0].Message.ToolCalls[0].ExtraContent, "google", "thought_signature"),
+	)
+}
+
+func TestVertexProviderStreamToolCallIncludesStableID(t *testing.T) {
+	v := &vertexProvider{}
+	ctx := newMockMultipartHttpContext()
+	ctx.SetContext(ctxKeyFinalRequestModel, "gemini-3.1-pro-preview")
+	vertexResp := &vertexChatResponse{
+		ResponseId: "vertex-response-id",
+		Candidates: []vertexChatCandidate{
+			{
+				Index: 0,
+				Content: vertexChatContent{
+					Role: "model",
+					Parts: []vertexPart{
+						{
+							FunctionCall: &vertexFunctionCall{
+								Name: "lookup",
+								Args: map[string]interface{}{"query": "test"},
+							},
+							ThoughtSignature: "thought-signature-from-vertex",
+						},
+					},
+				},
+				FinishReason: "STOP",
+			},
+		},
+	}
+
+	first := v.buildChatCompletionStreamResponse(ctx, vertexResp)
+	second := v.buildChatCompletionStreamResponse(ctx, vertexResp)
+
+	require.Len(t, first.Choices, 1)
+	require.NotNil(t, first.Choices[0].Delta)
+	require.Len(t, first.Choices[0].Delta.ToolCalls, 1)
+	firstID := first.Choices[0].Delta.ToolCalls[0].Id
+	assert.NotEmpty(t, firstID)
+	assert.True(t, strings.HasPrefix(firstID, "call_"))
+	assert.Equal(t, "thought-signature-from-vertex", first.Choices[0].Delta.ToolCalls[0].ThoughtSignature)
+
+	require.Len(t, second.Choices, 1)
+	require.NotNil(t, second.Choices[0].Delta)
+	require.Len(t, second.Choices[0].Delta.ToolCalls, 1)
+	assert.Equal(t, firstID, second.Choices[0].Delta.ToolCalls[0].Id)
+}
+
+func TestVertexProviderRestoresFunctionCallThoughtSignature(t *testing.T) {
+	v := &vertexProvider{}
+	req := &chatCompletionRequest{
+		Model: "gemini-3.1-pro-preview",
+		Messages: []chatMessage{
+			{Role: roleUser, Content: "search docs"},
+			{
+				Role: roleAssistant,
+				ToolCalls: []toolCall{
+					{
+						Type:             "function",
+						ThoughtSignature: "thought-signature-from-client",
+						Function: functionCall{
+							Name:      "Skill",
+							Arguments: `{"query":"intelligentization"}`,
+						},
+					},
+				},
+			},
+			{Role: roleTool, Content: "tool result"},
+		},
+	}
+
+	vertexReq, err := v.buildVertexChatRequest(req)
+	require.NoError(t, err)
+	require.NotNil(t, vertexReq)
+	require.Len(t, vertexReq.Contents, 3)
+	require.Len(t, vertexReq.Contents[1].Parts, 1)
+	require.NotNil(t, vertexReq.Contents[1].Parts[0].FunctionCall)
+	assert.Equal(t, "thought-signature-from-client", vertexReq.Contents[1].Parts[0].ThoughtSignature)
+}
+
+func TestVertexProviderRestoresFunctionCallThoughtSignatureFromGoogleExtraContent(t *testing.T) {
+	v := &vertexProvider{}
+	req := &chatCompletionRequest{
+		Model: "gemini-3.1-pro-preview",
+		Messages: []chatMessage{
+			{Role: roleUser, Content: "search docs"},
+			{
+				Role: roleAssistant,
+				ToolCalls: []toolCall{
+					{
+						Type: "function",
+						ExtraContent: map[string]any{
+							"google": map[string]any{
+								"thought_signature": "thought-signature-from-extra-content",
+							},
+						},
+						Function: functionCall{
+							Name:      "Skill",
+							Arguments: `{"query":"intelligentization"}`,
+						},
+					},
+				},
+			},
+			{Role: roleTool, Content: "tool result"},
+		},
+	}
+
+	vertexReq, err := v.buildVertexChatRequest(req)
+	require.NoError(t, err)
+	require.NotNil(t, vertexReq)
+	require.Len(t, vertexReq.Contents, 3)
+	require.Len(t, vertexReq.Contents[1].Parts, 1)
+	require.NotNil(t, vertexReq.Contents[1].Parts[0].FunctionCall)
+	assert.Equal(t, "thought-signature-from-extra-content", vertexReq.Contents[1].Parts[0].ThoughtSignature)
+}
+
+func TestVertexProviderRestoresFunctionCallThoughtSignatureInvalidArguments(t *testing.T) {
+	v := &vertexProvider{}
+	req := &chatCompletionRequest{
+		Model: "gemini-3.1-pro-preview",
+		Messages: []chatMessage{
+			{
+				Role: roleAssistant,
+				ToolCalls: []toolCall{
+					{
+						Type:             "function",
+						ThoughtSignature: "thought-signature-from-client",
+						Function: functionCall{
+							Name:      "Skill",
+							Arguments: `invalid-json`,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	vertexReq, err := v.buildVertexChatRequest(req)
+	require.NoError(t, err)
+	require.NotNil(t, vertexReq)
+	require.Len(t, vertexReq.Contents, 1)
+	require.Len(t, vertexReq.Contents[0].Parts, 1)
+	require.NotNil(t, vertexReq.Contents[0].Parts[0].FunctionCall)
+	assert.Equal(t, "thought-signature-from-client", vertexReq.Contents[0].Parts[0].ThoughtSignature)
+}
+
+func TestToolCallGetThoughtSignatureAllPaths(t *testing.T) {
+	var nilToolCall *toolCall
+	assert.Equal(t, "", nilToolCall.getThoughtSignature())
+
+	assert.Equal(t, "direct-sig", (&toolCall{ThoughtSignature: "direct-sig"}).getThoughtSignature())
+	assert.Equal(t, "", (&toolCall{}).getThoughtSignature())
+	assert.Equal(t, "", (&toolCall{ExtraContent: map[string]any{"other": "val"}}).getThoughtSignature())
+	assert.Equal(t, "", (&toolCall{ExtraContent: map[string]any{"google": "not-a-map"}}).getThoughtSignature())
+	assert.Equal(t, "", (&toolCall{ExtraContent: map[string]any{"google": map[string]any{"other": "val"}}}).getThoughtSignature())
+	assert.Equal(t, "", (&toolCall{ExtraContent: map[string]any{"google": map[string]any{"thought_signature": 12345}}}).getThoughtSignature())
+	assert.Equal(t, "google-extra-sig", (&toolCall{
+		ExtraContent: map[string]any{
+			"google": map[string]any{
+				"thought_signature": "google-extra-sig",
+			},
+		},
+	}).getThoughtSignature())
+}
+
+func TestBuildGoogleThoughtSignatureExtraContentEmpty(t *testing.T) {
+	assert.Nil(t, buildGoogleThoughtSignatureExtraContent(""))
 }

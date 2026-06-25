@@ -69,6 +69,7 @@ var (
 		{provider.PathOpenAIResponses, provider.ApiNameResponses},
 		{provider.PathOpenAIVideos, provider.ApiNameVideos},
 		// Anthropic style
+		{provider.PathAnthropicMessagesCountTokens, provider.ApiNameAnthropicCountTokens},
 		{provider.PathAnthropicMessages, provider.ApiNameAnthropicMessages},
 		{provider.PathAnthropicComplete, provider.ApiNameAnthropicComplete},
 		// Cohere style
@@ -111,7 +112,6 @@ func init() {
 		wrapper.ProcessResponseHeaders(onHttpResponseHeaders),
 		wrapper.ProcessStreamingResponseBody(onStreamingResponseBody),
 		wrapper.ProcessResponseBody(onHttpResponseBody),
-		wrapper.WithRebuildAfterRequests[config.PluginConfig](1000),
 		wrapper.WithRebuildMaxMemBytes[config.PluginConfig](200*1024*1024),
 	)
 }

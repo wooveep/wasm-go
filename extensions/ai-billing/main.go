@@ -786,7 +786,11 @@ func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64)
 	if hasDeepSeekHit || hasDeepSeekMiss {
 		hitTokens := nonNegativeInt64(deepSeekHitTokens)
 		if hasDeepSeekMiss {
-			return hitTokens, nonNegativeInt64(deepSeekMissTokens), true
+			missTokens := nonNegativeInt64(deepSeekMissTokens)
+			if hitTokens == 0 && missTokens == 0 && inputTokens > 0 {
+				return 0, nonNegativeInt64(inputTokens), true
+			}
+			return hitTokens, missTokens, true
 		}
 		inputTokens = nonNegativeInt64(inputTokens)
 		if hitTokens > inputTokens {

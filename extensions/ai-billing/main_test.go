@@ -1030,6 +1030,38 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 
+		t.Run("deepseek zero cache split preserves provider input as miss usage", func(t *testing.T) {
+			host, status := test.NewTestHost(billingConfig)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-tenant-id", "tenant-a"},
+				{"x-consumer-id", "consumer-a"},
+			})
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{"id":"chatcmpl-test","model":"deepseek-v4-pro","usage":{"prompt_tokens":12,"completion_tokens":223,"total_tokens":235,"prompt_tokens_details":{"audio_tokens":0,"cached_tokens":0,"image_tokens":0,"text_tokens":0},"completion_tokens_details":{"audio_tokens":0,"reasoning_tokens":166,"text_tokens":0},"input_tokens":0,"output_tokens":0,"input_tokens_details":null,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":0}}`))
+			require.Equal(t, types.ActionContinue, action)
+			event := requireRedisBillingEvent(t, host)
+			usage, ok := event["usage"].(map[string]interface{})
+			require.True(t, ok)
+			require.EqualValues(t, 12, usage["input"])
+			require.EqualValues(t, 223, usage["output"])
+			require.EqualValues(t, 235, usage["total"])
+			require.EqualValues(t, 0, usage["input_cache_hit_tokens"])
+			require.EqualValues(t, 12, usage["input_cache_miss_tokens"])
+			require.EqualValues(t, 223, usage["output_tokens"])
+
+			ackRedisBillingEvent(t, host)
+			host.CompleteHttp()
+		})
+
 		t.Run("streaming provider usage details merge across chunks", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -1567,14 +1599,25 @@ func TestCacheAwareInputTokenSplit(t *testing.T) {
 			wantMapped: true,
 		},
 		{
-			name:  "deepseek negative explicit split becomes zero",
+			name:  "deepseek zero explicit split falls back to input as miss",
+			input: 10,
+			details: map[string]int64{
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  0,
+				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: 0,
+			},
+			wantHit:    0,
+			wantMiss:   10,
+			wantMapped: true,
+		},
+		{
+			name:  "deepseek negative explicit split falls back to input as miss",
 			input: 10,
 			details: map[string]int64{
 				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheHitTokens:  -2,
 				tokenusage.InputTokenDetailsKeyDeepSeekPromptCacheMissTokens: -3,
 			},
 			wantHit:    0,
-			wantMiss:   0,
+			wantMiss:   10,
 			wantMapped: true,
 		},
 		{
