@@ -169,6 +169,25 @@ The shared package should cover:
 The package should not contain cache policy, memory policy, vector code, or
 billing settlement logic.
 
+## Interaction With ai-memory
+
+When `ai-cache` and `ai-memory` are both enabled on a route, cache replay must
+not ignore the memory input that changes the upstream model request.
+
+Acceptable first-version policies are:
+
+- Consumer-scoped cache using the same tenant and consumer identity as
+  `ai-memory`.
+- Cache keys or policy versions that include the memory policy version and
+  assembled memory digest.
+- Cache bypass for memory-enabled routes until Console can materialize
+  memory-aware replay records.
+
+`ai-memory` should run before cache lookup when memory is expected to affect the
+answer. If a cache hit short-circuits before memory injection, the response is
+not memory-aware and should be treated as an explicit route policy choice, not a
+default behavior.
+
 ## Failure Policy
 
 - Redis lookup failure: continue upstream.
