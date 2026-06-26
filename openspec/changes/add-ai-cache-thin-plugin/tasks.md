@@ -41,7 +41,7 @@
 
 ## 5. Cache Replay and Response Capture
 
-- [ ] 5.1 Implement OpenAI-compatible non-streaming replay from structured materialized records.
+- [x] 5.1 Implement OpenAI-compatible non-streaming replay from structured materialized records.
 - [ ] 5.2 Implement supported streaming replay only for records explicitly marked stream-replayable.
 - [ ] 5.3 Set trusted internal cache-hit and `upstream_invoked=false` facts on replay without exposing proprietary billing fields in the response body.
 - [ ] 5.4 Preserve upstream request flow on miss or dependency failure.
