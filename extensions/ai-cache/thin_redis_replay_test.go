@@ -143,11 +143,20 @@ func TestThinRedisReplayValidation(t *testing.T) {
 
 		tests := []struct {
 			name      string
+			status    int32
 			redisResp []byte
 		}{
 			{
 				name:      "miss",
 				redisResp: test.CreateRedisRespNull(),
+			},
+			{
+				name:      "RESP error",
+				redisResp: test.CreateRedisRespError("temporary"),
+			},
+			{
+				name:   "callout status failure",
+				status: 1,
 			},
 			{
 				name:      "invalid JSON",
@@ -187,7 +196,7 @@ func TestThinRedisReplayValidation(t *testing.T) {
 				host := startThinRedisReplayRequest(t)
 				defer host.Reset()
 
-				host.CallOnRedisCall(0, tt.redisResp)
+				host.CallOnRedisCall(tt.status, tt.redisResp)
 
 				if localResponse := host.GetLocalResponse(); localResponse != nil {
 					body := string(localResponse.Data)
