@@ -355,11 +355,20 @@ func TestStreamCapture(t *testing.T) {
 	require.NoError(t, functionCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"function_call\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}}]}\n\n")))
 	require.True(t, functionCapture.ContainsToolCalls())
 
+	contentToolCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
+	require.NoError(t, contentToolCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]}}}]}\n\n")))
+	require.True(t, contentToolCapture.ContainsToolCalls())
+
 	splitCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
 	require.NoError(t, splitCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"split")))
 	require.NoError(t, splitCapture.AppendSSE([]byte(" chunk\"},\"finish_reason\":\"stop\"}]}\n\n")))
 	require.Equal(t, "split chunk", splitCapture.AssistantContent())
 	require.Equal(t, "stop", splitCapture.FinishReason())
+
+	crCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
+	require.NoError(t, crCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"cr \"}}]}\rdata: {\"choices\":[{\"delta\":{\"content\":\"line\"},\"finish_reason\":\"stop\"}]}\rdata: [DONE]\r")))
+	require.Equal(t, "cr line", crCapture.AssistantContent())
+	require.Equal(t, "stop", crCapture.FinishReason())
 }
 
 func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {

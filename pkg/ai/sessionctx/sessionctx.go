@@ -384,12 +384,16 @@ func NewStreamCapture(StreamCaptureOptions) *StreamCapture {
 func (c *StreamCapture) AppendSSE(chunk []byte) error {
 	c.buffer += string(chunk)
 	for {
-		index := strings.Index(c.buffer, "\n")
+		index := strings.IndexAny(c.buffer, "\r\n")
 		if index < 0 {
 			return nil
 		}
+		separator := c.buffer[index]
 		line := strings.TrimSpace(c.buffer[:index])
 		c.buffer = c.buffer[index+1:]
+		if separator == '\r' && strings.HasPrefix(c.buffer, "\n") {
+			c.buffer = c.buffer[1:]
+		}
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
@@ -400,9 +404,9 @@ func (c *StreamCapture) AppendSSE(chunk []byte) error {
 		var event struct {
 			Choices []struct {
 				Delta struct {
-					Content      interface{}   `json:"content"`
-					ToolCalls    []interface{} `json:"tool_calls"`
-					FunctionCall interface{}   `json:"function_call"`
+					Content      json.RawMessage `json:"content"`
+					ToolCalls    []interface{}   `json:"tool_calls"`
+					FunctionCall interface{}     `json:"function_call"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -411,8 +415,10 @@ func (c *StreamCapture) AppendSSE(chunk []byte) error {
 			return err
 		}
 		for _, choice := range event.Choices {
-			c.content.WriteString(textContent(choice.Delta.Content))
-			if len(choice.Delta.ToolCalls) > 0 || choice.Delta.FunctionCall != nil {
+			c.content.WriteString(rawMessageTextContent(choice.Delta.Content))
+			if len(choice.Delta.ToolCalls) > 0 ||
+				choice.Delta.FunctionCall != nil ||
+				rawContentContainsToolCalls(choice.Delta.Content) {
 				c.containsToolCalls = true
 			}
 			if choice.FinishReason != "" {
@@ -565,6 +571,30 @@ func textContent(value interface{}) string {
 	default:
 		return ""
 	}
+}
+
+func rawMessageTextContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value interface{}
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	return textContent(value)
+}
+
+func rawContentContainsToolCalls(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var content struct {
+		ToolCalls []interface{} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(raw, &content); err != nil {
+		return false
+	}
+	return len(content.ToolCalls) > 0
 }
 
 func stableDigest(value interface{}) string {
