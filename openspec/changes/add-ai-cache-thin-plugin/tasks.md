@@ -52,7 +52,7 @@
 ## 6. CacheEvent Emission
 
 - [x] 6.1 Define `CacheEvent` payload structs with required event, identity, route, model, digest, policy, status, stream, gate, timing, and plugin version fields.
-- [ ] 6.2 Include permitted user content, assistant content, usage, finish reason, and safe provider/runtime facts only when policy allows them.
+- [x] 6.2 Include permitted user content, assistant content, usage, finish reason, and safe provider/runtime facts only when policy allows them.
 - [ ] 6.3 Redact authorization headers, API keys, internal bearer tokens, Redis credentials, upstream provider credentials, and sensitive raw content.
 - [ ] 6.4 Emit one JSON `CacheEvent` to Redis Stream `cache:events` field `event` after eligible upstream responses finish.
 - [ ] 6.5 Keep user responses unchanged when Redis Stream delivery fails and log only safe diagnostic facts.
