@@ -73,7 +73,7 @@
 - [x] 8.4 Document shared backend isolation rules for PostgreSQL tables, Redis streams, Redis key prefixes, vector collections, payload schemas, retention, deletion, management APIs, and authorization checks.
 - [x] 8.5 Document Console-managed internal AI Route usage for platform-owned cache and memory model work, including `internal_cost` attribution.
 - [x] 8.6 Document memory-aware cache policy options and recommended plugin ordering with `ai-memory`.
-- [ ] 8.7 Document billing interaction through trusted `upstream_invoked` facts without user-visible billing response fields.
+- [x] 8.7 Document billing interaction through trusted `upstream_invoked` facts without user-visible billing response fields.
 - [ ] 8.8 Mark existing online embedding/vector behavior as legacy or explicit non-production compatibility if it remains in code.
 
 ## 9. Verification
