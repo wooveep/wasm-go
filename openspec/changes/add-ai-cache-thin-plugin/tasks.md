@@ -63,7 +63,7 @@
 - [x] 7.2 Document and test expected plugin ordering where `ai-memory` runs before `ai-cache` when memory affects the answer.
 - [x] 7.3 Update `ai-billing` to consume trusted gateway-controlled cache replay facts.
 - [x] 7.4 Update `ai-billing` event serialization and tests so upstream provider invocations emit `upstream_invoked=true` and trusted cache replays emit `upstream_invoked=false`.
-- [ ] 7.5 Add spoofing tests proving user-supplied request or response body fields cannot control `upstream_invoked`.
+- [x] 7.5 Add spoofing tests proving user-supplied request or response body fields cannot control `upstream_invoked`.
 
 ## 8. Documentation and Compatibility
 
