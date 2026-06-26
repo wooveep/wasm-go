@@ -193,4 +193,75 @@ func TestPluginConfig_ThinPluginConfigDefaults(t *testing.T) {
 	require.Equal(t, "x-mse-tenant", mustStringField(t, cfg, "TenantHeader"))
 	require.Equal(t, "x-mse-consumer", mustStringField(t, cfg, "ConsumerHeader"))
 	require.Equal(t, false, mustBoolField(t, cfg, "ConsoleLookup", "Enabled"))
+	require.Equal(t, "cache:events", mustStringField(t, cfg, "Event", "RedisStream", "Stream"))
+}
+
+func TestPluginConfig_ThinPluginConfigValidation(t *testing.T) {
+	validConfig := map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"cache_policy_version": "policy-v1",
+	}
+	cfgBytes, err := json.Marshal(validConfig)
+	require.NoError(t, err)
+	cfg := parseThinConfig(t, cfgBytes)
+	require.NoError(t, cfg.Validate())
+
+	metadataOnly, err := json.Marshal(map[string]interface{}{
+		"cache_policy_version": "policy-v1",
+	})
+	require.NoError(t, err)
+	cfg = parseThinConfig(t, metadataOnly)
+	require.Error(t, cfg.Validate())
+
+	missingPolicyVersion, err := json.Marshal(map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+	})
+	require.NoError(t, err)
+	cfg = parseThinConfig(t, missingPolicyVersion)
+	require.Error(t, cfg.Validate())
+
+	missingRedisTarget, err := json.Marshal(map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled": true,
+			},
+		},
+	})
+	require.NoError(t, err)
+	cfg = parseThinConfig(t, missingRedisTarget)
+	require.Error(t, cfg.Validate())
+
+	missingConsoleTarget, err := json.Marshal(map[string]interface{}{
+		"console_lookup": map[string]interface{}{
+			"enabled": true,
+		},
+	})
+	require.NoError(t, err)
+	cfg = parseThinConfig(t, missingConsoleTarget)
+	require.Error(t, cfg.Validate())
+
+	missingStreamTarget, err := json.Marshal(map[string]interface{}{
+		"redis_stream": map[string]interface{}{
+			"enabled": true,
+		},
+	})
+	require.NoError(t, err)
+	cfg = parseThinConfig(t, missingStreamTarget)
+	require.Error(t, cfg.Validate())
 }

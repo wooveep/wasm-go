@@ -14,7 +14,54 @@ const (
 	CACHE_KEY_STRATEGY_LAST_QUESTION = "lastQuestion"
 	CACHE_KEY_STRATEGY_ALL_QUESTIONS = "allQuestions"
 	CACHE_KEY_STRATEGY_DISABLED      = "disabled"
+
+	CACHE_SCOPE_TENANT   = "tenant"
+	CACHE_SCOPE_CONSUMER = "consumer"
+
+	FAIL_POLICY_OPEN   = "open"
+	FAIL_POLICY_CLOSED = "closed"
 )
+
+type MaterializedLookupConfig struct {
+	Redis RedisEndpointConfig
+}
+
+type RedisEndpointConfig struct {
+	Enabled     bool
+	ServiceName string
+	ServicePort int
+	KeyPrefix   string
+	Timeout     int
+}
+
+type ConsoleLookupConfig struct {
+	Enabled     bool
+	ServiceName string
+	ServicePort int
+	Path        string
+	Timeout     int
+}
+
+type EventConfig struct {
+	RedisStream RedisStreamConfig
+}
+
+type RedisStreamConfig struct {
+	Enabled     bool
+	ServiceName string
+	ServicePort int
+	Stream      string
+	Field       string
+	Timeout     int
+}
+
+type RoutePolicyConfig struct {
+	EnableRedisLookup   bool
+	EnableConsoleLookup bool
+	EnableReplay        bool
+	EnableBypass        bool
+	EnabledPathSuffixes []string
+}
 
 type PluginConfig struct {
 	// @Title zh-CN 返回 HTTP 响应的模版
@@ -44,6 +91,16 @@ type PluginConfig struct {
 	// @Title zh-CN 缓存键策略
 	// @Description zh-CN 决定如何生成缓存键的策略。可选值: "lastQuestion" (使用最后一个问题), "allQuestions" (拼接所有问题) 或 "disabled" (禁用缓存)
 	CacheKeyStrategy string
+
+	MaterializedLookup MaterializedLookupConfig
+	ConsoleLookup      ConsoleLookupConfig
+	Event              EventConfig
+	RoutePolicy        RoutePolicyConfig
+	TenantHeader       string
+	ConsumerHeader     string
+	CacheScope         string
+	CachePolicyVersion string
+	FailPolicy         string
 }
 
 func (c *PluginConfig) FromJson(json gjson.Result, log log.Log) {
@@ -96,6 +153,74 @@ func (c *PluginConfig) FromJson(json gjson.Result, log log.Log) {
 		c.EnableSemanticCache = true // set default value to true
 	}
 
+	c.MaterializedLookup.Redis = RedisEndpointConfig{
+		Enabled:     json.Get("materialized_lookup.redis.enabled").Bool(),
+		ServiceName: json.Get("materialized_lookup.redis.service_name").String(),
+		ServicePort: int(json.Get("materialized_lookup.redis.service_port").Int()),
+		KeyPrefix:   json.Get("materialized_lookup.redis.key_prefix").String(),
+		Timeout:     int(json.Get("materialized_lookup.redis.timeout").Int()),
+	}
+	c.ConsoleLookup = ConsoleLookupConfig{
+		Enabled:     json.Get("console_lookup.enabled").Bool(),
+		ServiceName: json.Get("console_lookup.service_name").String(),
+		ServicePort: int(json.Get("console_lookup.service_port").Int()),
+		Path:        json.Get("console_lookup.path").String(),
+		Timeout:     int(json.Get("console_lookup.timeout").Int()),
+	}
+	if c.ConsoleLookup.Path == "" {
+		c.ConsoleLookup.Path = "/internal/cache/lookup"
+	}
+	c.Event.RedisStream = RedisStreamConfig{
+		Enabled:     json.Get("redis_stream.enabled").Bool(),
+		ServiceName: json.Get("redis_stream.service_name").String(),
+		ServicePort: int(json.Get("redis_stream.service_port").Int()),
+		Stream:      json.Get("redis_stream.stream").String(),
+		Field:       json.Get("redis_stream.field").String(),
+		Timeout:     int(json.Get("redis_stream.timeout").Int()),
+	}
+	if c.Event.RedisStream.Field == "" {
+		c.Event.RedisStream.Field = "event"
+	}
+	if c.Event.RedisStream.Stream == "" {
+		c.Event.RedisStream.Stream = "cache:events"
+	}
+	c.RoutePolicy = RoutePolicyConfig{
+		EnableRedisLookup:   true,
+		EnableConsoleLookup: c.ConsoleLookup.Enabled,
+		EnableReplay:        true,
+		EnableBypass:        false,
+		EnabledPathSuffixes: jsonStringArray(json.Get("route_policy.enabled_path_suffixes")),
+	}
+	if json.Get("route_policy.enable_redis_lookup").Exists() {
+		c.RoutePolicy.EnableRedisLookup = json.Get("route_policy.enable_redis_lookup").Bool()
+	}
+	if json.Get("route_policy.enable_console_lookup").Exists() {
+		c.RoutePolicy.EnableConsoleLookup = json.Get("route_policy.enable_console_lookup").Bool()
+	}
+	if json.Get("route_policy.enable_replay").Exists() {
+		c.RoutePolicy.EnableReplay = json.Get("route_policy.enable_replay").Bool()
+	}
+	if json.Get("route_policy.enable_bypass").Exists() {
+		c.RoutePolicy.EnableBypass = json.Get("route_policy.enable_bypass").Bool()
+	}
+	c.TenantHeader = json.Get("tenant_header").String()
+	if c.TenantHeader == "" {
+		c.TenantHeader = "x-mse-tenant"
+	}
+	c.ConsumerHeader = json.Get("consumer_header").String()
+	if c.ConsumerHeader == "" {
+		c.ConsumerHeader = "x-mse-consumer"
+	}
+	c.CacheScope = json.Get("cache_scope").String()
+	if c.CacheScope == "" {
+		c.CacheScope = CACHE_SCOPE_TENANT
+	}
+	c.CachePolicyVersion = json.Get("cache_policy_version").String()
+	c.FailPolicy = json.Get("fail_policy").String()
+	if c.FailPolicy == "" {
+		c.FailPolicy = FAIL_POLICY_OPEN
+	}
+
 	// compatible with legacy config
 	convertLegacyMapFields(c, json, log)
 }
@@ -121,7 +246,8 @@ func (c *PluginConfig) Validate() error {
 	// cache, vector, and embedding cannot all be empty
 	if c.vectorProviderConfig.GetProviderType() == "" &&
 		c.embeddingProviderConfig.GetProviderType() == "" &&
-		c.cacheProviderConfig.GetProviderType() == "" {
+		c.cacheProviderConfig.GetProviderType() == "" &&
+		!c.HasThinConfig() {
 		return fmt.Errorf("vector, embedding and cache provider cannot be all empty")
 	}
 
@@ -130,6 +256,30 @@ func (c *PluginConfig) Validate() error {
 		c.CacheKeyStrategy != CACHE_KEY_STRATEGY_ALL_QUESTIONS &&
 		c.CacheKeyStrategy != CACHE_KEY_STRATEGY_DISABLED {
 		return fmt.Errorf("invalid CacheKeyStrategy: %s", c.CacheKeyStrategy)
+	}
+	if c.CacheScope != CACHE_SCOPE_TENANT && c.CacheScope != CACHE_SCOPE_CONSUMER {
+		return fmt.Errorf("invalid cache_scope: %s", c.CacheScope)
+	}
+	if c.FailPolicy != FAIL_POLICY_OPEN && c.FailPolicy != FAIL_POLICY_CLOSED {
+		return fmt.Errorf("invalid fail_policy: %s", c.FailPolicy)
+	}
+	if c.HasThinConfig() && c.CachePolicyVersion == "" {
+		return fmt.Errorf("cache_policy_version is required when thin cache behavior is enabled")
+	}
+	if c.MaterializedLookup.Redis.Enabled {
+		if err := validateRedisEndpoint(c.MaterializedLookup.Redis); err != nil {
+			return err
+		}
+	}
+	if c.ConsoleLookup.Enabled {
+		if err := validateConsoleLookup(c.ConsoleLookup); err != nil {
+			return err
+		}
+	}
+	if c.Event.RedisStream.Enabled {
+		if err := validateRedisStream(c.Event.RedisStream); err != nil {
+			return err
+		}
 	}
 
 	// If semantic cache is enabled, ensure necessary components are configured
@@ -140,6 +290,12 @@ func (c *PluginConfig) Validate() error {
 	// 	// if only configure cache, just warn the user
 	// }
 	return nil
+}
+
+func (c *PluginConfig) HasThinConfig() bool {
+	return c.MaterializedLookup.Redis.Enabled ||
+		c.ConsoleLookup.Enabled ||
+		c.Event.RedisStream.Enabled
 }
 
 func (c *PluginConfig) Complete(log log.Log) error {
@@ -210,6 +366,72 @@ func convertLegacyMapFields(c *PluginConfig, json gjson.Result, log log.Log) {
 			log.Debugf("[convertLegacyMapFields] %s not exists", oldKey)
 		}
 	}
+}
+
+func jsonStringArray(value gjson.Result) []string {
+	if !value.Exists() {
+		return nil
+	}
+	items := value.Array()
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.String() == "" {
+			continue
+		}
+		out = append(out, item.String())
+	}
+	return out
+}
+
+func validateRedisEndpoint(cfg RedisEndpointConfig) error {
+	if cfg.ServiceName == "" {
+		return fmt.Errorf("materialized_lookup.redis.service_name is required when enabled")
+	}
+	if cfg.ServicePort <= 0 {
+		return fmt.Errorf("materialized_lookup.redis.service_port must be positive when enabled")
+	}
+	if cfg.KeyPrefix == "" {
+		return fmt.Errorf("materialized_lookup.redis.key_prefix is required when enabled")
+	}
+	if cfg.Timeout <= 0 {
+		return fmt.Errorf("materialized_lookup.redis.timeout must be positive when enabled")
+	}
+	return nil
+}
+
+func validateConsoleLookup(cfg ConsoleLookupConfig) error {
+	if cfg.ServiceName == "" {
+		return fmt.Errorf("console_lookup.service_name is required when enabled")
+	}
+	if cfg.ServicePort <= 0 {
+		return fmt.Errorf("console_lookup.service_port must be positive when enabled")
+	}
+	if cfg.Path == "" {
+		return fmt.Errorf("console_lookup.path is required when enabled")
+	}
+	if cfg.Timeout <= 0 {
+		return fmt.Errorf("console_lookup.timeout must be positive when enabled")
+	}
+	return nil
+}
+
+func validateRedisStream(cfg RedisStreamConfig) error {
+	if cfg.ServiceName == "" {
+		return fmt.Errorf("redis_stream.service_name is required when enabled")
+	}
+	if cfg.ServicePort <= 0 {
+		return fmt.Errorf("redis_stream.service_port must be positive when enabled")
+	}
+	if cfg.Stream == "" {
+		return fmt.Errorf("redis_stream.stream is required when enabled")
+	}
+	if cfg.Field == "" {
+		return fmt.Errorf("redis_stream.field is required when enabled")
+	}
+	if cfg.Timeout <= 0 {
+		return fmt.Errorf("redis_stream.timeout must be positive when enabled")
+	}
+	return nil
 }
 
 func setField(c *PluginConfig, fieldName string, value string, log log.Log) {
