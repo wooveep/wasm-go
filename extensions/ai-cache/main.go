@@ -207,9 +207,21 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 }
 
 func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []byte, log log.Log, stream bool) types.Action {
+	if c.RoutePolicy.Memory.Enabled && c.RoutePolicy.Memory.CacheMode == config.MEMORY_CACHE_MODE_BYPASS {
+		markCacheGate(ctx, "memory-bypass")
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+
 	model, requestDigest, err := BuildOpenAIRequestDigest(body)
 	if err != nil {
 		log.Warnf("[onThinHttpRequestBody] build request digest failed, fail open: %v", err)
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+	cachePolicyVersion, ok := thinEffectiveCachePolicyVersion(c, log)
+	if !ok {
+		markCacheGate(ctx, "memory-missing-digest")
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
@@ -222,7 +234,7 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 		Route:              requestRoute(),
 		Model:              model,
 		RequestDigest:      requestDigest,
-		CachePolicyVersion: c.CachePolicyVersion,
+		CachePolicyVersion: cachePolicyVersion,
 	})
 	if err != nil {
 		log.Warnf("[onThinHttpRequestBody] build materialized cache key failed, fail open: %v", err)
@@ -248,6 +260,24 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 	}
 
 	return types.ActionPause
+}
+
+func thinEffectiveCachePolicyVersion(c config.PluginConfig, log log.Log) (string, bool) {
+	if !c.RoutePolicy.Memory.Enabled || c.RoutePolicy.Memory.CacheMode != config.MEMORY_CACHE_MODE_POLICY_DIGEST {
+		return c.CachePolicyVersion, true
+	}
+	digest, _ := proxywasm.GetHttpRequestHeader(c.RoutePolicy.Memory.DigestHeader)
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		log.Warnf("[thinEffectiveCachePolicyVersion] memory digest header %s is missing, fail open", c.RoutePolicy.Memory.DigestHeader)
+		return "", false
+	}
+	return strings.Join([]string{
+		c.CachePolicyVersion,
+		"memory",
+		c.RoutePolicy.Memory.PolicyVersion,
+		digest,
+	}, "|"), true
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {

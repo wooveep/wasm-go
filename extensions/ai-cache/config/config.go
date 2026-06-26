@@ -19,6 +19,10 @@ const (
 	CACHE_SCOPE_TENANT   = "tenant"
 	CACHE_SCOPE_CONSUMER = "consumer"
 
+	MEMORY_CACHE_MODE_POLICY_DIGEST = "policy_digest"
+	MEMORY_CACHE_MODE_BYPASS        = "bypass"
+	DEFAULT_MEMORY_DIGEST_HEADER    = "x-mse-memory-digest"
+
 	FAIL_POLICY_OPEN   = "open"
 	FAIL_POLICY_CLOSED = "closed"
 )
@@ -62,6 +66,14 @@ type RoutePolicyConfig struct {
 	EnableReplay        bool
 	EnableBypass        bool
 	EnabledPathSuffixes []string
+	Memory              MemoryPolicyConfig
+}
+
+type MemoryPolicyConfig struct {
+	Enabled       bool
+	CacheMode     string
+	PolicyVersion string
+	DigestHeader  string
 }
 
 type PluginConfig struct {
@@ -194,6 +206,7 @@ func (c *PluginConfig) FromJson(json gjson.Result, log log.Log) {
 		EnableReplay:        true,
 		EnableBypass:        false,
 		EnabledPathSuffixes: jsonStringArray(json.Get("route_policy.enabled_path_suffixes")),
+		Memory:              parseMemoryPolicy(json.Get("route_policy.memory")),
 	}
 	if json.Get("route_policy.enable_redis_lookup").Exists() {
 		c.RoutePolicy.EnableRedisLookup = json.Get("route_policy.enable_redis_lookup").Bool()
@@ -377,6 +390,20 @@ func (c *PluginConfig) Validate() error {
 			return err
 		}
 	}
+	if c.RoutePolicy.Memory.Enabled {
+		switch c.RoutePolicy.Memory.CacheMode {
+		case MEMORY_CACHE_MODE_POLICY_DIGEST:
+			if c.RoutePolicy.Memory.PolicyVersion == "" {
+				return fmt.Errorf("route_policy.memory.policy_version is required when memory policy digest mode is enabled")
+			}
+			if c.RoutePolicy.Memory.DigestHeader == "" {
+				return fmt.Errorf("route_policy.memory.digest_header is required when memory policy digest mode is enabled")
+			}
+		case MEMORY_CACHE_MODE_BYPASS:
+		default:
+			return fmt.Errorf("invalid route_policy.memory.cache_mode: %s", c.RoutePolicy.Memory.CacheMode)
+		}
+	}
 
 	// If semantic cache is enabled, ensure necessary components are configured
 	// if c.EnableSemanticCache {
@@ -509,6 +536,25 @@ func jsonStringArray(value gjson.Result) []string {
 	return out
 }
 
+func parseMemoryPolicy(value gjson.Result) MemoryPolicyConfig {
+	if !value.Exists() {
+		return MemoryPolicyConfig{}
+	}
+	cfg := MemoryPolicyConfig{
+		Enabled:       value.Get("enabled").Bool(),
+		CacheMode:     value.Get("cache_mode").String(),
+		PolicyVersion: value.Get("policy_version").String(),
+		DigestHeader:  value.Get("digest_header").String(),
+	}
+	if cfg.CacheMode == "" {
+		cfg.CacheMode = MEMORY_CACHE_MODE_POLICY_DIGEST
+	}
+	if cfg.DigestHeader == "" {
+		cfg.DigestHeader = DEFAULT_MEMORY_DIGEST_HEADER
+	}
+	return cfg
+}
+
 func mergeRedisEndpoint(base RedisEndpointConfig, value gjson.Result) RedisEndpointConfig {
 	if !value.Exists() {
 		return base
@@ -596,6 +642,32 @@ func mergeRoutePolicy(base RoutePolicyConfig, value gjson.Result) RoutePolicyCon
 	}
 	if value.Get("enabled_path_suffixes").Exists() {
 		base.EnabledPathSuffixes = jsonStringArray(value.Get("enabled_path_suffixes"))
+	}
+	base.Memory = mergeMemoryPolicy(base.Memory, value.Get("memory"))
+	return base
+}
+
+func mergeMemoryPolicy(base MemoryPolicyConfig, value gjson.Result) MemoryPolicyConfig {
+	if !value.Exists() {
+		return base
+	}
+	if value.Get("enabled").Exists() {
+		base.Enabled = value.Get("enabled").Bool()
+	}
+	if value.Get("cache_mode").Exists() {
+		base.CacheMode = value.Get("cache_mode").String()
+	}
+	if value.Get("policy_version").Exists() {
+		base.PolicyVersion = value.Get("policy_version").String()
+	}
+	if value.Get("digest_header").Exists() {
+		base.DigestHeader = value.Get("digest_header").String()
+	}
+	if base.CacheMode == "" {
+		base.CacheMode = MEMORY_CACHE_MODE_POLICY_DIGEST
+	}
+	if base.DigestHeader == "" {
+		base.DigestHeader = DEFAULT_MEMORY_DIGEST_HEADER
 	}
 	return base
 }
