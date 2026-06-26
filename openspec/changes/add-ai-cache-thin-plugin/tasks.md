@@ -68,7 +68,7 @@
 ## 8. Documentation and Compatibility
 
 - [x] 8.1 Update `extensions/ai-cache` documentation for thin-plugin responsibilities, config, Redis materialized records, optional Console lookup, fail-open behavior, replay validation, and `CacheEvent` emission.
-- [ ] 8.2 Update Chinese and English plugin docs that describe legacy `ai-cache` behavior so production structured replay is clearly distinguished from text-only compatibility.
+- [x] 8.2 Update Chinese and English plugin docs that describe legacy `ai-cache` behavior so production structured replay is clearly distinguished from text-only compatibility.
 - [ ] 8.3 Document Console-owned responsibilities: materialization, embedding, vector search, durable replay records, semantic lookup, pricing, settlement, repair, deletion, and reconciliation.
 - [ ] 8.4 Document shared backend isolation rules for PostgreSQL tables, Redis streams, Redis key prefixes, vector collections, payload schemas, retention, deletion, management APIs, and authorization checks.
 - [ ] 8.5 Document Console-managed internal AI Route usage for platform-owned cache and memory model work, including `internal_cost` attribution.
