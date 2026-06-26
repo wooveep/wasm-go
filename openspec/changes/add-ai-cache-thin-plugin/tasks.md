@@ -4,7 +4,7 @@
 - [x] 1.2 Read `docs/ai-cache-thin-plugin-design.md`, `docs/2026-06-26-ai-cache-memory-shared-runtime-design.md`, this change's `proposal.md`, `design.md`, and specs before touching code.
 - [x] 1.3 Run GitNexus upstream impact analysis before editing each function, method, type, or shared helper involved in `ai-cache`, `ai-memory`, or `ai-billing`.
 - [x] 1.4 Treat production embedding generation, vector search, PostgreSQL writes, billing settlement, and provider credential ownership as out of scope for the gateway plugin.
-- [ ] 1.5 Keep unrelated dirty files and unrelated existing OpenSpec changes out of this implementation diff.
+- [x] 1.5 Keep unrelated dirty files and unrelated existing OpenSpec changes out of this implementation diff.
 
 ## 2. Tests First
 
