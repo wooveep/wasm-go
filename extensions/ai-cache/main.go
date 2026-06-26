@@ -18,10 +18,14 @@ const (
 	CACHE_KEY_CONTEXT_KEY       = "cacheKey"
 	CACHE_KEY_EMBEDDING_KEY     = "cacheKeyEmbedding"
 	CACHE_CONTENT_CONTEXT_KEY   = "cacheContent"
+	CACHE_GATE_CONTEXT_KEY      = "cacheGate"
 	PARTIAL_MESSAGE_CONTEXT_KEY = "partialMessage"
 	TOOL_CALLS_CONTEXT_KEY      = "toolCalls"
 	STREAM_CONTEXT_KEY          = "stream"
 	SKIP_CACHE_HEADER           = "x-higress-skip-ai-cache"
+	CACHE_TENANT_CONTEXT_KEY    = "cacheTenant"
+	CACHE_CONSUMER_CONTEXT_KEY  = "cacheConsumer"
+	CACHE_PATH_CONTEXT_KEY      = "cacheRequestPath"
 	ERROR_PARTIAL_MESSAGE_KEY   = "errorPartialMessage"
 
 	DEFAULT_MAX_BODY_BYTES uint32 = 100 * 1024 * 1024
@@ -72,8 +76,9 @@ func parseOverrideConfig(json gjson.Result, global config.PluginConfig, c *confi
 func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
 	ctx.DisableReroute()
 	skipCache, _ := proxywasm.GetHttpRequestHeader(SKIP_CACHE_HEADER)
-	if skipCache == "on" {
+	if isTruthyHeaderValue(skipCache) {
 		ctx.SetContext(SKIP_CACHE_HEADER, struct{}{})
+		markCacheGate(ctx, "skip-header")
 		ctx.DontReadRequestBody()
 		return types.ActionContinue
 	}
@@ -82,10 +87,44 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log lo
 	if contentType == "" {
 		return types.ActionContinue
 	}
-	if !strings.Contains(contentType, "application/json") {
+	if !isJSONContentType(contentType) {
 		log.Warnf("content is not json, can't process: %s", contentType)
+		markCacheGate(ctx, "unsupported-content-type")
 		ctx.DontReadRequestBody()
 		return types.ActionContinue
+	}
+	if c.HasThinConfig() {
+		if requestHasNoStore() {
+			markCacheGate(ctx, "no-store")
+			ctx.DontReadRequestBody()
+			return types.ActionContinue
+		}
+		if c.RoutePolicy.EnableBypass {
+			markCacheGate(ctx, "route-bypass")
+			ctx.DontReadRequestBody()
+			return types.ActionContinue
+		}
+		path := requestPath(ctx)
+		if !pathMatchesSuffixes(path, c.RoutePolicy.EnabledPathSuffixes) {
+			markCacheGate(ctx, "unsupported-path")
+			ctx.DontReadRequestBody()
+			return types.ActionContinue
+		}
+		tenant, _ := proxywasm.GetHttpRequestHeader(c.TenantHeader)
+		if strings.TrimSpace(tenant) == "" {
+			markCacheGate(ctx, "missing-tenant")
+			ctx.DontReadRequestBody()
+			return types.ActionContinue
+		}
+		consumer, _ := proxywasm.GetHttpRequestHeader(c.ConsumerHeader)
+		if c.CacheScope == config.CACHE_SCOPE_CONSUMER && strings.TrimSpace(consumer) == "" {
+			markCacheGate(ctx, "missing-consumer")
+			ctx.DontReadRequestBody()
+			return types.ActionContinue
+		}
+		ctx.SetContext(CACHE_TENANT_CONTEXT_KEY, tenant)
+		ctx.SetContext(CACHE_CONSUMER_CONTEXT_KEY, consumer)
+		ctx.SetContext(CACHE_PATH_CONTEXT_KEY, path)
 	}
 	ctx.SetRequestBodyBufferLimit(DEFAULT_MAX_BODY_BYTES)
 	_ = proxywasm.RemoveHttpRequestHeader("Accept-Encoding")
@@ -95,6 +134,10 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log lo
 }
 
 func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []byte, log log.Log) types.Action {
+	if cacheGateReason(ctx) != "" {
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
 	bodyJson := gjson.ParseBytes(body)
 	// TODO: It may be necessary to support stream mode determination for different LLM providers.
 	stream := false
@@ -144,8 +187,7 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
-	skipCache := ctx.GetContext(SKIP_CACHE_HEADER)
-	if skipCache != nil {
+	if cacheGateReason(ctx) != "" || ctx.GetContext(SKIP_CACHE_HEADER) != nil {
 		ctx.SetUserAttribute("cache_status", "skip")
 		ctx.WriteUserAttributeToLogWithKey(wrapper.AILogKey)
 		ctx.DontReadResponseBody()
@@ -163,6 +205,62 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log l
 	}
 
 	return types.ActionContinue
+}
+
+func markCacheGate(ctx wrapper.HttpContext, reason string) {
+	ctx.SetContext(CACHE_GATE_CONTEXT_KEY, reason)
+}
+
+func cacheGateReason(ctx wrapper.HttpContext) string {
+	return ctx.GetStringContext(CACHE_GATE_CONTEXT_KEY, "")
+}
+
+func requestPath(ctx wrapper.HttpContext) string {
+	if path := ctx.Path(); path != "" {
+		return path
+	}
+	path, _ := proxywasm.GetHttpRequestHeader(":path")
+	return path
+}
+
+func isJSONContentType(contentType string) bool {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func pathMatchesSuffixes(path string, suffixes []string) bool {
+	if len(suffixes) == 0 {
+		return true
+	}
+	pathOnly := strings.Split(path, "?")[0]
+	for _, suffix := range suffixes {
+		if suffix == "" {
+			continue
+		}
+		if strings.HasSuffix(pathOnly, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func requestHasNoStore() bool {
+	cacheControl, _ := proxywasm.GetHttpRequestHeader("cache-control")
+	for _, directive := range strings.Split(cacheControl, ",") {
+		if strings.EqualFold(strings.TrimSpace(directive), "no-store") {
+			return true
+		}
+	}
+	return false
+}
+
+func isTruthyHeaderValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "on", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 func onHttpResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log log.Log) []byte {
