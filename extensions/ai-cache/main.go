@@ -31,6 +31,13 @@ const (
 	CACHE_MODEL_CONTEXT_KEY     = "cacheModel"
 	CACHE_DIGEST_CONTEXT_KEY    = "cacheRequestDigest"
 	CACHE_MATERIALIZED_KEY      = "cacheMaterializedKey"
+	CACHE_USER_CONTENT_KEY      = "cacheUserContent"
+	CACHE_REQUEST_ID_KEY        = "cacheRequestID"
+	CACHE_EVENT_STARTED_AT_KEY  = "cacheEventStartedAt"
+	CACHE_RESPONSE_STATUS_KEY   = "cacheResponseStatus"
+	CACHE_RESPONSE_NOSTORE_KEY  = "cacheResponseNoStore"
+	CACHE_SENSITIVE_KEY         = "cacheSensitive"
+	CACHE_STREAM_CAPTURE_KEY    = "cacheStreamCapture"
 	ERROR_PARTIAL_MESSAGE_KEY   = "errorPartialMessage"
 
 	DEFAULT_MAX_BODY_BYTES uint32 = 100 * 1024 * 1024
@@ -132,6 +139,8 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log lo
 		session, _ := proxywasm.GetHttpRequestHeader(c.SessionHeader)
 		ctx.SetContext(CACHE_SESSION_CONTEXT_KEY, session)
 		ctx.SetContext(CACHE_PATH_CONTEXT_KEY, path)
+		sensitive, _ := proxywasm.GetHttpRequestHeader("x-mse-cache-sensitive")
+		ctx.SetContext(CACHE_SENSITIVE_KEY, isTruthyHeaderValue(sensitive))
 	}
 	ctx.SetRequestBodyBufferLimit(DEFAULT_MAX_BODY_BYTES)
 	_ = proxywasm.RemoveHttpRequestHeader("Accept-Encoding")
@@ -225,6 +234,7 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 	ctx.SetContext(CACHE_MODEL_CONTEXT_KEY, material.Model)
 	ctx.SetContext(CACHE_DIGEST_CONTEXT_KEY, material.RequestDigest)
 	ctx.SetContext(CACHE_MATERIALIZED_KEY, material.RedisKey)
+	storeThinRequestEventContext(ctx, body, log)
 
 	if !c.MaterializedLookup.Redis.Enabled || !c.RoutePolicy.EnableRedisLookup {
 		log.Debug("[onThinHttpRequestBody] materialized Redis lookup is disabled, fail open")
@@ -250,6 +260,9 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log l
 	if ctx.GetContext(CACHE_KEY_CONTEXT_KEY) != nil {
 		ctx.SetUserAttribute("cache_status", "miss")
 		ctx.WriteUserAttributeToLogWithKey(wrapper.AILogKey)
+	}
+	if c.HasThinConfig() && ctx.GetContext(CACHE_MATERIALIZED_KEY) != nil {
+		captureThinResponseHeaders(ctx, log)
 	}
 	contentType, _ := proxywasm.GetHttpResponseHeader("content-type")
 	if strings.Contains(contentType, "text/event-stream") {
@@ -328,6 +341,11 @@ func isTruthyHeaderValue(value string) bool {
 func onHttpResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log log.Log) []byte {
 	log.Debugf("[onHttpResponseBody] is last chunk: %v", isLastChunk)
 	log.Debugf("[onHttpResponseBody] chunk: %s", string(chunk))
+
+	if c.HasThinConfig() && ctx.GetContext(CACHE_MATERIALIZED_KEY) != nil {
+		handleThinResponseBody(ctx, c, chunk, isLastChunk, log)
+		return chunk
+	}
 
 	if ctx.GetContext(TOOL_CALLS_CONTEXT_KEY) != nil || ctx.GetContext(ERROR_PARTIAL_MESSAGE_KEY) != nil {
 		return chunk

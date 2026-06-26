@@ -45,7 +45,7 @@
 - [x] 5.2 Implement supported streaming replay only for records explicitly marked stream-replayable.
 - [x] 5.3 Set trusted internal cache-hit and `upstream_invoked=false` facts on replay without exposing proprietary billing fields in the response body.
 - [x] 5.4 Preserve upstream request flow on miss or dependency failure.
-- [ ] 5.5 Capture eligible upstream response facts for non-streaming responses.
+- [x] 5.5 Capture eligible upstream response facts for non-streaming responses.
 - [ ] 5.6 Capture eligible upstream response facts for streaming responses and stream-done fallback paths.
 - [ ] 5.7 Prevent cacheable raw content emission when response parsing fails or policy marks the response as no-store or sensitive.
 

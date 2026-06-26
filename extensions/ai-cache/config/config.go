@@ -76,6 +76,7 @@ type PluginConfig struct {
 	embeddingProvider embedding.Provider
 	vectorProvider    vector.Provider
 	materializedRedis wrapper.RedisClient
+	eventRedis        wrapper.RedisClient
 
 	embeddingProviderConfig *embedding.ProviderConfig
 	vectorProviderConfig    *vector.ProviderConfig
@@ -426,6 +427,17 @@ func (c *PluginConfig) Complete(log log.Log) error {
 	} else {
 		c.materializedRedis = nil
 	}
+	if c.Event.RedisStream.Enabled {
+		c.eventRedis = wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
+			FQDN: c.Event.RedisStream.ServiceName,
+			Port: int64(c.Event.RedisStream.ServicePort),
+		})
+		if err := c.eventRedis.Init("", "", int64(c.Event.RedisStream.Timeout)); err != nil {
+			return err
+		}
+	} else {
+		c.eventRedis = nil
+	}
 	if c.vectorProviderConfig.GetProviderType() != "" {
 		log.Debugf("vector provider is set to %s", c.vectorProviderConfig.GetProviderType())
 		c.vectorProvider, err = vector.CreateProvider(*c.vectorProviderConfig)
@@ -457,6 +469,10 @@ func (c *PluginConfig) GetCacheProvider() cache.Provider {
 
 func (c *PluginConfig) GetMaterializedRedisClient() wrapper.RedisClient {
 	return c.materializedRedis
+}
+
+func (c *PluginConfig) GetEventRedisClient() wrapper.RedisClient {
+	return c.eventRedis
 }
 
 func convertLegacyMapFields(c *PluginConfig, json gjson.Result, log log.Log) {
