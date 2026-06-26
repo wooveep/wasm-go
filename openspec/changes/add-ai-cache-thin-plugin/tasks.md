@@ -12,7 +12,7 @@
 - [x] 2.2 Add Redis replay tests for hit, miss, invalid JSON, unsupported schema version, expired records, scope mismatch, route mismatch, model mismatch, and policy version mismatch.
 - [x] 2.3 Add Console lookup tests for disabled lookup, enabled lookup after Redis miss, hit validation, miss, timeout, and failure.
 - [x] 2.4 Add cache-hit replay tests for OpenAI-compatible non-streaming response fields and supported streaming replay payloads.
-- [ ] 2.5 Add billing fact tests proving cache replay sets trusted `upstream_invoked=false` facts without adding billing fields to the user response body.
+- [x] 2.5 Add billing fact tests proving cache replay sets trusted `upstream_invoked=false` facts without adding billing fields to the user response body.
 - [ ] 2.6 Add upstream response capture tests for non-streaming and streaming assistant text, usage, finish reason, tool-call detection, no-store, sensitive, and failed-response gates.
 - [ ] 2.7 Add `CacheEvent` payload and redaction tests, including Redis Stream `XADD` failure fail-open behavior.
 - [ ] 2.8 Add shared helper tests covering identity extraction, session/request id extraction, OpenAI message parsing, current user intent extraction, request digest helpers, stream capture, event envelope helpers, and safe logging.
