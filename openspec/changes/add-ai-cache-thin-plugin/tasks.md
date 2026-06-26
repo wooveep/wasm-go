@@ -78,7 +78,7 @@
 
 ## 9. Verification
 
-- [ ] 9.1 Run focused `ai-cache` Go tests.
+- [x] 9.1 Run focused `ai-cache` Go tests.
 - [ ] 9.2 Run focused shared helper and `ai-memory` regression tests.
 - [ ] 9.3 Run focused `ai-billing` Go tests.
 - [ ] 9.4 Run `openspec validate add-ai-cache-thin-plugin --strict`.
