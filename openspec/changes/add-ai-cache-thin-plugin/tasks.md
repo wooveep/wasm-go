@@ -60,7 +60,7 @@
 ## 7. ai-memory and ai-billing Integration
 
 - [x] 7.1 Ensure memory-enabled routes use consumer-scoped cache, memory policy/digest-aware cache keys or policy versions, or cache bypass until Console materializes memory-aware replay records.
-- [ ] 7.2 Document and test expected plugin ordering where `ai-memory` runs before `ai-cache` when memory affects the answer.
+- [x] 7.2 Document and test expected plugin ordering where `ai-memory` runs before `ai-cache` when memory affects the answer.
 - [ ] 7.3 Update `ai-billing` to consume trusted gateway-controlled cache replay facts.
 - [ ] 7.4 Update `ai-billing` event serialization and tests so upstream provider invocations emit `upstream_invoked=true` and trusted cache replays emit `upstream_invoked=false`.
 - [ ] 7.5 Add spoofing tests proving user-supplied request or response body fields cannot control `upstream_invoked`.

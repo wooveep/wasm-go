@@ -40,6 +40,16 @@ func TestThinMemoryAwareCache(t *testing.T) {
 			require.Empty(t, host.GetHttpCalloutAttributes(), "memory bypass should not issue Console cache lookup")
 			require.Nil(t, host.GetLocalResponse(), "memory bypass should not replay a local cache hit")
 		})
+
+		t.Run("memory digest policy skips cache lookup before ai-memory assembles digest", func(t *testing.T) {
+			host, action := startThinMemoryAwareRequest(t, "policy_digest", "memory-policy-v1", "", "consumer-a")
+			defer host.Reset()
+
+			require.Equal(t, types.ActionContinue, action)
+			require.Empty(t, host.GetRedisCalloutAttributes(), "ai-cache must not look up memory-aware records before ai-memory provides a digest")
+			require.Empty(t, host.GetHttpCalloutAttributes(), "ai-cache must not call Console cache lookup before ai-memory provides a digest")
+			require.Nil(t, host.GetLocalResponse(), "missing memory digest should fail open to upstream")
+		})
 	})
 }
 
