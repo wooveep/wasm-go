@@ -19,6 +19,16 @@ const (
 	thinResponseCaptureSensitiveHeader = "x-mse-cache-sensitive"
 )
 
+type thinResponseCaptureHost struct {
+	test.TestHost
+	materializedLookup bool
+	lookupSummary      string
+}
+
+func (h thinResponseCaptureHost) thinMaterializedLookup() (bool, string) {
+	return h.materializedLookup, h.lookupSummary
+}
+
 func thinResponseCaptureConfig(t *testing.T) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(map[string]interface{}{
@@ -98,10 +108,16 @@ func startThinResponseCaptureRequest(t *testing.T, stream bool, extraHeaders ...
 	action = host.CallOnHttpRequestBody(body)
 	require.Equal(t, types.ActionPause, action)
 	require.NotEmpty(t, host.GetRedisCalloutAttributes(), "request should issue Redis lookup before upstream capture")
+	materializedLookup := thinResponseHasMaterializedLookup(t, host)
+	lookupSummary := thinResponseCaptureCallSummary(t, host)
 
 	host.CallOnRedisCall(0, test.CreateRedisRespNull())
 	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
-	return host
+	return thinResponseCaptureHost{
+		TestHost:           host,
+		materializedLookup: materializedLookup,
+		lookupSummary:      lookupSummary,
+	}
 }
 
 func TestThinResponseCapture(t *testing.T) {
@@ -317,7 +333,7 @@ func requireThinResponseCaptureEvent(t *testing.T, host test.TestHost) map[strin
 	if !ok {
 		require.Failf(t, "missing thin CacheEvent XADD", "redis calls=%s", thinResponseCaptureCallSummary(t, host))
 	}
-	requireThinResponseMaterializedLookup(t, host)
+	requireThinResponseCapturedMaterializedLookup(t, host)
 	return event
 }
 
@@ -342,12 +358,32 @@ func requireThinResponseNoLegacyCacheSet(t *testing.T, host test.TestHost) {
 			continue
 		}
 		if strings.EqualFold(cmd[0], "set") && strings.HasPrefix(cmd[1], "higress-ai-cache:") {
-			require.Failf(t, "thin response capture emitted legacy cache SET", "command=%s", thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+			require.Failf(t, "thin response capture emitted legacy cache SET", "command=%s", thinResponseCaptureCommandSummary(cmd))
 		}
 	}
 }
 
+func requireThinResponseCapturedMaterializedLookup(t *testing.T, host test.TestHost) {
+	t.Helper()
+	capture, ok := host.(interface {
+		thinMaterializedLookup() (bool, string)
+	})
+	if !ok {
+		require.Fail(t, "CacheEvent assertion requires host with captured materialized lookup metadata")
+	}
+	lookupWasMaterialized, lookupSummary := capture.thinMaterializedLookup()
+	require.Truef(t, lookupWasMaterialized, "missing thin materialized Redis lookup before upstream capture; redis calls=%s", lookupSummary)
+}
+
 func requireThinResponseMaterializedLookup(t *testing.T, host test.TestHost) {
+	t.Helper()
+	if thinResponseHasMaterializedLookup(t, host) {
+		return
+	}
+	require.Failf(t, "missing thin materialized Redis lookup", "redis calls=%s", thinResponseCaptureCallSummary(t, host))
+}
+
+func thinResponseHasMaterializedLookup(t *testing.T, host test.TestHost) bool {
 	t.Helper()
 	for _, call := range host.GetRedisCalloutAttributes() {
 		cmd, ok := thinResponseCaptureCommand(t, call.Query)
@@ -355,10 +391,10 @@ func requireThinResponseMaterializedLookup(t *testing.T, host test.TestHost) {
 			continue
 		}
 		if strings.EqualFold(cmd[0], "get") && strings.HasPrefix(cmd[1], "cache:materialized:") {
-			return
+			return true
 		}
 	}
-	require.Failf(t, "missing thin materialized Redis lookup", "redis calls=%s", thinResponseCaptureCallSummary(t, host))
+	return false
 }
 
 func requireThinResponseCaptureUsage(t *testing.T, event map[string]interface{}, promptTokens, completionTokens, totalTokens int) {
@@ -382,7 +418,7 @@ func thinResponseCaptureEvent(t *testing.T, host test.TestHost) (map[string]inte
 			continue
 		}
 		fieldStart := thinResponseCaptureXADDFieldStart(t, cmd)
-		require.Equalf(t, 0, (len(cmd)-fieldStart)%2, "cache event XADD has incomplete field/value pair; command=%s", thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+		require.Equalf(t, 0, (len(cmd)-fieldStart)%2, "cache event XADD has incomplete field/value pair; command=%s", thinResponseCaptureCommandSummary(cmd))
 		eventFound := false
 		for i := fieldStart; i+1 < len(cmd); i += 2 {
 			if cmd[i] != thinResponseCaptureStreamField {
@@ -390,14 +426,14 @@ func thinResponseCaptureEvent(t *testing.T, host test.TestHost) (map[string]inte
 			}
 			var event map[string]interface{}
 			if err := json.Unmarshal([]byte(cmd[i+1]), &event); err != nil {
-				require.Failf(t, "CacheEvent field is not valid JSON", "err=%v event=%s", err, thinResponseCaptureSnippet(cmd[i+1], 360))
+				require.Failf(t, "CacheEvent field is not valid JSON", "err=%v event_bytes=%d", err, len(cmd[i+1]))
 			}
 			events = append(events, event)
 			eventFound = true
 			break
 		}
 		if !eventFound {
-			require.Failf(t, "cache event XADD missing event field", "command=%s", thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+			require.Failf(t, "cache event XADD missing event field", "command=%s", thinResponseCaptureCommandSummary(cmd))
 		}
 	}
 	if len(events) == 0 {
@@ -418,20 +454,20 @@ func thinResponseCaptureXADDFieldStart(t *testing.T, cmd []string) int {
 			if i < len(cmd) && (cmd[i] == "=" || cmd[i] == "~") {
 				i++
 			}
-			require.Lessf(t, i, len(cmd), "cache event XADD missing trim threshold; command=%s", thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+			require.Lessf(t, i, len(cmd), "cache event XADD missing trim threshold; command=%s", thinResponseCaptureCommandSummary(cmd))
 			i++
 			if i < len(cmd) && strings.EqualFold(cmd[i], "limit") {
 				i++
-				require.Lessf(t, i, len(cmd), "cache event XADD missing LIMIT count; command=%s", thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+				require.Lessf(t, i, len(cmd), "cache event XADD missing LIMIT count; command=%s", thinResponseCaptureCommandSummary(cmd))
 				i++
 			}
 		default:
 			streamID := cmd[i]
-			require.Truef(t, streamID == "*" || strings.Contains(streamID, "-"), "cache event XADD has invalid stream id %q; command=%s", streamID, thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+			require.Truef(t, streamID == "*" || strings.Contains(streamID, "-"), "cache event XADD has invalid stream id %q; command=%s", streamID, thinResponseCaptureCommandSummary(cmd))
 			return i + 1
 		}
 	}
-	require.Failf(t, "cache event XADD missing stream id", "command=%s", thinResponseCaptureSnippet(strings.Join(cmd, " "), 360))
+	require.Failf(t, "cache event XADD missing stream id", "command=%s", thinResponseCaptureCommandSummary(cmd))
 	return len(cmd)
 }
 
@@ -458,12 +494,52 @@ func thinResponseCaptureCallSummary(t *testing.T, host test.TestHost) string {
 	for _, call := range host.GetRedisCalloutAttributes() {
 		cmd, ok := thinResponseCaptureCommand(t, call.Query)
 		if ok {
-			parts = append(parts, fmt.Sprintf("%s %s", call.Upstream, strings.Join(cmd, " ")))
+			parts = append(parts, fmt.Sprintf("%s %s", call.Upstream, thinResponseCaptureCommandSummary(cmd)))
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s %s", call.Upstream, thinResponseCaptureSnippet(string(call.Query), 160)))
+		parts = append(parts, fmt.Sprintf("%s <unparseable:%d>", call.Upstream, len(call.Query)))
 	}
 	return thinResponseCaptureSnippet(strings.Join(parts, " | "), 600)
+}
+
+func thinResponseCaptureCommandSummary(cmd []string) string {
+	if len(cmd) == 0 {
+		return "<empty>"
+	}
+	switch strings.ToLower(cmd[0]) {
+	case "get":
+		return fmt.Sprintf("get %s", thinResponseCaptureArgSummary(cmd, 1, "key"))
+	case "set":
+		return fmt.Sprintf("set %s %s", thinResponseCaptureArgSummary(cmd, 1, "key"), thinResponseCaptureArgSummary(cmd, 2, "value"))
+	case "xadd":
+		parts := []string{"xadd", thinResponseCaptureArgSummary(cmd, 1, "stream")}
+		for i := 2; i < len(cmd); i++ {
+			parts = append(parts, thinResponseCaptureArgSummary(cmd, i, fmt.Sprintf("arg%d", i)))
+		}
+		return strings.Join(parts, " ")
+	default:
+		parts := []string{cmd[0]}
+		for i := 1; i < len(cmd); i++ {
+			parts = append(parts, thinResponseCaptureArgSummary(cmd, i, fmt.Sprintf("arg%d", i)))
+		}
+		return strings.Join(parts, " ")
+	}
+}
+
+func thinResponseCaptureArgSummary(cmd []string, index int, label string) string {
+	if index >= len(cmd) {
+		return "<missing>"
+	}
+	value := cmd[index]
+	switch label {
+	case "stream":
+		return value
+	case "arg2":
+		if strings.EqualFold(cmd[0], "xadd") && (value == "*" || strings.Contains(value, "-")) {
+			return value
+		}
+	}
+	return fmt.Sprintf("<%s:%d>", label, len(value))
 }
 
 func thinResponseCaptureEventSnippet(t *testing.T, event map[string]interface{}) string {

@@ -14,7 +14,7 @@
 - [x] 2.4 Add cache-hit replay tests for OpenAI-compatible non-streaming response fields and supported streaming replay payloads.
 - [x] 2.5 Add billing fact tests proving cache replay sets trusted `upstream_invoked=false` facts without adding billing fields to the user response body.
 - [x] 2.6 Add upstream response capture tests for non-streaming and streaming assistant text, usage, finish reason, tool-call detection, no-store, sensitive, and failed-response gates.
-- [ ] 2.7 Add `CacheEvent` payload and redaction tests, including Redis Stream `XADD` failure fail-open behavior.
+- [x] 2.7 Add `CacheEvent` payload and redaction tests, including Redis Stream `XADD` failure fail-open behavior.
 - [ ] 2.8 Add shared helper tests covering identity extraction, session/request id extraction, OpenAI message parsing, current user intent extraction, request digest helpers, stream capture, event envelope helpers, and safe logging.
 - [ ] 2.9 Add memory-aware cache tests for consumer-scoped cache, memory policy/digest-aware keys or policy versions, and configured bypass on memory-enabled routes.
 - [ ] 2.10 Add legacy compatibility regression tests proving old text-only or embedding/vector paths are not used by the production thin-plugin default path.
