@@ -12,13 +12,14 @@ import (
 
 func TestRequestFactsExtraction(t *testing.T) {
 	t.Run("custom identity and session headers override defaults", func(t *testing.T) {
-		facts := sessionctx.ExtractRequestFacts([][2]string{
+		headers := [][2]string{
 			{"X-Tenant-ID", "tenant-a"},
 			{"x-consumer-id", "consumer-a"},
 			{"x-session-id", "session-custom"},
 			{"x-openclaw-session-key", "session-default"},
 			{"x-request-id", "header-request-id"},
-		}, sessionctx.RequestFactOptions{
+		}
+		facts := sessionctx.ExtractRequestFacts(headers, sessionctx.RequestFactOptions{
 			TenantHeader:    "x-tenant-id",
 			ConsumerHeader:  "x-consumer-id",
 			SessionHeader:   "x-session-id",
@@ -29,6 +30,7 @@ func TestRequestFactsExtraction(t *testing.T) {
 		require.Equal(t, "consumer-a", facts.Consumer)
 		require.Equal(t, "session-custom", facts.SessionID)
 		require.Equal(t, "header-request-id", facts.RequestID)
+		require.Equal(t, "tenant-a", sessionctx.HeaderValue(headers, "x-tenant-id"))
 	})
 
 	t.Run("default headers and request property fallback are stable", func(t *testing.T) {
@@ -44,6 +46,19 @@ func TestRequestFactsExtraction(t *testing.T) {
 		require.Equal(t, "session-openclaw", facts.SessionID)
 		require.Equal(t, "property-request-id", facts.RequestID)
 	})
+}
+
+func TestRequestGateHelpers(t *testing.T) {
+	require.True(t, sessionctx.IsJSONContentType("application/json"))
+	require.True(t, sessionctx.IsJSONContentType("application/json; charset=utf-8"))
+	require.True(t, sessionctx.IsJSONContentType("application/problem+json"))
+	require.False(t, sessionctx.IsJSONContentType("text/plain"))
+
+	require.True(t, sessionctx.PathMatchesSuffixes("/v1/chat/completions", []string{"/chat/completions"}))
+	require.True(t, sessionctx.PathMatchesSuffixes("/v1/chat/completions?api-version=2024-01-01", []string{"/chat/completions"}))
+	require.True(t, sessionctx.PathMatchesSuffixes("/v1/chat/completions", nil))
+	require.False(t, sessionctx.PathMatchesSuffixes("/v1/embeddings", []string{"/chat/completions"}))
+	require.False(t, sessionctx.PathMatchesSuffixes("/v1/embeddings", []string{""}))
 }
 
 func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {

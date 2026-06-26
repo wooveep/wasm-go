@@ -35,16 +35,46 @@ func ExtractRequestFacts(headers [][2]string, opts RequestFactOptions, propertyR
 	sessionHeader := defaultString(opts.SessionHeader, defaultSessionHeader)
 	requestIDHeader := defaultString(opts.RequestIDHeader, defaultRequestIDHeader)
 
-	requestID := headerValue(headers, requestIDHeader)
+	requestID := HeaderValue(headers, requestIDHeader)
 	if requestID == "" {
 		requestID = propertyRequestID
 	}
 	return RequestFacts{
-		Tenant:    headerValue(headers, tenantHeader),
-		Consumer:  headerValue(headers, consumerHeader),
-		SessionID: headerValue(headers, sessionHeader),
+		Tenant:    HeaderValue(headers, tenantHeader),
+		Consumer:  HeaderValue(headers, consumerHeader),
+		SessionID: HeaderValue(headers, sessionHeader),
 		RequestID: requestID,
 	}
+}
+
+func HeaderValue(headers [][2]string, name string) string {
+	for _, header := range headers {
+		if strings.EqualFold(header[0], name) {
+			return header[1]
+		}
+	}
+	return ""
+}
+
+func IsJSONContentType(contentType string) bool {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func PathMatchesSuffixes(path string, suffixes []string) bool {
+	if len(suffixes) == 0 {
+		return true
+	}
+	pathOnly := strings.Split(path, "?")[0]
+	for _, suffix := range suffixes {
+		if suffix == "" {
+			continue
+		}
+		if strings.HasSuffix(pathOnly, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 type OpenAIChatRequest struct {
@@ -288,15 +318,6 @@ func RedactForLog(value string) string {
 		result = redactLogKey(result, key)
 	}
 	return result
-}
-
-func headerValue(headers [][2]string, name string) string {
-	for _, header := range headers {
-		if strings.EqualFold(header[0], name) {
-			return header[1]
-		}
-	}
-	return ""
 }
 
 func defaultString(value, fallback string) string {
