@@ -80,7 +80,7 @@
 
 - [x] 9.1 Run focused `ai-cache` Go tests.
 - [x] 9.2 Run focused shared helper and `ai-memory` regression tests.
-- [ ] 9.3 Run focused `ai-billing` Go tests.
+- [x] 9.3 Run focused `ai-billing` Go tests.
 - [ ] 9.4 Run `openspec validate add-ai-cache-thin-plugin --strict`.
 - [ ] 9.5 Run `git diff --check`.
 - [ ] 9.6 Run `graphify update .` after code or documentation changes are complete.
