@@ -54,7 +54,7 @@ func validThinReplayRecord(t *testing.T, overrides map[string]interface{}) strin
 		"model":                "qwen-turbo",
 		"cache_scope":          "consumer",
 		"cache_policy_version": "policy-v1",
-		"request_digest":       "digest-placeholder",
+		"request_digest":       thinRedisReplayRequestDigest(t),
 		"soft_expires_at":      now + 60,
 		"hard_expires_at":      now + 3600,
 		"response": map[string]interface{}{
@@ -159,7 +159,7 @@ func TestThinRedisReplayValidation(t *testing.T) {
 			},
 			{
 				name:      "expired hard expiration",
-				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"hard_expires_at": time.Now().Unix() - 1})),
+				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"hard_expires_at": int64(1)})),
 			},
 			{
 				name:      "scope mismatch",
@@ -176,6 +176,10 @@ func TestThinRedisReplayValidation(t *testing.T) {
 			{
 				name:      "policy version mismatch",
 				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"cache_policy_version": "policy-v2"})),
+			},
+			{
+				name:      "request digest mismatch",
+				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"request_digest": "digest-mismatch"})),
 			},
 		}
 		for _, tt := range tests {
@@ -196,4 +200,17 @@ func TestThinRedisReplayValidation(t *testing.T) {
 			})
 		}
 	})
+}
+
+func thinRedisReplayRequestDigest(t *testing.T) string {
+	t.Helper()
+	_, digest, err := BuildOpenAIRequestDigest([]byte(`{
+		"model": "qwen-turbo",
+		"messages": [
+			{"role": "user", "content": "weather?"}
+		],
+		"stream": false
+	}`))
+	require.NoError(t, err)
+	return digest
 }

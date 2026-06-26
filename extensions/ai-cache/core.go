@@ -64,8 +64,23 @@ func handleMaterializedCacheResponse(material ScopedCacheKeyMaterial, response r
 		return
 	}
 
-	log.Infof("[%s] [handleMaterializedCacheResponse] materialized cache record found for key: %s, replay validation is not enabled yet", PLUGIN_NAME, material.RedisKey)
-	proxywasm.ResumeHttpRequest()
+	if !c.RoutePolicy.EnableReplay {
+		log.Infof("[%s] [handleMaterializedCacheResponse] replay is disabled for materialized key: %s", PLUGIN_NAME, material.RedisKey)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
+
+	record, err := LoadAndValidateMaterializedRecord(response.String(), material, stream)
+	if err != nil {
+		log.Warnf("[%s] [handleMaterializedCacheResponse] materialized cache record rejected for key: %s, reason: %v", PLUGIN_NAME, material.RedisKey, err)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
+	if err := replayMaterializedRecord(record, stream, ctx, log); err != nil {
+		log.Warnf("[%s] [handleMaterializedCacheResponse] materialized cache replay failed for key: %s, error: %v", PLUGIN_NAME, material.RedisKey, err)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
 }
 
 // handleCacheResponse processes cache response and handles cache hits and misses.
