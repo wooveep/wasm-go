@@ -25,6 +25,7 @@ const (
 	SKIP_CACHE_HEADER           = "x-higress-skip-ai-cache"
 	CACHE_TENANT_CONTEXT_KEY    = "cacheTenant"
 	CACHE_CONSUMER_CONTEXT_KEY  = "cacheConsumer"
+	CACHE_SESSION_CONTEXT_KEY   = "cacheSession"
 	CACHE_PATH_CONTEXT_KEY      = "cacheRequestPath"
 	CACHE_ROUTE_CONTEXT_KEY     = "cacheRoute"
 	CACHE_MODEL_CONTEXT_KEY     = "cacheModel"
@@ -128,6 +129,8 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log lo
 		}
 		ctx.SetContext(CACHE_TENANT_CONTEXT_KEY, tenant)
 		ctx.SetContext(CACHE_CONSUMER_CONTEXT_KEY, consumer)
+		session, _ := proxywasm.GetHttpRequestHeader(c.SessionHeader)
+		ctx.SetContext(CACHE_SESSION_CONTEXT_KEY, session)
 		ctx.SetContext(CACHE_PATH_CONTEXT_KEY, path)
 	}
 	ctx.SetRequestBodyBufferLimit(DEFAULT_MAX_BODY_BYTES)

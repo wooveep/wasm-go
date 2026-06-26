@@ -36,7 +36,7 @@
 - [x] 4.3 Implement request gating for enabled paths, JSON content type, missing identity, no-store, sensitive, and configured cache bypass.
 - [x] 4.4 Implement scoped request digest and materialized Redis key construction with tenant, optional consumer, route, model, request digest, and policy version inputs.
 - [x] 4.5 Implement Redis materialized record loading and strict replay validation.
-- [ ] 4.6 Implement optional Console `/internal/cache/lookup` callout with short timeout and the same replay validation as Redis records.
+- [x] 4.6 Implement optional Console `/internal/cache/lookup` callout with short timeout and the same replay validation as Redis records.
 - [ ] 4.7 Ensure Redis lookup, Console lookup, invalid records, misses, and timeouts all fail open to upstream.
 
 ## 5. Cache Replay and Response Capture

@@ -141,6 +141,7 @@ func TestPluginConfig_ThinPluginConfigParsing(t *testing.T) {
 		},
 		"tenant_header":        "x-tenant-id",
 		"consumer_header":      "x-consumer-id",
+		"session_header":       "x-session-id",
 		"cache_scope":          "consumer",
 		"cache_policy_version": "policy-v1",
 	}
@@ -171,6 +172,7 @@ func TestPluginConfig_ThinPluginConfigParsing(t *testing.T) {
 
 	require.Equal(t, "x-tenant-id", mustStringField(t, cfg, "TenantHeader"))
 	require.Equal(t, "x-consumer-id", mustStringField(t, cfg, "ConsumerHeader"))
+	require.Equal(t, "x-session-id", mustStringField(t, cfg, "SessionHeader"))
 	require.Equal(t, "consumer", mustStringField(t, cfg, "CacheScope"))
 	require.Equal(t, "policy-v1", mustStringField(t, cfg, "CachePolicyVersion"))
 }
@@ -192,6 +194,7 @@ func TestPluginConfig_ThinPluginConfigDefaults(t *testing.T) {
 	require.Equal(t, "open", mustStringField(t, cfg, "FailPolicy"))
 	require.Equal(t, "x-mse-tenant", mustStringField(t, cfg, "TenantHeader"))
 	require.Equal(t, "x-mse-consumer", mustStringField(t, cfg, "ConsumerHeader"))
+	require.Equal(t, "x-openclaw-session-key", mustStringField(t, cfg, "SessionHeader"))
 	require.Equal(t, false, mustBoolField(t, cfg, "ConsoleLookup", "Enabled"))
 	require.Equal(t, "cache:events", mustStringField(t, cfg, "Event", "RedisStream", "Stream"))
 }

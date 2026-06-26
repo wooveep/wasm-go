@@ -60,6 +60,13 @@ func handleMaterializedCacheResponse(material ScopedCacheKeyMaterial, response r
 	}
 	if response.IsNull() {
 		log.Infof("[%s] [handleMaterializedCacheResponse] materialized cache miss for key: %s", PLUGIN_NAME, material.RedisKey)
+		if shouldUseConsoleLookup(c) {
+			if err := lookupMaterializedRecordFromConsole(material, ctx, c, log, stream); err != nil {
+				log.Warnf("[%s] [handleMaterializedCacheResponse] Console lookup dispatch failed for key: %s, error: %v", PLUGIN_NAME, material.RedisKey, err)
+				proxywasm.ResumeHttpRequest()
+			}
+			return
+		}
 		proxywasm.ResumeHttpRequest()
 		return
 	}

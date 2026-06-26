@@ -100,6 +100,7 @@ type PluginConfig struct {
 	RoutePolicy        RoutePolicyConfig
 	TenantHeader       string
 	ConsumerHeader     string
+	SessionHeader      string
 	CacheScope         string
 	CachePolicyVersion string
 	FailPolicy         string
@@ -213,6 +214,10 @@ func (c *PluginConfig) FromJson(json gjson.Result, log log.Log) {
 	if c.ConsumerHeader == "" {
 		c.ConsumerHeader = "x-mse-consumer"
 	}
+	c.SessionHeader = json.Get("session_header").String()
+	if c.SessionHeader == "" {
+		c.SessionHeader = "x-openclaw-session-key"
+	}
 	c.CacheScope = json.Get("cache_scope").String()
 	if c.CacheScope == "" {
 		c.CacheScope = CACHE_SCOPE_TENANT
@@ -272,6 +277,9 @@ func (c *PluginConfig) FromJsonWithGlobal(json gjson.Result, global PluginConfig
 	}
 	if json.Get("consumer_header").Exists() && json.Get("consumer_header").String() != "" {
 		c.ConsumerHeader = json.Get("consumer_header").String()
+	}
+	if json.Get("session_header").Exists() && json.Get("session_header").String() != "" {
+		c.SessionHeader = json.Get("session_header").String()
 	}
 	if json.Get("cache_scope").Exists() {
 		c.CacheScope = json.Get("cache_scope").String()
