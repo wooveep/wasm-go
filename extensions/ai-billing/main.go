@@ -105,25 +105,26 @@ type RedisStream struct {
 }
 
 type BillingEvent struct {
-	EventID        string       `json:"event_id"`
-	IdempotencyKey string       `json:"idempotency_key"`
-	RequestID      string       `json:"request_id"`
-	Tenant         string       `json:"tenant"`
-	Consumer       string       `json:"consumer"`
-	Route          BillingFact  `json:"route"`
-	Provider       BillingFact  `json:"provider"`
-	QuotaScope     string       `json:"quota_scope"`
-	Model          BillingFact  `json:"model"`
-	RequestPath    string       `json:"request_path"`
-	StatusCode     int          `json:"status_code"`
-	Usage          BillingUsage `json:"usage"`
-	UsageMissing   bool         `json:"usage_missing"`
-	UsageSource    string       `json:"usage_source"`
-	StartTimeMs    int64        `json:"start_time_ms"`
-	EndTimeMs      int64        `json:"end_time_ms"`
-	IsStream       bool         `json:"is_stream"`
-	Cluster        string       `json:"cluster"`
-	PriceVersion   string       `json:"price_version,omitempty"`
+	EventID         string       `json:"event_id"`
+	IdempotencyKey  string       `json:"idempotency_key"`
+	RequestID       string       `json:"request_id"`
+	Tenant          string       `json:"tenant"`
+	Consumer        string       `json:"consumer"`
+	Route           BillingFact  `json:"route"`
+	Provider        BillingFact  `json:"provider"`
+	QuotaScope      string       `json:"quota_scope"`
+	Model           BillingFact  `json:"model"`
+	RequestPath     string       `json:"request_path"`
+	StatusCode      int          `json:"status_code"`
+	Usage           BillingUsage `json:"usage"`
+	UsageMissing    bool         `json:"usage_missing"`
+	UsageSource     string       `json:"usage_source"`
+	StartTimeMs     int64        `json:"start_time_ms"`
+	EndTimeMs       int64        `json:"end_time_ms"`
+	IsStream        bool         `json:"is_stream"`
+	Cluster         string       `json:"cluster"`
+	PriceVersion    string       `json:"price_version,omitempty"`
+	UpstreamInvoked bool         `json:"upstream_invoked"`
 }
 
 type BillingFact struct {
@@ -627,15 +628,23 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 			Total:                totalTokens,
 			Details:              usageDetails,
 		},
-		StartTimeMs:  int64FromContext(ctx.GetContext(ctxStartTime)),
-		EndTimeMs:    time.Now().UnixMilli(),
-		IsStream:     ctx.GetBoolContext(ctxIsStream, isStream),
-		UsageMissing: usageMissing,
-		UsageSource:  usageSource,
-		Cluster:      cluster,
-		PriceVersion: ctx.GetStringContext(ctxPriceVersion, ""),
+		StartTimeMs:     int64FromContext(ctx.GetContext(ctxStartTime)),
+		EndTimeMs:       time.Now().UnixMilli(),
+		IsStream:        ctx.GetBoolContext(ctxIsStream, isStream),
+		UsageMissing:    usageMissing,
+		UsageSource:     usageSource,
+		Cluster:         cluster,
+		PriceVersion:    ctx.GetStringContext(ctxPriceVersion, ""),
+		UpstreamInvoked: trustedUpstreamInvoked(ctx),
 	}
 	return event
+}
+
+func trustedUpstreamInvoked(ctx wrapper.HttpContext) bool {
+	if upstreamInvoked, ok := ctx.GetUserAttribute("upstream_invoked").(bool); ok {
+		return upstreamInvoked
+	}
+	return true
 }
 
 func normalizeBillingUsageTotals(inputTokens, outputTokens, totalTokens int64) (int64, int64, int64) {
