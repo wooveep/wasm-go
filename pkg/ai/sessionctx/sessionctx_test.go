@@ -1,6 +1,7 @@
 package sessionctx_test
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -49,6 +50,9 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	body := []byte(`{
 		"model": "qwen-turbo",
 		"stream": true,
+		"tools": [{"type":"function","function":{"name":"lookup_weather","parameters":{"type":"object"}}}],
+		"tool_choice": {"function":{"name":"lookup_weather"},"type":"function"},
+		"response_format": {"type":"json_object"},
 		"messages": [
 			{"role": "system", "content": "answer tersely"},
 			{"role": "user", "content": "older question"},
@@ -65,20 +69,29 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	require.Equal(t, "qwen-turbo", request.Model)
 	require.True(t, request.Stream)
 	require.Len(t, request.Messages, 4)
+	require.NotEmpty(t, request.Tools)
+	require.NotEmpty(t, request.ToolChoice)
+	require.NotEmpty(t, request.ResponseFormat)
 	require.Equal(t, "latest weather intent", sessionctx.CurrentUserIntent(request.Messages))
 
 	digestA, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
-		Model:    request.Model,
-		Messages: request.Messages,
+		Model:          request.Model,
+		Messages:       request.Messages,
+		Tools:          request.Tools,
+		ToolChoice:     request.ToolChoice,
+		ResponseFormat: request.ResponseFormat,
 	})
 	require.NoError(t, err)
 	require.Regexp(t, regexp.MustCompile(`^[a-f0-9]{64}$`), digestA)
 
-	sameRequest, err := sessionctx.ParseOpenAIChatRequest([]byte(`{"stream":true,"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":[{"text":"latest weather intent","type":"text"},{"image_url":{"url":"https://example.invalid/image.png"},"type":"image_url"}],"role":"user"}],"model":"qwen-turbo"}`))
+	sameRequest, err := sessionctx.ParseOpenAIChatRequest([]byte(`{"stream":true,"response_format":{"type":"json_object"},"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},"tools":[{"function":{"parameters":{"type":"object"},"name":"lookup_weather"},"type":"function"}],"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":[{"text":"latest weather intent","type":"text"},{"image_url":{"url":"https://example.invalid/image.png"},"type":"image_url"}],"role":"user"}],"model":"qwen-turbo"}`))
 	require.NoError(t, err)
 	digestB, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
-		Model:    sameRequest.Model,
-		Messages: sameRequest.Messages,
+		Model:          sameRequest.Model,
+		Messages:       sameRequest.Messages,
+		Tools:          sameRequest.Tools,
+		ToolChoice:     sameRequest.ToolChoice,
+		ResponseFormat: sameRequest.ResponseFormat,
 	})
 	require.NoError(t, err)
 	require.Equal(t, digestA, digestB)
@@ -89,6 +102,16 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotEqual(t, digestA, changedModel)
+
+	changedToolChoice, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
+		Model:          request.Model,
+		Messages:       request.Messages,
+		Tools:          request.Tools,
+		ToolChoice:     jsonRaw(`{"type":"function","function":{"name":"lookup_other"}}`),
+		ResponseFormat: request.ResponseFormat,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, changedToolChoice)
 }
 
 func TestOpenAIResponseParsing(t *testing.T) {
@@ -124,6 +147,18 @@ func TestOpenAIResponseParsing(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, toolResponse.ContainsToolCalls)
 	require.Equal(t, "tool_calls", toolResponse.FinishReason)
+
+	functionResponse, err := sessionctx.ParseOpenAIChatResponse([]byte(`{
+		"choices": [{
+			"message": {
+				"role": "assistant",
+				"function_call": {"name": "legacy_lookup", "arguments": "{}"}
+			},
+			"finish_reason": "function_call"
+		}]
+	}`))
+	require.NoError(t, err)
+	require.True(t, functionResponse.ContainsToolCalls)
 }
 
 func TestStreamCapture(t *testing.T) {
@@ -140,6 +175,16 @@ func TestStreamCapture(t *testing.T) {
 	toolCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
 	require.NoError(t, toolCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]}}]}\n\n")))
 	require.True(t, toolCapture.ContainsToolCalls())
+
+	functionCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
+	require.NoError(t, functionCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"function_call\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}}]}\n\n")))
+	require.True(t, functionCapture.ContainsToolCalls())
+
+	splitCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
+	require.NoError(t, splitCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"split")))
+	require.NoError(t, splitCapture.AppendSSE([]byte(" chunk\"},\"finish_reason\":\"stop\"}]}\n\n")))
+	require.Equal(t, "split chunk", splitCapture.AssistantContent())
+	require.Equal(t, "stop", splitCapture.FinishReason())
 }
 
 func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
@@ -154,6 +199,15 @@ func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
 	}
 	event := sessionctx.NewEventEnvelope(input)
 	repeated := sessionctx.NewEventEnvelope(input)
+	delayed := sessionctx.NewEventEnvelope(sessionctx.EventEnvelopeInput{
+		EventKind:     "cache",
+		Tenant:        "tenant-a",
+		Consumer:      "consumer-a",
+		RequestID:     "request-a",
+		RequestDigest: "digest-a",
+		StartedAtMS:   2000,
+		EndedAtMS:     2500,
+	})
 
 	require.NotEmpty(t, event.EventID)
 	require.Equal(t, "cache", event.EventKind)
@@ -164,8 +218,9 @@ func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
 	require.EqualValues(t, 1000, event.StartedAtMS)
 	require.EqualValues(t, 1500, event.EndedAtMS)
 	require.Equal(t, event.IdempotencyKey, repeated.IdempotencyKey)
+	require.Equal(t, event.IdempotencyKey, delayed.IdempotencyKey)
 
-	redacted := sessionctx.RedactForLog("authorization=credential-one x-api-key=credential-two x-internal-bearer=credential-three x-redis-password=credential-four x-provider-api-key=credential-five route=chat")
+	redacted := sessionctx.RedactForLog(`authorization=Bearer credential-one x-api-key: credential-two "x-internal-bearer":"credential-three" x-redis-password=credential-four x-provider-api-key=credential-five route=chat`)
 	for _, item := range []struct {
 		label string
 		value string
@@ -185,4 +240,8 @@ func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
 func requireStringExcludes(t *testing.T, text, label, value string) {
 	t.Helper()
 	require.Falsef(t, strings.Contains(text, value), "redacted output leaked %s", label)
+}
+
+func jsonRaw(value string) json.RawMessage {
+	return json.RawMessage(value)
 }
