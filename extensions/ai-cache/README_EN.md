@@ -40,6 +40,155 @@ Depending on whether semantic caching is needed, you can configure component com
 
 If you do not configure a related component, you can ignore the `required` fields of that component.
 
+## Production Thin Cache Path
+
+For Modelfusion production replay, `ai-cache` can run as a thin gateway plugin.
+In this mode the gateway does not generate embeddings, run vector search, write
+PostgreSQL, calculate prices, settle billing, repair records, delete durable
+state, or own provider credentials. Console owns those responsibilities and
+precomputes structured replay records.
+
+The thin path responsibilities in the gateway are:
+
+- Build a scoped request digest for OpenAI-compatible requests.
+- Load a materialized record from Redis and optionally call Console
+  `/internal/cache/lookup` after a Redis miss.
+- Validate replay records before local response replay.
+- Replay only OpenAI-compatible structured responses or stream chunks.
+- Emit one `CacheEvent` JSON payload to Redis Stream after eligible upstream
+  responses finish.
+- Fail open on lookup, validation, Console, or Redis Stream delivery failures.
+
+Example thin cache configuration:
+
+```yaml
+materialized_lookup:
+  redis:
+    enabled: true
+    service_name: redis-stack-server.dns
+    service_port: 6379
+    key_prefix: cache:materialized:
+    timeout: 80
+console_lookup:
+  enabled: true
+  service_name: modelfusion-console.dns
+  service_port: 8080
+  path: /internal/cache/lookup
+  timeout: 50
+redis_stream:
+  enabled: true
+  service_name: redis-stack-server.dns
+  service_port: 6379
+  stream: cache:events
+  field: event
+  timeout: 120
+route_policy:
+  enable_redis_lookup: true
+  enable_console_lookup: true
+  enable_replay: true
+  enable_bypass: false
+  enabled_path_suffixes:
+  - /v1/chat/completions
+  memory:
+    enabled: true
+    cache_mode: policy_digest
+    policy_version: memory-policy-v1
+    digest_header: x-mse-memory-digest
+tenant_header: x-mse-tenant
+consumer_header: x-mse-consumer
+session_header: x-mse-session
+cache_scope: consumer
+cache_policy_version: cache-policy-v1
+fail_policy: open
+```
+
+Thin cache fields:
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| materialized_lookup.redis.enabled | bool | false | Enables Redis materialized replay lookup |
+| materialized_lookup.redis.service_name | string | - | Redis service for materialized records |
+| materialized_lookup.redis.service_port | int | 6379 | Redis service port |
+| materialized_lookup.redis.key_prefix | string | - | Prefix for materialized record keys |
+| materialized_lookup.redis.timeout | int | - | Redis lookup timeout in milliseconds |
+| console_lookup.enabled | bool | false | Enables optional Console lookup after Redis miss |
+| console_lookup.service_name | string | - | Console service name |
+| console_lookup.service_port | int | - | Console service port |
+| console_lookup.path | string | `/internal/cache/lookup` | Console lookup path |
+| console_lookup.timeout | int | - | Console lookup timeout in milliseconds |
+| redis_stream.enabled | bool | false | Enables `CacheEvent` delivery |
+| redis_stream.service_name | string | - | Redis service for events |
+| redis_stream.service_port | int | 6379 | Redis event service port |
+| redis_stream.stream | string | `cache:events` | Redis Stream name |
+| redis_stream.field | string | `event` | Redis Stream field name |
+| redis_stream.timeout | int | - | Redis event timeout in milliseconds |
+| route_policy.enable_redis_lookup | bool | true | Allows Redis materialized lookup |
+| route_policy.enable_console_lookup | bool | console_lookup.enabled | Allows Console fallback lookup |
+| route_policy.enable_replay | bool | true | Allows local replay after validated hit |
+| route_policy.enable_bypass | bool | false | Bypasses thin cache for the route |
+| route_policy.enabled_path_suffixes | []string | nil | OpenAI-compatible path suffixes to cache |
+| route_policy.memory.cache_mode | string | `policy_digest` | `policy_digest` includes memory policy and digest in cache policy material; `bypass` skips cache |
+| route_policy.memory.policy_version | string | - | Memory policy version used in memory-aware cache keys |
+| route_policy.memory.digest_header | string | `x-mse-memory-digest` | Header produced by `ai-memory` for assembled memory digest |
+| tenant_header | string | `x-mse-tenant` | Tenant identity header |
+| consumer_header | string | `x-mse-consumer` | Consumer identity header |
+| session_header | string | `x-openclaw-session-key` | Session identity header |
+| cache_scope | string | `tenant` | `tenant` or `consumer`; memory-aware routes should use `consumer` |
+| cache_policy_version | string | - | Required when thin cache behavior is enabled |
+| fail_policy | string | `open` | Current production behavior is fail-open |
+
+Materialized records are Console-owned Redis values. They use
+`schema_version: ai-cache.materialized.v1` and must include tenant, optional
+consumer, route, model, cache scope, cache policy version, request digest,
+soft and hard expirations, `usage`, `finish_reason`, and either `response` for
+non-stream replay or `stream_replayable: true` plus `stream_chunks` for stream
+replay. The plugin rejects unsupported schema versions, expired records, scope,
+tenant, consumer, route, model, policy, digest, and malformed payload mismatches.
+
+`CacheEvent` delivery uses:
+
+```text
+XADD cache:events * event <CacheEvent JSON>
+```
+
+The event contains identity, route, model, request digest, policy, status,
+stream flags, gate flags, timing, and plugin version. When policy allows it,
+the event may include user content, assistant content, usage, finish reason, and
+safe provider/runtime facts. Authorization headers, API keys, bearer tokens,
+Redis credentials, provider credentials, and sensitive raw content must not be
+included. Redis Stream failures keep the user response unchanged.
+
+Console owns materialization, embedding, vector search, durable replay records,
+semantic lookup, pricing, settlement, repair, deletion, and reconciliation.
+Backend state must remain isolated: separate PostgreSQL tables, Redis streams,
+Redis key prefixes, vector collections, payload schemas, retention/deletion
+policies, management APIs, and authorization checks for cache and memory.
+
+Platform-owned cache and memory model work should use Console-managed internal
+AI Routes such as `ai-cache.embedding`, `ai-cache.rerank`,
+`ai-memory.digest`, and `ai-memory.embedding`. Those calls should emit
+`event_kind=internal_cost` for platform attribution, not customer usage
+statements.
+
+When `ai-memory` affects the answer, run `ai-memory` before `ai-cache`.
+Recommended cache policy options are consumer-scoped cache, `policy_digest`
+keys that include memory policy version and assembled memory digest, or
+`bypass` until Console materializes memory-aware replay records.
+
+On cache replay, `ai-cache` sets trusted gateway facts, including
+`upstream_invoked=false`, for `ai-billing`. Upstream provider responses emit
+`upstream_invoked=true`. These facts are not added to the user-visible OpenAI
+response body, and user-supplied request or response body fields cannot control
+them.
+
+## Legacy Compatibility Path
+
+The `vector`, `embedding`, and `cache` configuration below describes the legacy
+online embedding/vector or text-only compatibility path. It may remain useful
+for local or explicit non-production compatibility, but Modelfusion production
+cache replay should use the structured thin path above with Console-owned
+materialization.
+
 ## Vector Database Service (vector)
 
 | Name | Type | Requirement | Default | Description |

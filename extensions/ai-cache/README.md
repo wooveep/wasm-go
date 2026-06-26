@@ -46,6 +46,145 @@ LLM 结果缓存插件，默认配置方式可以直接用于 openai 协议的�
 
 注意若不配置相关组件，则可以忽略相应组件的`required`字段。
 
+## 生产薄缓存路径
+
+在 Modelfusion 生产回放场景中，`ai-cache` 可以作为薄网关插件运行。
+该模式下网关不生成 embedding、不执行向量检索、不写 PostgreSQL、不计算价格、
+不做账单结算、不修复或删除持久状态，也不持有上游模型凭据。上述职责由
+Console 负责，Console 预先生成结构化回放记录。
+
+薄缓存模式中网关负责：
+
+- 为 OpenAI 兼容请求生成带作用域的请求摘要。
+- 从 Redis 读取物化回放记录，并可在 Redis miss 后调用 Console
+  `/internal/cache/lookup`。
+- 在本地回放前严格校验回放记录。
+- 只回放 OpenAI 兼容的结构化响应或流式 chunk。
+- 在符合条件的上游响应结束后向 Redis Stream 写入一个 `CacheEvent` JSON。
+- Redis、Console、校验或事件投递失败时默认 fail-open，继续上游请求或保持用户响应不变。
+
+薄缓存配置示例：
+
+```yaml
+materialized_lookup:
+  redis:
+    enabled: true
+    service_name: redis-stack-server.dns
+    service_port: 6379
+    key_prefix: cache:materialized:
+    timeout: 80
+console_lookup:
+  enabled: true
+  service_name: modelfusion-console.dns
+  service_port: 8080
+  path: /internal/cache/lookup
+  timeout: 50
+redis_stream:
+  enabled: true
+  service_name: redis-stack-server.dns
+  service_port: 6379
+  stream: cache:events
+  field: event
+  timeout: 120
+route_policy:
+  enable_redis_lookup: true
+  enable_console_lookup: true
+  enable_replay: true
+  enable_bypass: false
+  enabled_path_suffixes:
+  - /v1/chat/completions
+  memory:
+    enabled: true
+    cache_mode: policy_digest
+    policy_version: memory-policy-v1
+    digest_header: x-mse-memory-digest
+tenant_header: x-mse-tenant
+consumer_header: x-mse-consumer
+session_header: x-mse-session
+cache_scope: consumer
+cache_policy_version: cache-policy-v1
+fail_policy: open
+```
+
+薄缓存字段：
+
+| Name | Type | Default | Description |
+| --- | --- | --- | --- |
+| materialized_lookup.redis.enabled | bool | false | 启用 Redis 物化回放查询 |
+| materialized_lookup.redis.service_name | string | - | 物化记录 Redis 服务名 |
+| materialized_lookup.redis.service_port | int | 6379 | Redis 服务端口 |
+| materialized_lookup.redis.key_prefix | string | - | 物化记录 key 前缀 |
+| materialized_lookup.redis.timeout | int | - | Redis 查询超时时间，单位毫秒 |
+| console_lookup.enabled | bool | false | Redis miss 后启用可选 Console 查询 |
+| console_lookup.service_name | string | - | Console 服务名 |
+| console_lookup.service_port | int | - | Console 服务端口 |
+| console_lookup.path | string | `/internal/cache/lookup` | Console 查询路径 |
+| console_lookup.timeout | int | - | Console 查询超时时间，单位毫秒 |
+| redis_stream.enabled | bool | false | 启用 `CacheEvent` 投递 |
+| redis_stream.service_name | string | - | 事件 Redis 服务名 |
+| redis_stream.service_port | int | 6379 | 事件 Redis 服务端口 |
+| redis_stream.stream | string | `cache:events` | Redis Stream 名称 |
+| redis_stream.field | string | `event` | Redis Stream 字段名 |
+| redis_stream.timeout | int | - | 事件投递超时时间，单位毫秒 |
+| route_policy.enable_redis_lookup | bool | true | 允许 Redis 物化查询 |
+| route_policy.enable_console_lookup | bool | console_lookup.enabled | 允许 Console fallback 查询 |
+| route_policy.enable_replay | bool | true | 校验命中后允许本地回放 |
+| route_policy.enable_bypass | bool | false | 对当前路由绕过薄缓存 |
+| route_policy.enabled_path_suffixes | []string | nil | 允许缓存的 OpenAI 兼容路径后缀 |
+| route_policy.memory.cache_mode | string | `policy_digest` | `policy_digest` 将 memory policy 和 digest 纳入缓存 policy 材料；`bypass` 跳过缓存 |
+| route_policy.memory.policy_version | string | - | memory-aware 缓存 key 使用的 memory policy 版本 |
+| route_policy.memory.digest_header | string | `x-mse-memory-digest` | `ai-memory` 输出的组装 memory digest 请求头 |
+| tenant_header | string | `x-mse-tenant` | 租户身份请求头 |
+| consumer_header | string | `x-mse-consumer` | 消费者身份请求头 |
+| session_header | string | `x-openclaw-session-key` | 会话身份请求头 |
+| cache_scope | string | `tenant` | `tenant` 或 `consumer`；memory-aware 路由建议使用 `consumer` |
+| cache_policy_version | string | - | 启用薄缓存时必填 |
+| fail_policy | string | `open` | 当前生产行为为 fail-open |
+
+物化记录是 Console 拥有的 Redis value。记录使用
+`schema_version: ai-cache.materialized.v1`，必须包含 tenant、可选
+consumer、route、model、cache scope、cache policy version、request digest、
+soft/hard 过期时间、`usage`、`finish_reason`，以及非流式回放的 `response`，
+或流式回放的 `stream_replayable: true` 和 `stream_chunks`。插件会拒绝 schema
+版本不支持、过期、scope/tenant/consumer/route/model/policy/digest 不匹配以及
+payload 格式错误的记录。
+
+`CacheEvent` 使用如下 Redis Stream 写入：
+
+```text
+XADD cache:events * event <CacheEvent JSON>
+```
+
+事件包含身份、路由、模型、请求摘要、policy、状态码、流式标记、gate 标记、
+开始/结束时间和插件版本。策略允许时，事件可以包含用户内容、助手内容、usage、
+finish reason 以及安全的 provider/runtime 事实。事件不得包含 Authorization
+请求头、API Key、内部 bearer token、Redis 凭据、上游 provider 凭据或敏感原文。
+Redis Stream 投递失败时用户响应保持不变。
+
+Console 负责 materialization、embedding、vector search、持久回放记录、
+semantic lookup、pricing、settlement、repair、deletion 和 reconciliation。
+后端状态必须隔离：cache 和 memory 使用独立 PostgreSQL 表、Redis Stream、
+Redis key 前缀、向量集合、payload schema、保留/删除策略、管理 API 和鉴权边界。
+
+平台自有的 cache 和 memory 模型工作应通过 Console 管理的内部 AI Route 调用，
+例如 `ai-cache.embedding`、`ai-cache.rerank`、`ai-memory.digest`、
+`ai-memory.embedding`。这些调用应发出 `event_kind=internal_cost` 用于平台成本归因，
+不能成为普通客户 usage 账单。
+
+当 `ai-memory` 会影响回答时，推荐插件顺序为 `ai-memory` 先于 `ai-cache`。
+推荐的缓存策略包括 consumer 级作用域、使用 `policy_digest` 将 memory policy
+version 和组装 memory digest 纳入 key/policy 材料，或在 Console 尚未物化
+memory-aware 回放记录前使用 `bypass`。
+
+缓存回放时，`ai-cache` 会设置可信网关事实，例如 `upstream_invoked=false`，供
+`ai-billing` 消费。真实上游 provider 调用会发出 `upstream_invoked=true`。这些事实
+不会加入用户可见的 OpenAI 响应体，用户请求或响应体中的同名字段也不能控制它们。
+
+## 兼容性路径
+
+下方 `vector`、`embedding`、`cache` 配置描述的是旧的在线 embedding/vector 或
+文本匹配兼容路径。该路径仍可用于本地或显式非生产兼容场景，但 Modelfusion 生产
+缓存回放应使用上文的结构化薄缓存路径，并由 Console 负责物化。
 
 ## 向量数据库服务（vector）
 | Name | Type | Requirement | Default | Description |
