@@ -225,6 +225,91 @@ func (c *PluginConfig) FromJson(json gjson.Result, log log.Log) {
 	convertLegacyMapFields(c, json, log)
 }
 
+func (c *PluginConfig) FromJsonWithGlobal(json gjson.Result, global PluginConfig, log log.Log) {
+	if !global.hasProviderConfigs() {
+		c.FromJson(json, log)
+		return
+	}
+	*c = global
+	c.applyProviderOverrides(json)
+	consoleLookupEnabledOverride := json.Get("console_lookup.enabled").Exists()
+	routePolicyConsoleOverride := json.Get("route_policy.enable_console_lookup").Exists()
+	if json.Get("cacheKeyStrategy").Exists() {
+		c.CacheKeyStrategy = json.Get("cacheKeyStrategy").String()
+	}
+	if json.Get("cacheKeyFrom").Exists() {
+		c.CacheKeyFrom = json.Get("cacheKeyFrom").String()
+	}
+	if json.Get("cacheValueFrom").Exists() {
+		c.CacheValueFrom = json.Get("cacheValueFrom").String()
+	}
+	if json.Get("cacheStreamValueFrom").Exists() {
+		c.CacheStreamValueFrom = json.Get("cacheStreamValueFrom").String()
+	}
+	if json.Get("cacheToolCallsFrom").Exists() {
+		c.CacheToolCallsFrom = json.Get("cacheToolCallsFrom").String()
+	}
+	if json.Get("responseTemplate").Exists() {
+		c.ResponseTemplate = json.Get("responseTemplate").String()
+	}
+	if json.Get("streamResponseTemplate").Exists() {
+		c.StreamResponseTemplate = json.Get("streamResponseTemplate").String()
+	}
+	if json.Get("enableSemanticCache").Exists() {
+		c.EnableSemanticCache = json.Get("enableSemanticCache").Bool()
+	}
+	c.MaterializedLookup.Redis = mergeRedisEndpoint(c.MaterializedLookup.Redis, json.Get("materialized_lookup.redis"))
+	c.ConsoleLookup = mergeConsoleLookup(c.ConsoleLookup, json.Get("console_lookup"))
+	c.Event.RedisStream = mergeRedisStream(c.Event.RedisStream, json.Get("redis_stream"))
+	c.RoutePolicy = mergeRoutePolicy(c.RoutePolicy, json.Get("route_policy"))
+	if consoleLookupEnabledOverride && !routePolicyConsoleOverride {
+		c.RoutePolicy.EnableConsoleLookup = c.ConsoleLookup.Enabled
+	}
+	if json.Get("tenant_header").Exists() && json.Get("tenant_header").String() != "" {
+		c.TenantHeader = json.Get("tenant_header").String()
+	}
+	if json.Get("consumer_header").Exists() && json.Get("consumer_header").String() != "" {
+		c.ConsumerHeader = json.Get("consumer_header").String()
+	}
+	if json.Get("cache_scope").Exists() {
+		c.CacheScope = json.Get("cache_scope").String()
+	}
+	if json.Get("cache_policy_version").Exists() {
+		c.CachePolicyVersion = json.Get("cache_policy_version").String()
+	}
+	if json.Get("fail_policy").Exists() {
+		c.FailPolicy = json.Get("fail_policy").String()
+	}
+	convertLegacyMapFields(c, json, log)
+}
+
+func (c *PluginConfig) hasProviderConfigs() bool {
+	return c.embeddingProviderConfig != nil &&
+		c.vectorProviderConfig != nil &&
+		c.cacheProviderConfig != nil
+}
+
+func (c *PluginConfig) applyProviderOverrides(json gjson.Result) {
+	if json.Get("embedding").Exists() {
+		c.embeddingProviderConfig = &embedding.ProviderConfig{}
+		c.embeddingProviderConfig.FromJson(json.Get("embedding"))
+		c.embeddingProvider = nil
+	}
+	if json.Get("vector").Exists() {
+		c.vectorProviderConfig = &vector.ProviderConfig{}
+		c.vectorProviderConfig.FromJson(json.Get("vector"))
+		c.vectorProvider = nil
+	}
+	if json.Get("cache").Exists() || json.Get("redis").Exists() {
+		c.cacheProviderConfig = &cache.ProviderConfig{}
+		c.cacheProviderConfig.FromJson(json.Get("cache"))
+		if json.Get("redis").Exists() {
+			c.cacheProviderConfig.ConvertLegacyJson(json)
+		}
+		c.cacheProvider = nil
+	}
+}
+
 func (c *PluginConfig) Validate() error {
 	// if cache provider is configured, validate it
 	if c.cacheProviderConfig.GetProviderType() != "" {
@@ -381,6 +466,97 @@ func jsonStringArray(value gjson.Result) []string {
 		out = append(out, item.String())
 	}
 	return out
+}
+
+func mergeRedisEndpoint(base RedisEndpointConfig, value gjson.Result) RedisEndpointConfig {
+	if !value.Exists() {
+		return base
+	}
+	if value.Get("enabled").Exists() {
+		base.Enabled = value.Get("enabled").Bool()
+	}
+	if value.Get("service_name").Exists() {
+		base.ServiceName = value.Get("service_name").String()
+	}
+	if value.Get("service_port").Exists() {
+		base.ServicePort = int(value.Get("service_port").Int())
+	}
+	if value.Get("key_prefix").Exists() {
+		base.KeyPrefix = value.Get("key_prefix").String()
+	}
+	if value.Get("timeout").Exists() {
+		base.Timeout = int(value.Get("timeout").Int())
+	}
+	return base
+}
+
+func mergeConsoleLookup(base ConsoleLookupConfig, value gjson.Result) ConsoleLookupConfig {
+	if !value.Exists() {
+		return base
+	}
+	if value.Get("enabled").Exists() {
+		base.Enabled = value.Get("enabled").Bool()
+	}
+	if value.Get("service_name").Exists() {
+		base.ServiceName = value.Get("service_name").String()
+	}
+	if value.Get("service_port").Exists() {
+		base.ServicePort = int(value.Get("service_port").Int())
+	}
+	if value.Get("path").Exists() {
+		base.Path = value.Get("path").String()
+	}
+	if value.Get("timeout").Exists() {
+		base.Timeout = int(value.Get("timeout").Int())
+	}
+	return base
+}
+
+func mergeRedisStream(base RedisStreamConfig, value gjson.Result) RedisStreamConfig {
+	if !value.Exists() {
+		return base
+	}
+	if value.Get("enabled").Exists() {
+		base.Enabled = value.Get("enabled").Bool()
+	}
+	if value.Get("service_name").Exists() {
+		base.ServiceName = value.Get("service_name").String()
+	}
+	if value.Get("service_port").Exists() {
+		base.ServicePort = int(value.Get("service_port").Int())
+	}
+	if value.Get("stream").Exists() {
+		base.Stream = value.Get("stream").String()
+	}
+	if value.Get("field").Exists() {
+		base.Field = value.Get("field").String()
+	}
+	if value.Get("timeout").Exists() {
+		base.Timeout = int(value.Get("timeout").Int())
+	}
+	return base
+}
+
+func mergeRoutePolicy(base RoutePolicyConfig, value gjson.Result) RoutePolicyConfig {
+	if !value.Exists() {
+		return base
+	}
+	if value.Get("enable_redis_lookup").Exists() {
+		base.EnableRedisLookup = value.Get("enable_redis_lookup").Bool()
+	}
+	if value.Get("enable_console_lookup").Exists() {
+		base.EnableConsoleLookup = value.Get("enable_console_lookup").Bool()
+	}
+	if value.Get("enable_replay").Exists() {
+		base.EnableReplay = value.Get("enable_replay").Bool()
+	}
+	if value.Get("enable_bypass").Exists() {
+		base.EnableBypass = value.Get("enable_bypass").Bool()
+	}
+	if value.Get("enabled_path_suffixes").Exists() {
+		base.EnabledPathSuffixes = jsonStringArray(value.Get("enabled_path_suffixes"))
+	}
+	return base
 }
 
 func validateRedisEndpoint(cfg RedisEndpointConfig) error {

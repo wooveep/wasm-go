@@ -358,6 +358,134 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, "messages.@reverse.0.content", config.CacheKeyFrom)
 		})
 
+		t.Run("thin route override inherits global external targets", func(t *testing.T) {
+			cfgBytes, err := json.Marshal(map[string]interface{}{
+				"materialized_lookup": map[string]interface{}{
+					"redis": map[string]interface{}{
+						"enabled":      true,
+						"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+						"service_port": 6379,
+						"key_prefix":   "cache:materialized:",
+						"timeout":      80,
+					},
+				},
+				"console_lookup": map[string]interface{}{
+					"enabled":      true,
+					"service_name": "modelfusion-console.higress-system.svc.cluster.local",
+					"service_port": 8080,
+					"path":         "/internal/cache/lookup",
+					"timeout":      50,
+				},
+				"redis_stream": map[string]interface{}{
+					"enabled":      true,
+					"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+					"service_port": 6379,
+					"stream":       "cache:events",
+					"field":        "event",
+					"timeout":      120,
+				},
+				"cache_policy_version": "policy-v1",
+				"_rules_": []map[string]interface{}{{
+					"_match_route_": []string{"route-a"},
+					"route_policy": map[string]interface{}{
+						"enable_console_lookup": false,
+						"enable_replay":         false,
+						"enable_bypass":         true,
+						"enabled_path_suffixes": []string{"/v1/messages"},
+					},
+					"cache_scope": "consumer",
+				}},
+			})
+			require.NoError(t, err)
+
+			host, status := test.NewTestHost(cfgBytes)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-a"))
+
+			configRaw, err := host.GetMatchConfig()
+			require.NoError(t, err)
+			cfg, ok := configRaw.(*config.PluginConfig)
+			require.True(t, ok, "config should be of type *PluginConfig")
+			require.Equal(t, true, cfg.MaterializedLookup.Redis.Enabled)
+			require.Equal(t, "redis-stack-server.higress-system.svc.cluster.local", cfg.MaterializedLookup.Redis.ServiceName)
+			require.Equal(t, "cache:materialized:", cfg.MaterializedLookup.Redis.KeyPrefix)
+			require.Equal(t, true, cfg.ConsoleLookup.Enabled)
+			require.Equal(t, "modelfusion-console.higress-system.svc.cluster.local", cfg.ConsoleLookup.ServiceName)
+			require.Equal(t, "cache:events", cfg.Event.RedisStream.Stream)
+			require.Equal(t, false, cfg.RoutePolicy.EnableConsoleLookup)
+			require.Equal(t, false, cfg.RoutePolicy.EnableReplay)
+			require.Equal(t, true, cfg.RoutePolicy.EnableBypass)
+			require.Equal(t, []string{"/v1/messages"}, cfg.RoutePolicy.EnabledPathSuffixes)
+			require.Equal(t, "consumer", cfg.CacheScope)
+			require.Equal(t, "policy-v1", cfg.CachePolicyVersion)
+		})
+
+		t.Run("thin rules-only config parses route as full config", func(t *testing.T) {
+			cfgBytes, err := json.Marshal(map[string]interface{}{
+				"_rules_": []map[string]interface{}{{
+					"_match_route_": []string{"route-only"},
+					"materialized_lookup": map[string]interface{}{
+						"redis": map[string]interface{}{
+							"enabled":      true,
+							"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+							"service_port": 6379,
+							"key_prefix":   "cache:materialized:",
+							"timeout":      80,
+						},
+					},
+					"cache_policy_version": "policy-v1",
+				}},
+			})
+			require.NoError(t, err)
+
+			host, status := test.NewTestHost(cfgBytes)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-only"))
+
+			configRaw, err := host.GetMatchConfig()
+			require.NoError(t, err)
+			cfg, ok := configRaw.(*config.PluginConfig)
+			require.True(t, ok, "config should be of type *PluginConfig")
+			require.Equal(t, true, cfg.MaterializedLookup.Redis.Enabled)
+			require.Equal(t, config.CACHE_SCOPE_TENANT, cfg.CacheScope)
+			require.Equal(t, config.FAIL_POLICY_OPEN, cfg.FailPolicy)
+		})
+
+		t.Run("route legacy cache provider overrides global provider", func(t *testing.T) {
+			cfgBytes, err := json.Marshal(map[string]interface{}{
+				"cache": map[string]interface{}{
+					"type":           "redis",
+					"serviceName":    "global-redis.static",
+					"servicePort":    6379,
+					"cacheKeyPrefix": "global-prefix:",
+				},
+				"_rules_": []map[string]interface{}{{
+					"_match_route_": []string{"route-a"},
+					"cache": map[string]interface{}{
+						"type":           "redis",
+						"serviceName":    "route-redis.static",
+						"servicePort":    6379,
+						"cacheKeyPrefix": "route-prefix:",
+					},
+				}},
+			})
+			require.NoError(t, err)
+
+			host, status := test.NewTestHost(cfgBytes)
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("route-a"))
+
+			configRaw, err := host.GetMatchConfig()
+			require.NoError(t, err)
+			cfg, ok := configRaw.(*config.PluginConfig)
+			require.True(t, ok, "config should be of type *PluginConfig")
+			require.NotNil(t, cfg.GetCacheProvider())
+			require.Equal(t, "route-prefix:", cfg.GetCacheProvider().GetCacheKeyPrefix())
+		})
+
 		// 测试无效的缓存键策略
 		t.Run("invalid cache key strategy", func(t *testing.T) {
 			host, status := test.NewTestHost(invalidCacheKeyStrategyConfig)

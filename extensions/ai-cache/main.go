@@ -33,7 +33,7 @@ func init() {
 	// CreateClient()
 	wrapper.SetCtx(
 		PLUGIN_NAME,
-		wrapper.ParseConfigBy(parseConfig),
+		wrapper.ParseOverrideConfigBy(parseConfig, parseOverrideConfig),
 		wrapper.ProcessRequestHeadersBy(onHttpRequestHeaders),
 		wrapper.ProcessRequestBodyBy(onHttpRequestBody),
 		wrapper.ProcessResponseHeadersBy(onHttpResponseHeaders),
@@ -52,6 +52,18 @@ func parseConfig(json gjson.Result, c *config.PluginConfig, log log.Log) error {
 	// Note that initializing the client during the parseConfig phase may cause errors, such as Redis not being usable in Docker Compose.
 	if err := c.Complete(log); err != nil {
 		log.Errorf("complete config failed: %v", err)
+		return err
+	}
+	return nil
+}
+
+func parseOverrideConfig(json gjson.Result, global config.PluginConfig, c *config.PluginConfig, log log.Log) error {
+	c.FromJsonWithGlobal(json, global, log)
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if err := c.Complete(log); err != nil {
+		log.Errorf("complete override config failed: %v", err)
 		return err
 	}
 	return nil

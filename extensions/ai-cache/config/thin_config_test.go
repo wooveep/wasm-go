@@ -265,3 +265,209 @@ func TestPluginConfig_ThinPluginConfigValidation(t *testing.T) {
 	cfg = parseThinConfig(t, missingStreamTarget)
 	require.Error(t, cfg.Validate())
 }
+
+func TestPluginConfig_ThinPluginRouteOverrideInheritsExternalTargets(t *testing.T) {
+	globalConfig := map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"console_lookup": map[string]interface{}{
+			"enabled":      true,
+			"service_name": "modelfusion-console.higress-system.svc.cluster.local",
+			"service_port": 8080,
+			"path":         "/internal/cache/lookup",
+			"timeout":      50,
+		},
+		"redis_stream": map[string]interface{}{
+			"enabled":      true,
+			"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+			"service_port": 6379,
+			"stream":       "cache:events",
+			"field":        "event",
+			"timeout":      120,
+		},
+		"route_policy": map[string]interface{}{
+			"enable_redis_lookup":   true,
+			"enable_console_lookup": true,
+			"enable_replay":         true,
+			"enabled_path_suffixes": []string{"/v1/chat/completions"},
+		},
+		"cache_policy_version": "policy-v1",
+	}
+	globalBytes, err := json.Marshal(globalConfig)
+	require.NoError(t, err)
+	global := parseThinConfig(t, globalBytes)
+	require.NoError(t, global.Validate())
+
+	routeConfig := map[string]interface{}{
+		"_match_route_": []string{"route-a"},
+		"route_policy": map[string]interface{}{
+			"enable_console_lookup": false,
+			"enable_replay":         false,
+			"enable_bypass":         true,
+			"enabled_path_suffixes": []string{"/v1/messages"},
+		},
+		"cache_scope": "consumer",
+	}
+	routeBytes, err := json.Marshal(routeConfig)
+	require.NoError(t, err)
+
+	var route PluginConfig
+	route.FromJsonWithGlobal(gjson.ParseBytes(routeBytes), global, noopLogger{})
+	require.NoError(t, route.Validate())
+
+	require.Equal(t, global.MaterializedLookup.Redis, route.MaterializedLookup.Redis)
+	require.Equal(t, global.ConsoleLookup.ServiceName, route.ConsoleLookup.ServiceName)
+	require.Equal(t, global.ConsoleLookup.ServicePort, route.ConsoleLookup.ServicePort)
+	require.Equal(t, global.ConsoleLookup.Path, route.ConsoleLookup.Path)
+	require.Equal(t, global.ConsoleLookup.Timeout, route.ConsoleLookup.Timeout)
+	require.Equal(t, global.Event.RedisStream, route.Event.RedisStream)
+	require.Equal(t, false, route.RoutePolicy.EnableConsoleLookup)
+	require.Equal(t, false, route.RoutePolicy.EnableReplay)
+	require.Equal(t, true, route.RoutePolicy.EnableBypass)
+	require.Equal(t, []string{"/v1/messages"}, route.RoutePolicy.EnabledPathSuffixes)
+	require.Equal(t, "consumer", route.CacheScope)
+	require.Equal(t, "policy-v1", route.CachePolicyVersion)
+}
+
+func TestPluginConfig_ThinPluginRuleOnlyConfigInitializesProviderConfigs(t *testing.T) {
+	routeConfig := map[string]interface{}{
+		"_match_route_": []string{"route-only"},
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"cache_policy_version": "policy-v1",
+	}
+	routeBytes, err := json.Marshal(routeConfig)
+	require.NoError(t, err)
+
+	var route PluginConfig
+	var validateErr error
+	require.NotPanics(t, func() {
+		route.FromJsonWithGlobal(gjson.ParseBytes(routeBytes), PluginConfig{}, noopLogger{})
+		validateErr = route.Validate()
+	})
+	require.NoError(t, validateErr)
+	require.Equal(t, true, route.MaterializedLookup.Redis.Enabled)
+	require.Equal(t, CACHE_SCOPE_TENANT, route.CacheScope)
+	require.Equal(t, FAIL_POLICY_OPEN, route.FailPolicy)
+}
+
+func TestPluginConfig_ThinPluginRouteOverrideRejectsEmptyPolicyVersion(t *testing.T) {
+	globalConfig := map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"cache_policy_version": "policy-v1",
+	}
+	globalBytes, err := json.Marshal(globalConfig)
+	require.NoError(t, err)
+	global := parseThinConfig(t, globalBytes)
+	require.NoError(t, global.Validate())
+
+	routeConfig := map[string]interface{}{
+		"_match_route_":        []string{"route-a"},
+		"cache_policy_version": "",
+	}
+	routeBytes, err := json.Marshal(routeConfig)
+	require.NoError(t, err)
+
+	var route PluginConfig
+	route.FromJsonWithGlobal(gjson.ParseBytes(routeBytes), global, noopLogger{})
+	require.ErrorContains(t, route.Validate(), "cache_policy_version")
+}
+
+func TestPluginConfig_ThinPluginRouteConsoleLookupOverrideUpdatesPolicyDefault(t *testing.T) {
+	globalConfig := map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"cache_policy_version": "policy-v1",
+	}
+	globalBytes, err := json.Marshal(globalConfig)
+	require.NoError(t, err)
+	global := parseThinConfig(t, globalBytes)
+	require.NoError(t, global.Validate())
+	require.Equal(t, false, global.RoutePolicy.EnableConsoleLookup)
+
+	enableRoute := map[string]interface{}{
+		"_match_route_": []string{"route-a"},
+		"console_lookup": map[string]interface{}{
+			"enabled":      true,
+			"service_name": "modelfusion-console.higress-system.svc.cluster.local",
+			"service_port": 8080,
+			"timeout":      50,
+		},
+	}
+	enableRouteBytes, err := json.Marshal(enableRoute)
+	require.NoError(t, err)
+
+	var enabled PluginConfig
+	enabled.FromJsonWithGlobal(gjson.ParseBytes(enableRouteBytes), global, noopLogger{})
+	require.NoError(t, enabled.Validate())
+	require.Equal(t, true, enabled.ConsoleLookup.Enabled)
+	require.Equal(t, true, enabled.RoutePolicy.EnableConsoleLookup)
+
+	globalWithConsoleConfig := map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"console_lookup": map[string]interface{}{
+			"enabled":      true,
+			"service_name": "modelfusion-console.higress-system.svc.cluster.local",
+			"service_port": 8080,
+			"timeout":      50,
+		},
+		"cache_policy_version": "policy-v1",
+	}
+	globalWithConsoleBytes, err := json.Marshal(globalWithConsoleConfig)
+	require.NoError(t, err)
+	globalWithConsole := parseThinConfig(t, globalWithConsoleBytes)
+	require.NoError(t, globalWithConsole.Validate())
+	require.Equal(t, true, globalWithConsole.RoutePolicy.EnableConsoleLookup)
+
+	disableRoute := map[string]interface{}{
+		"_match_route_": []string{"route-b"},
+		"console_lookup": map[string]interface{}{
+			"enabled": false,
+		},
+	}
+	disableRouteBytes, err := json.Marshal(disableRoute)
+	require.NoError(t, err)
+
+	var disabled PluginConfig
+	disabled.FromJsonWithGlobal(gjson.ParseBytes(disableRouteBytes), globalWithConsole, noopLogger{})
+	require.NoError(t, disabled.Validate())
+	require.Equal(t, false, disabled.ConsoleLookup.Enabled)
+	require.Equal(t, false, disabled.RoutePolicy.EnableConsoleLookup)
+}
