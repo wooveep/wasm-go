@@ -36,6 +36,38 @@ func CheckCacheForKey(key string, ctx wrapper.HttpContext, c config.PluginConfig
 	return nil
 }
 
+func CheckMaterializedCacheForKey(material ScopedCacheKeyMaterial, ctx wrapper.HttpContext, c config.PluginConfig, log logs.Log, stream bool) error {
+	redisClient := c.GetMaterializedRedisClient()
+	if redisClient == nil {
+		return errors.New("materialized Redis client is not configured")
+	}
+
+	log.Debugf("[%s] [CheckMaterializedCacheForKey] querying materialized cache with key: %s", PLUGIN_NAME, material.RedisKey)
+	if err := redisClient.Get(material.RedisKey, func(response resp.Value) {
+		handleMaterializedCacheResponse(material, response, ctx, log, stream, c)
+	}); err != nil {
+		log.Errorf("[%s] [CheckMaterializedCacheForKey] failed to retrieve key: %s from materialized cache, error: %v", PLUGIN_NAME, material.RedisKey, err)
+		return err
+	}
+	return nil
+}
+
+func handleMaterializedCacheResponse(material ScopedCacheKeyMaterial, response resp.Value, ctx wrapper.HttpContext, log logs.Log, stream bool, c config.PluginConfig) {
+	if err := response.Error(); err != nil {
+		log.Errorf("[%s] [handleMaterializedCacheResponse] error retrieving materialized key: %s, error: %v", PLUGIN_NAME, material.RedisKey, err)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
+	if response.IsNull() {
+		log.Infof("[%s] [handleMaterializedCacheResponse] materialized cache miss for key: %s", PLUGIN_NAME, material.RedisKey)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
+
+	log.Infof("[%s] [handleMaterializedCacheResponse] materialized cache record found for key: %s, replay validation is not enabled yet", PLUGIN_NAME, material.RedisKey)
+	proxywasm.ResumeHttpRequest()
+}
+
 // handleCacheResponse processes cache response and handles cache hits and misses.
 func handleCacheResponse(key string, response resp.Value, ctx wrapper.HttpContext, log logs.Log, stream bool, c config.PluginConfig, useSimilaritySearch bool) {
 	if err := response.Error(); err == nil && !response.IsNull() {

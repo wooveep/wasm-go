@@ -34,7 +34,7 @@
 - [x] 4.1 Implement thin-plugin config structs and validation for materialized Redis lookup, optional Console lookup, Redis Stream event emission, route policy, cache scope, policy version, enabled path suffixes, and fail policy.
 - [x] 4.2 Implement global external-target inheritance and route-level behavior overrides.
 - [x] 4.3 Implement request gating for enabled paths, JSON content type, missing identity, no-store, sensitive, and configured cache bypass.
-- [ ] 4.4 Implement scoped request digest and materialized Redis key construction with tenant, optional consumer, route, model, request digest, and policy version inputs.
+- [x] 4.4 Implement scoped request digest and materialized Redis key construction with tenant, optional consumer, route, model, request digest, and policy version inputs.
 - [ ] 4.5 Implement Redis materialized record loading and strict replay validation.
 - [ ] 4.6 Implement optional Console `/internal/cache/lookup` callout with short timeout and the same replay validation as Redis records.
 - [ ] 4.7 Ensure Redis lookup, Console lookup, invalid records, misses, and timeouts all fail open to upstream.

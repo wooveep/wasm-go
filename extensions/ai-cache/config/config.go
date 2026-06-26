@@ -7,6 +7,7 @@ import (
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/embedding"
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/vector"
 	"github.com/higress-group/wasm-go/pkg/log"
+	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/gjson"
 )
 
@@ -74,6 +75,7 @@ type PluginConfig struct {
 	cacheProvider     cache.Provider
 	embeddingProvider embedding.Provider
 	vectorProvider    vector.Provider
+	materializedRedis wrapper.RedisClient
 
 	embeddingProviderConfig *embedding.ProviderConfig
 	vectorProviderConfig    *vector.ProviderConfig
@@ -405,6 +407,17 @@ func (c *PluginConfig) Complete(log log.Log) error {
 		log.Info("cache provider is not configured")
 		c.cacheProvider = nil
 	}
+	if c.MaterializedLookup.Redis.Enabled {
+		c.materializedRedis = wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
+			FQDN: c.MaterializedLookup.Redis.ServiceName,
+			Port: int64(c.MaterializedLookup.Redis.ServicePort),
+		})
+		if err := c.materializedRedis.Init("", "", int64(c.MaterializedLookup.Redis.Timeout)); err != nil {
+			return err
+		}
+	} else {
+		c.materializedRedis = nil
+	}
 	if c.vectorProviderConfig.GetProviderType() != "" {
 		log.Debugf("vector provider is set to %s", c.vectorProviderConfig.GetProviderType())
 		c.vectorProvider, err = vector.CreateProvider(*c.vectorProviderConfig)
@@ -432,6 +445,10 @@ func (c *PluginConfig) GetVectorProviderConfig() vector.ProviderConfig {
 
 func (c *PluginConfig) GetCacheProvider() cache.Provider {
 	return c.cacheProvider
+}
+
+func (c *PluginConfig) GetMaterializedRedisClient() wrapper.RedisClient {
+	return c.materializedRedis
 }
 
 func convertLegacyMapFields(c *PluginConfig, json gjson.Result, log log.Log) {

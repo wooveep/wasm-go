@@ -26,6 +26,10 @@ const (
 	CACHE_TENANT_CONTEXT_KEY    = "cacheTenant"
 	CACHE_CONSUMER_CONTEXT_KEY  = "cacheConsumer"
 	CACHE_PATH_CONTEXT_KEY      = "cacheRequestPath"
+	CACHE_ROUTE_CONTEXT_KEY     = "cacheRoute"
+	CACHE_MODEL_CONTEXT_KEY     = "cacheModel"
+	CACHE_DIGEST_CONTEXT_KEY    = "cacheRequestDigest"
+	CACHE_MATERIALIZED_KEY      = "cacheMaterializedKey"
 	ERROR_PARTIAL_MESSAGE_KEY   = "errorPartialMessage"
 
 	DEFAULT_MAX_BODY_BYTES uint32 = 100 * 1024 * 1024
@@ -146,6 +150,10 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 		ctx.SetContext(STREAM_CONTEXT_KEY, struct{}{})
 	}
 
+	if c.HasThinConfig() {
+		return onThinHttpRequestBody(ctx, c, body, log, stream)
+	}
+
 	var key string
 	if c.CacheKeyStrategy == config.CACHE_KEY_STRATEGY_LAST_QUESTION {
 		log.Debugf("[onHttpRequestBody] cache key strategy is last question, cache key from: %s", c.CacheKeyFrom)
@@ -180,6 +188,49 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 
 	if err := CheckCacheForKey(key, ctx, c, log, stream, true); err != nil {
 		log.Errorf("[onHttpRequestBody] check cache for key: %s failed, error: %v", key, err)
+		return types.ActionContinue
+	}
+
+	return types.ActionPause
+}
+
+func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []byte, log log.Log, stream bool) types.Action {
+	model, requestDigest, err := BuildOpenAIRequestDigest(body)
+	if err != nil {
+		log.Warnf("[onThinHttpRequestBody] build request digest failed, fail open: %v", err)
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+
+	material, err := BuildScopedCacheKeyMaterial(ScopedCacheKeyInput{
+		KeyPrefix:          c.MaterializedLookup.Redis.KeyPrefix,
+		Tenant:             ctx.GetStringContext(CACHE_TENANT_CONTEXT_KEY, ""),
+		Consumer:           ctx.GetStringContext(CACHE_CONSUMER_CONTEXT_KEY, ""),
+		CacheScope:         c.CacheScope,
+		Route:              requestRoute(),
+		Model:              model,
+		RequestDigest:      requestDigest,
+		CachePolicyVersion: c.CachePolicyVersion,
+	})
+	if err != nil {
+		log.Warnf("[onThinHttpRequestBody] build materialized cache key failed, fail open: %v", err)
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+
+	ctx.SetContext(CACHE_ROUTE_CONTEXT_KEY, material.Route)
+	ctx.SetContext(CACHE_MODEL_CONTEXT_KEY, material.Model)
+	ctx.SetContext(CACHE_DIGEST_CONTEXT_KEY, material.RequestDigest)
+	ctx.SetContext(CACHE_MATERIALIZED_KEY, material.RedisKey)
+
+	if !c.MaterializedLookup.Redis.Enabled || !c.RoutePolicy.EnableRedisLookup {
+		log.Debug("[onThinHttpRequestBody] materialized Redis lookup is disabled, fail open")
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+
+	if err := CheckMaterializedCacheForKey(material, ctx, c, log, stream); err != nil {
+		log.Errorf("[onThinHttpRequestBody] materialized Redis lookup failed for key: %s, error: %v", material.RedisKey, err)
 		return types.ActionContinue
 	}
 
@@ -221,6 +272,14 @@ func requestPath(ctx wrapper.HttpContext) string {
 	}
 	path, _ := proxywasm.GetHttpRequestHeader(":path")
 	return path
+}
+
+func requestRoute() string {
+	routeName, err := proxywasm.GetProperty([]string{"route_name"})
+	if err != nil || len(routeName) == 0 {
+		return "-"
+	}
+	return string(routeName)
 }
 
 func isJSONContentType(contentType string) bool {
