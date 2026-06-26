@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -463,6 +466,26 @@ type EventEnvelope struct {
 	EndedAtMS      int64  `json:"ended_at_ms,omitempty"`
 }
 
+type RedisStreamXADDInput struct {
+	Stream         string
+	ID             string
+	Field          string
+	MaxLen         int64
+	ApproximateMax bool
+	Event          interface{}
+}
+
+type FailOpenLogInput struct {
+	Operation  string
+	Reason     string
+	RequestID  string
+	Route      string
+	Model      string
+	Stream     string
+	StatusCode int
+	Err        error
+}
+
 func NewEventEnvelope(input EventEnvelopeInput) EventEnvelope {
 	idempotency := stableDigest(struct {
 		EventKind     string
@@ -488,6 +511,52 @@ func NewEventEnvelope(input EventEnvelopeInput) EventEnvelope {
 		StartedAtMS:    input.StartedAtMS,
 		EndedAtMS:      input.EndedAtMS,
 	}
+}
+
+func BuildRedisStreamXADD(input RedisStreamXADDInput) ([]string, error) {
+	if input.Stream == "" {
+		return nil, errors.New("redis stream name is required")
+	}
+	if input.MaxLen < 0 {
+		return nil, errors.New("redis stream max length must be non-negative")
+	}
+	if isNilEvent(input.Event) {
+		return nil, errors.New("redis stream event is required")
+	}
+	streamID := defaultString(input.ID, "*")
+	field := defaultString(input.Field, "event")
+	eventBody, err := json.Marshal(input.Event)
+	if err != nil {
+		return nil, err
+	}
+
+	command := []string{"XADD", input.Stream}
+	if input.MaxLen > 0 {
+		command = append(command, "MAXLEN")
+		if input.ApproximateMax {
+			command = append(command, "~")
+		}
+		command = append(command, strconv.FormatInt(input.MaxLen, 10))
+	}
+	command = append(command, streamID, field, string(eventBody))
+	return command, nil
+}
+
+func FailOpenLogFields(input FailOpenLogInput, sensitiveValues ...string) [][2]string {
+	fields := [][2]string{{"fail_open", "true"}}
+	fields = appendLogField(fields, "operation", input.Operation, sensitiveValues...)
+	fields = appendLogField(fields, "reason", input.Reason, sensitiveValues...)
+	fields = appendLogField(fields, "request_id", input.RequestID, sensitiveValues...)
+	fields = appendLogField(fields, "route", input.Route, sensitiveValues...)
+	fields = appendLogField(fields, "model", input.Model, sensitiveValues...)
+	fields = appendLogField(fields, "stream", input.Stream, sensitiveValues...)
+	if input.StatusCode > 0 {
+		fields = append(fields, [2]string{"status_code", strconv.Itoa(input.StatusCode)})
+	}
+	if input.Err != nil {
+		fields = appendLogField(fields, "error", input.Err.Error(), sensitiveValues...)
+	}
+	return fields
 }
 
 var sensitiveLogKeys = []string{
@@ -536,10 +605,16 @@ var openAIMessageFields = stringSet(
 	"audio",
 )
 
-func RedactForLog(value string) string {
+func RedactForLog(value string, sensitiveValues ...string) string {
 	result := value
 	for _, key := range sensitiveLogKeys {
 		result = redactLogKey(result, key)
+	}
+	for _, sensitiveValue := range orderedSensitiveValues(sensitiveValues) {
+		if sensitiveValue == "" {
+			continue
+		}
+		result = strings.ReplaceAll(result, sensitiveValue, "[redacted]")
 	}
 	return result
 }
@@ -597,6 +672,48 @@ func rawContentContainsToolCalls(raw json.RawMessage) bool {
 	return len(content.ToolCalls) > 0
 }
 
+func appendLogField(fields [][2]string, name, value string, sensitiveValues ...string) [][2]string {
+	if value == "" {
+		return fields
+	}
+	return append(fields, [2]string{name, RedactForLog(value, sensitiveValues...)})
+}
+
+func isNilEvent(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
+}
+
+func orderedSensitiveValues(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	ordered := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		ordered = append(ordered, value)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return len(ordered[i]) > len(ordered[j])
+	})
+	return ordered
+}
+
 func stableDigest(value interface{}) string {
 	body, _ := json.Marshal(value)
 	sum := sha256.Sum256(body)
@@ -621,6 +738,10 @@ func redactLogKey(value, key string) string {
 			cursor++
 		}
 		if cursor < len(value) && value[cursor] == '"' {
+			out.WriteByte(value[cursor])
+			cursor++
+		}
+		for cursor < len(value) && unicode.IsSpace(rune(value[cursor])) {
 			out.WriteByte(value[cursor])
 			cursor++
 		}

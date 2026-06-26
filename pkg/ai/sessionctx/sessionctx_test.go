@@ -2,6 +2,7 @@ package sessionctx_test
 
 import (
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -419,6 +420,113 @@ func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
 	}
 	require.Contains(t, redacted, "route=chat")
 	require.Contains(t, strings.ToLower(redacted), "redacted")
+
+	sensitiveRedacted := sessionctx.RedactForLog(
+		`authorization=Bearer credential-six user_content="raw user memory" assistant_content="raw assistant memory" route=chat`,
+		"raw user memory",
+		"raw assistant memory",
+	)
+	requireStringExcludes(t, sensitiveRedacted, "authorization value", "credential-six")
+	requireStringExcludes(t, sensitiveRedacted, "raw user content", "raw user memory")
+	requireStringExcludes(t, sensitiveRedacted, "raw assistant content", "raw assistant memory")
+	require.Contains(t, sensitiveRedacted, "route=chat")
+
+	spacedQuotedKeyRedacted := sessionctx.RedactForLog(`"authorization" : "Bearer credential-seven" route=chat`)
+	requireStringExcludes(t, spacedQuotedKeyRedacted, "quoted authorization value", "credential-seven")
+	require.Contains(t, spacedQuotedKeyRedacted, "route=chat")
+
+	overlapRedacted := sessionctx.RedactForLog(
+		`user_content="raw secret suffix" assistant_content="raw secret" route=chat`,
+		"raw secret",
+		"raw secret suffix",
+	)
+	requireStringExcludes(t, overlapRedacted, "long overlapping secret suffix", "suffix")
+	requireStringExcludes(t, overlapRedacted, "short overlapping secret", "raw secret")
+	require.Contains(t, overlapRedacted, "route=chat")
+}
+
+func TestRedisStreamEnvelopeAndFailOpenLogging(t *testing.T) {
+	event := sessionctx.NewEventEnvelope(sessionctx.EventEnvelopeInput{
+		EventKind:     "memory",
+		Tenant:        "tenant-a",
+		Consumer:      "consumer-a",
+		RequestID:     "request-a",
+		RequestDigest: "digest-a",
+		StartedAtMS:   1000,
+		EndedAtMS:     1500,
+	})
+
+	command, err := sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{
+		Stream:         "memory:events",
+		MaxLen:         1000,
+		ApproximateMax: true,
+		Event:          event,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"XADD", "memory:events", "MAXLEN", "~", "1000", "*", "event"}, command[:7])
+	require.JSONEq(t, `{
+		"event_id": "`+event.EventID+`",
+		"idempotency_key": "`+event.IdempotencyKey+`",
+		"event_kind": "memory",
+		"tenant": "tenant-a",
+		"consumer": "consumer-a",
+		"request_id": "request-a",
+		"request_digest": "digest-a",
+		"started_at_ms": 1000,
+		"ended_at_ms": 1500
+	}`, command[7])
+
+	command, err = sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{
+		Stream: "cache:events",
+		ID:     "123-0",
+		Field:  "payload",
+		Event:  json.RawMessage(`{"event_kind":"cache"}`),
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"XADD", "cache:events", "123-0", "payload", `{"event_kind":"cache"}`}, command)
+
+	_, err = sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{Event: event})
+	require.Error(t, err)
+	_, err = sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{Stream: "memory:events"})
+	require.Error(t, err)
+	var nilRaw json.RawMessage
+	_, err = sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{
+		Stream: "memory:events",
+		Event:  nilRaw,
+	})
+	require.Error(t, err)
+	var nilEnvelope *sessionctx.EventEnvelope
+	_, err = sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{
+		Stream: "memory:events",
+		Event:  nilEnvelope,
+	})
+	require.Error(t, err)
+	_, err = sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{
+		Stream: "memory:events",
+		Event:  make(chan struct{}),
+	})
+	require.Error(t, err)
+
+	fields := sessionctx.FailOpenLogFields(sessionctx.FailOpenLogInput{
+		Operation:  "redis_stream_xadd",
+		Reason:     "timeout",
+		RequestID:  "request-a",
+		Route:      "/v1/chat/completions",
+		Model:      "qwen-turbo",
+		Stream:     "cache:events",
+		StatusCode: 504,
+		Err:        errors.New("x-redis-password=credential-seven raw assistant secret"),
+	}, "raw assistant secret")
+	require.Equal(t, "true", logFieldValue(fields, "fail_open"))
+	require.Equal(t, "redis_stream_xadd", logFieldValue(fields, "operation"))
+	require.Equal(t, "timeout", logFieldValue(fields, "reason"))
+	require.Equal(t, "request-a", logFieldValue(fields, "request_id"))
+	require.Equal(t, "/v1/chat/completions", logFieldValue(fields, "route"))
+	require.Equal(t, "qwen-turbo", logFieldValue(fields, "model"))
+	require.Equal(t, "cache:events", logFieldValue(fields, "stream"))
+	require.Equal(t, "504", logFieldValue(fields, "status_code"))
+	requireStringExcludes(t, logFieldValue(fields, "error"), "redis credential", "credential-seven")
+	requireStringExcludes(t, logFieldValue(fields, "error"), "assistant content", "raw assistant secret")
 }
 
 func requireStringExcludes(t *testing.T, text, label, value string) {
@@ -469,4 +577,13 @@ func messageField(t *testing.T, body []byte, index int, field string) json.RawMe
 	require.NoError(t, json.Unmarshal(body, &parsed))
 	require.Greater(t, len(parsed.Messages), index)
 	return parsed.Messages[index][field]
+}
+
+func logFieldValue(fields [][2]string, name string) string {
+	for _, field := range fields {
+		if field[0] == name {
+			return field[1]
+		}
+	}
+	return ""
 }

@@ -26,7 +26,7 @@
 - [x] 3.3 Move tenant, consumer, configurable identity header names, session id, request id, path suffix, and JSON content-type extraction into shared helpers where safe.
 - [x] 3.4 Move OpenAI-compatible message parsing, latest user intent extraction, request digest helpers, request body replacement helpers for memory injection, tool-call detection, usage extraction, and finish-reason extraction into shared helpers where safe.
 - [x] 3.5 Move streaming and non-streaming assistant text capture into shared helpers while preserving existing `ai-memory` behavior.
-- [ ] 3.6 Add shared Redis Stream envelope, fail-open logging, and sensitive-value redaction helpers without adding cache policy, memory policy, vector code, pricing, or settlement logic.
+- [x] 3.6 Add shared Redis Stream envelope, fail-open logging, and sensitive-value redaction helpers without adding cache policy, memory policy, vector code, pricing, or settlement logic.
 - [ ] 3.7 Verify shared helper adoption does not introduce shared Redis streams, Redis key prefixes, vector namespaces, payload schemas, retention policies, deletion policies, management APIs, or authorization checks.
 
 ## 4. Thin Cache Configuration and Lookup
