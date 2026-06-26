@@ -8,7 +8,7 @@
 
 ## 2. Tests First
 
-- [ ] 2.1 Add config parsing tests for Redis materialized lookup, optional Console lookup, Redis Stream event settings, route policy, identity headers, cache scope, policy version, and default fail-open behavior.
+- [x] 2.1 Add config parsing tests for Redis materialized lookup, optional Console lookup, Redis Stream event settings, route policy, identity headers, cache scope, policy version, and default fail-open behavior.
 - [ ] 2.2 Add Redis replay tests for hit, miss, invalid JSON, unsupported schema version, expired records, scope mismatch, route mismatch, model mismatch, and policy version mismatch.
 - [ ] 2.3 Add Console lookup tests for disabled lookup, enabled lookup after Redis miss, hit validation, miss, timeout, and failure.
 - [ ] 2.4 Add cache-hit replay tests for OpenAI-compatible non-streaming response fields and supported streaming replay payloads.
