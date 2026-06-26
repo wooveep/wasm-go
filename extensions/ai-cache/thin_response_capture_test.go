@@ -293,6 +293,20 @@ data: [DONE]
 			requireThinResponseCaptureGate(t, host, 200, "sensitive")
 		})
 
+		t.Run("malformed response does not emit cacheable raw assistant content", func(t *testing.T) {
+			host := startThinResponseCaptureRequest(t, false)
+			defer host.Reset()
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{not-json`))
+			require.Equal(t, types.ActionContinue, action)
+
+			requireThinResponseCaptureGate(t, host, 200)
+		})
+
 		t.Run("failed upstream status does not emit cacheable raw assistant content", func(t *testing.T) {
 			host := startThinResponseCaptureRequest(t, false)
 			defer host.Reset()

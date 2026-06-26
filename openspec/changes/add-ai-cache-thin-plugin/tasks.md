@@ -47,7 +47,7 @@
 - [x] 5.4 Preserve upstream request flow on miss or dependency failure.
 - [x] 5.5 Capture eligible upstream response facts for non-streaming responses.
 - [x] 5.6 Capture eligible upstream response facts for streaming responses and stream-done fallback paths.
-- [ ] 5.7 Prevent cacheable raw content emission when response parsing fails or policy marks the response as no-store or sensitive.
+- [x] 5.7 Prevent cacheable raw content emission when response parsing fails or policy marks the response as no-store or sensitive.
 
 ## 6. CacheEvent Emission
 
