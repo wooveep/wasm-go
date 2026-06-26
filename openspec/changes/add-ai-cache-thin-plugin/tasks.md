@@ -3,7 +3,7 @@
 - [x] 1.1 Run `openspec validate add-ai-cache-thin-plugin --strict` before implementation starts.
 - [x] 1.2 Read `docs/ai-cache-thin-plugin-design.md`, `docs/2026-06-26-ai-cache-memory-shared-runtime-design.md`, this change's `proposal.md`, `design.md`, and specs before touching code.
 - [x] 1.3 Run GitNexus upstream impact analysis before editing each function, method, type, or shared helper involved in `ai-cache`, `ai-memory`, or `ai-billing`.
-- [ ] 1.4 Treat production embedding generation, vector search, PostgreSQL writes, billing settlement, and provider credential ownership as out of scope for the gateway plugin.
+- [x] 1.4 Treat production embedding generation, vector search, PostgreSQL writes, billing settlement, and provider credential ownership as out of scope for the gateway plugin.
 - [ ] 1.5 Keep unrelated dirty files and unrelated existing OpenSpec changes out of this implementation diff.
 
 ## 2. Tests First
