@@ -84,4 +84,4 @@
 - [x] 9.4 Run `openspec validate add-ai-cache-thin-plugin --strict`.
 - [x] 9.5 Run `git diff --check`.
 - [x] 9.6 Run `graphify update .` after code or documentation changes are complete.
-- [ ] 9.7 Run GitNexus `detect_changes` before handoff or commit and review affected symbols and execution flows.
+- [x] 9.7 Run GitNexus `detect_changes` before handoff or commit and review affected symbols and execution flows.
