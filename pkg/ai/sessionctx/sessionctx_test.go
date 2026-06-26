@@ -68,6 +68,20 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 		"tools": [{"type":"function","function":{"name":"lookup_weather","parameters":{"type":"object"}}}],
 		"tool_choice": {"function":{"name":"lookup_weather"},"type":"function"},
 		"response_format": {"type":"json_object"},
+		"temperature": 0.2,
+		"top_p": 0.9,
+		"seed": 123,
+		"max_tokens": 256,
+		"max_completion_tokens": 512,
+		"stop": ["END"],
+		"n": 1,
+		"presence_penalty": 0.3,
+		"frequency_penalty": 0.4,
+		"logit_bias": {"42": -2},
+		"logprobs": true,
+		"top_logprobs": 2,
+		"parallel_tool_calls": false,
+		"vendor_extension": {"b": 2, "a": 1},
 		"messages": [
 			{"role": "system", "content": "answer tersely"},
 			{"role": "user", "content": "older question"},
@@ -87,27 +101,29 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	require.NotEmpty(t, request.Tools)
 	require.NotEmpty(t, request.ToolChoice)
 	require.NotEmpty(t, request.ResponseFormat)
+	require.NotEmpty(t, request.Temperature)
+	require.NotEmpty(t, request.TopP)
+	require.NotEmpty(t, request.Seed)
+	require.NotEmpty(t, request.MaxTokens)
+	require.NotEmpty(t, request.MaxCompletion)
+	require.NotEmpty(t, request.Stop)
+	require.NotEmpty(t, request.N)
+	require.NotEmpty(t, request.PresencePenalty)
+	require.NotEmpty(t, request.FrequencyPenalty)
+	require.NotEmpty(t, request.LogitBias)
+	require.NotEmpty(t, request.Logprobs)
+	require.NotEmpty(t, request.TopLogprobs)
+	require.NotEmpty(t, request.ParallelToolCalls)
+	require.Contains(t, request.Extra, "vendor_extension")
 	require.Equal(t, "latest weather intent", sessionctx.CurrentUserIntent(request.Messages))
 
-	digestA, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
-		Model:          request.Model,
-		Messages:       request.Messages,
-		Tools:          request.Tools,
-		ToolChoice:     request.ToolChoice,
-		ResponseFormat: request.ResponseFormat,
-	})
+	digestA, err := sessionctx.BuildRequestDigest(openAIRequestDigestInput(request))
 	require.NoError(t, err)
 	require.Regexp(t, regexp.MustCompile(`^[a-f0-9]{64}$`), digestA)
 
-	sameRequest, err := sessionctx.ParseOpenAIChatRequest([]byte(`{"stream":true,"response_format":{"type":"json_object"},"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},"tools":[{"function":{"parameters":{"type":"object"},"name":"lookup_weather"},"type":"function"}],"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":[{"text":"latest weather intent","type":"text"},{"image_url":{"url":"https://example.invalid/image.png"},"type":"image_url"}],"role":"user"}],"model":"qwen-turbo"}`))
+	sameRequest, err := sessionctx.ParseOpenAIChatRequest([]byte(`{"vendor_extension":{"a":1,"b":2},"parallel_tool_calls":false,"top_logprobs":2,"logprobs":true,"logit_bias":{"42":-2},"frequency_penalty":0.4,"presence_penalty":0.3,"stream":true,"n":1,"stop":["END"],"max_completion_tokens":512,"max_tokens":256,"seed":123,"top_p":0.9,"temperature":0.2,"response_format":{"type":"json_object"},"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},"tools":[{"function":{"parameters":{"type":"object"},"name":"lookup_weather"},"type":"function"}],"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":[{"text":"latest weather intent","type":"text"},{"image_url":{"url":"https://example.invalid/image.png"},"type":"image_url"}],"role":"user"}],"model":"qwen-turbo"}`))
 	require.NoError(t, err)
-	digestB, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
-		Model:          sameRequest.Model,
-		Messages:       sameRequest.Messages,
-		Tools:          sameRequest.Tools,
-		ToolChoice:     sameRequest.ToolChoice,
-		ResponseFormat: sameRequest.ResponseFormat,
-	})
+	digestB, err := sessionctx.BuildRequestDigest(openAIRequestDigestInput(sameRequest))
 	require.NoError(t, err)
 	require.Equal(t, digestA, digestB)
 
@@ -118,15 +134,131 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, digestA, changedModel)
 
-	changedToolChoice, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
-		Model:          request.Model,
-		Messages:       request.Messages,
-		Tools:          request.Tools,
-		ToolChoice:     jsonRaw(`{"type":"function","function":{"name":"lookup_other"}}`),
-		ResponseFormat: request.ResponseFormat,
-	})
+	changedToolChoiceInput := openAIRequestDigestInput(request)
+	changedToolChoiceInput.ToolChoice = jsonRaw(`{"type":"function","function":{"name":"lookup_other"}}`)
+	changedToolChoice, err := sessionctx.BuildRequestDigest(changedToolChoiceInput)
 	require.NoError(t, err)
 	require.NotEqual(t, digestA, changedToolChoice)
+
+	changedTemperatureInput := openAIRequestDigestInput(request)
+	changedTemperatureInput.Temperature = jsonRaw(`0.7`)
+	changedTemperature, err := sessionctx.BuildRequestDigest(changedTemperatureInput)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, changedTemperature)
+
+	changedPenaltyInput := openAIRequestDigestInput(request)
+	changedPenaltyInput.PresencePenalty = jsonRaw(`0.6`)
+	changedPenalty, err := sessionctx.BuildRequestDigest(changedPenaltyInput)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, changedPenalty)
+
+	changedVendorInput := openAIRequestDigestInput(request)
+	changedVendorInput.Extra = map[string]json.RawMessage{"vendor_extension": jsonRaw(`{"a":2,"b":2}`)}
+	changedVendor, err := sessionctx.BuildRequestDigest(changedVendorInput)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, changedVendor)
+
+	largeSeedInputA := openAIRequestDigestInput(request)
+	largeSeedInputA.Seed = jsonRaw(`9007199254740993`)
+	largeSeedInputB := openAIRequestDigestInput(request)
+	largeSeedInputB.Seed = jsonRaw(`9007199254740992`)
+	largeSeedDigestA, err := sessionctx.BuildRequestDigest(largeSeedInputA)
+	require.NoError(t, err)
+	largeSeedDigestB, err := sessionctx.BuildRequestDigest(largeSeedInputB)
+	require.NoError(t, err)
+	require.NotEqual(t, largeSeedDigestA, largeSeedDigestB)
+
+	toolMessageDigestA, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
+		Model: "qwen-turbo",
+		Messages: []sessionctx.OpenAIMessage{{
+			Role:  "assistant",
+			Extra: map[string]json.RawMessage{"vendor_message": jsonRaw(`{"b":2,"a":1}`)},
+			ToolCalls: jsonRaw(
+				`[{"type":"function","id":"call-1","function":{"arguments":"{}","name":"lookup"}}]`,
+			),
+		}},
+	})
+	require.NoError(t, err)
+	toolMessageDigestB, err := sessionctx.BuildRequestDigest(sessionctx.RequestDigestInput{
+		Model: "qwen-turbo",
+		Messages: []sessionctx.OpenAIMessage{{
+			Role:  "assistant",
+			Extra: map[string]json.RawMessage{"vendor_message": jsonRaw(`{"a":1,"b":2}`)},
+			ToolCalls: jsonRaw(
+				`[{"function":{"name":"lookup","arguments":"{}"},"id":"call-1","type":"function"}]`,
+			),
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, toolMessageDigestA, toolMessageDigestB)
+}
+
+func TestOpenAIRequestBodyReplacement(t *testing.T) {
+	original := []byte(`{
+		"model": "qwen-turbo",
+		"stream": true,
+		"metadata": {"trace": "keep"},
+		"messages": [{"role": "user", "content": "original"}]
+	}`)
+	replaced, err := sessionctx.ReplaceOpenAIChatMessages(original, []sessionctx.OpenAIMessage{
+		{Role: "system", Content: "memory context"},
+		{
+			Role:         "assistant",
+			Content:      "calling tool",
+			Name:         "assistant-name",
+			ToolCallID:   "call-1",
+			ToolCalls:    jsonRaw(`[{"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]`),
+			FunctionCall: jsonRaw(`{"name":"legacy_lookup","arguments":"{}"}`),
+			Refusal:      jsonRaw(`"no"`),
+			Annotations:  jsonRaw(`[{"type":"url_citation","url":"https://example.invalid"}]`),
+			Audio:        jsonRaw(`{"id":"audio-1"}`),
+			Extra:        map[string]json.RawMessage{"vendor_message": jsonRaw(`{"b":2,"a":1}`)},
+		},
+	})
+	require.NoError(t, err)
+
+	request, err := sessionctx.ParseOpenAIChatRequest(replaced)
+	require.NoError(t, err)
+	require.Equal(t, "qwen-turbo", request.Model)
+	require.True(t, request.Stream)
+	require.Len(t, request.Messages, 2)
+	require.Equal(t, "assistant-name", request.Messages[1].Name)
+	require.Equal(t, "call-1", request.Messages[1].ToolCallID)
+	require.NotEmpty(t, request.Messages[1].ToolCalls)
+	require.NotEmpty(t, request.Messages[1].FunctionCall)
+	require.NotEmpty(t, request.Messages[1].Refusal)
+	require.NotEmpty(t, request.Messages[1].Annotations)
+	require.NotEmpty(t, request.Messages[1].Audio)
+	require.Contains(t, request.Messages[1].Extra, "vendor_message")
+	require.JSONEq(t, `{"trace":"keep"}`, string(jsonField(t, replaced, "metadata")))
+
+	preservedRequest, err := sessionctx.ParseOpenAIChatRequest([]byte(`{
+		"messages": [{
+			"role": "assistant",
+			"content": null,
+			"refusal": "policy",
+			"annotations": [{"type": "url_citation", "url": "https://example.invalid"}],
+			"audio": {"id": "audio-1"},
+			"vendor_message": {"b": 2, "a": 1}
+		}]
+	}`))
+	require.NoError(t, err)
+	preserved, err := sessionctx.ReplaceOpenAIChatMessages(original, preservedRequest.Messages)
+	require.NoError(t, err)
+	require.Equal(t, "null", string(messageField(t, preserved, 0, "content")))
+	require.JSONEq(t, `"policy"`, string(messageField(t, preserved, 0, "refusal")))
+	require.JSONEq(t, `[{"type":"url_citation","url":"https://example.invalid"}]`, string(messageField(t, preserved, 0, "annotations")))
+	require.JSONEq(t, `{"id":"audio-1"}`, string(messageField(t, preserved, 0, "audio")))
+	require.JSONEq(t, `{"a":1,"b":2}`, string(messageField(t, preserved, 0, "vendor_message")))
+
+	emptyMessages, err := sessionctx.ReplaceOpenAIChatMessages(original, nil)
+	require.NoError(t, err)
+	require.JSONEq(t, `[]`, string(jsonField(t, emptyMessages, "messages")))
+
+	_, err = sessionctx.ReplaceOpenAIChatMessages([]byte(`null`), nil)
+	require.Error(t, err)
+	_, err = sessionctx.ReplaceOpenAIChatMessages([]byte(`[]`), nil)
+	require.Error(t, err)
 }
 
 func TestOpenAIResponseParsing(t *testing.T) {
@@ -174,6 +306,34 @@ func TestOpenAIResponseParsing(t *testing.T) {
 	}`))
 	require.NoError(t, err)
 	require.True(t, functionResponse.ContainsToolCalls)
+
+	require.True(t, sessionctx.ContainsToolUse(functionResponse))
+	require.Equal(t, sessionctx.Usage{}, sessionctx.ResponseUsage(functionResponse))
+	require.Equal(t, "function_call", sessionctx.ResponseFinishReason(functionResponse))
+
+	multiChoiceResponse, err := sessionctx.ParseOpenAIChatResponse([]byte(`{
+		"choices": [
+			{
+				"index": 0,
+				"message": {"role": "assistant", "content": "first answer"},
+				"finish_reason": "stop"
+			},
+			{
+				"index": 1,
+				"message": {
+					"role": "assistant",
+					"tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]
+				},
+				"finish_reason": "tool_calls"
+			}
+		]
+	}`))
+	require.NoError(t, err)
+	require.Equal(t, "first answer", multiChoiceResponse.AssistantContent)
+	require.Equal(t, "stop", multiChoiceResponse.FinishReason)
+	require.Equal(t, []string{"stop", "tool_calls"}, multiChoiceResponse.FinishReasons)
+	require.True(t, sessionctx.ContainsToolUse(multiChoiceResponse))
+	require.Equal(t, "stop,tool_calls", sessionctx.ResponseFinishReason(multiChoiceResponse))
 }
 
 func TestStreamCapture(t *testing.T) {
@@ -259,4 +419,45 @@ func requireStringExcludes(t *testing.T, text, label, value string) {
 
 func jsonRaw(value string) json.RawMessage {
 	return json.RawMessage(value)
+}
+
+func openAIRequestDigestInput(request sessionctx.OpenAIChatRequest) sessionctx.RequestDigestInput {
+	return sessionctx.RequestDigestInput{
+		Model:             request.Model,
+		Messages:          request.Messages,
+		Tools:             request.Tools,
+		ToolChoice:        request.ToolChoice,
+		ResponseFormat:    request.ResponseFormat,
+		Temperature:       request.Temperature,
+		TopP:              request.TopP,
+		Seed:              request.Seed,
+		MaxTokens:         request.MaxTokens,
+		MaxCompletion:     request.MaxCompletion,
+		Stop:              request.Stop,
+		N:                 request.N,
+		PresencePenalty:   request.PresencePenalty,
+		FrequencyPenalty:  request.FrequencyPenalty,
+		LogitBias:         request.LogitBias,
+		Logprobs:          request.Logprobs,
+		TopLogprobs:       request.TopLogprobs,
+		ParallelToolCalls: request.ParallelToolCalls,
+		Extra:             request.Extra,
+	}
+}
+
+func jsonField(t *testing.T, body []byte, field string) json.RawMessage {
+	t.Helper()
+	var parsed map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &parsed))
+	return parsed[field]
+}
+
+func messageField(t *testing.T, body []byte, index int, field string) json.RawMessage {
+	t.Helper()
+	var parsed struct {
+		Messages []map[string]json.RawMessage `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal(body, &parsed))
+	require.Greater(t, len(parsed.Messages), index)
+	return parsed.Messages[index][field]
 }

@@ -1,9 +1,12 @@
 package sessionctx
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"unicode"
 )
@@ -78,17 +81,96 @@ func PathMatchesSuffixes(path string, suffixes []string) bool {
 }
 
 type OpenAIChatRequest struct {
-	Model          string          `json:"model,omitempty"`
-	Stream         bool            `json:"stream,omitempty"`
-	Messages       []OpenAIMessage `json:"messages,omitempty"`
-	Tools          json.RawMessage `json:"tools,omitempty"`
-	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
-	ResponseFormat json.RawMessage `json:"response_format,omitempty"`
+	Model             string                     `json:"model,omitempty"`
+	Stream            bool                       `json:"stream,omitempty"`
+	Messages          []OpenAIMessage            `json:"messages,omitempty"`
+	Tools             json.RawMessage            `json:"tools,omitempty"`
+	ToolChoice        json.RawMessage            `json:"tool_choice,omitempty"`
+	ResponseFormat    json.RawMessage            `json:"response_format,omitempty"`
+	Temperature       json.RawMessage            `json:"temperature,omitempty"`
+	TopP              json.RawMessage            `json:"top_p,omitempty"`
+	Seed              json.RawMessage            `json:"seed,omitempty"`
+	MaxTokens         json.RawMessage            `json:"max_tokens,omitempty"`
+	MaxCompletion     json.RawMessage            `json:"max_completion_tokens,omitempty"`
+	Stop              json.RawMessage            `json:"stop,omitempty"`
+	N                 json.RawMessage            `json:"n,omitempty"`
+	PresencePenalty   json.RawMessage            `json:"presence_penalty,omitempty"`
+	FrequencyPenalty  json.RawMessage            `json:"frequency_penalty,omitempty"`
+	LogitBias         json.RawMessage            `json:"logit_bias,omitempty"`
+	Logprobs          json.RawMessage            `json:"logprobs,omitempty"`
+	TopLogprobs       json.RawMessage            `json:"top_logprobs,omitempty"`
+	ParallelToolCalls json.RawMessage            `json:"parallel_tool_calls,omitempty"`
+	Extra             map[string]json.RawMessage `json:"-"`
 }
 
 type OpenAIMessage struct {
-	Role    string      `json:"role,omitempty"`
-	Content interface{} `json:"content,omitempty"`
+	Role         string                     `json:"role,omitempty"`
+	Content      interface{}                `json:"content,omitempty"`
+	Name         string                     `json:"name,omitempty"`
+	ToolCallID   string                     `json:"tool_call_id,omitempty"`
+	ToolCalls    json.RawMessage            `json:"tool_calls,omitempty"`
+	FunctionCall json.RawMessage            `json:"function_call,omitempty"`
+	Refusal      json.RawMessage            `json:"refusal,omitempty"`
+	Annotations  json.RawMessage            `json:"annotations,omitempty"`
+	Audio        json.RawMessage            `json:"audio,omitempty"`
+	Extra        map[string]json.RawMessage `json:"-"`
+	contentSet   bool
+}
+
+func (request *OpenAIChatRequest) UnmarshalJSON(body []byte) error {
+	type requestAlias OpenAIChatRequest
+	var parsed requestAlias
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return err
+	}
+	extra, err := unknownRawFields(body, openAIChatRequestFields)
+	if err != nil {
+		return err
+	}
+	*request = OpenAIChatRequest(parsed)
+	request.Extra = extra
+	return nil
+}
+
+func (message *OpenAIMessage) UnmarshalJSON(body []byte) error {
+	type messageAlias OpenAIMessage
+	var parsed messageAlias
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return err
+	}
+	extra, err := unknownRawFields(body, openAIMessageFields)
+	if err != nil {
+		return err
+	}
+	*message = OpenAIMessage(parsed)
+	message.contentSet = fieldExists(body, "content")
+	message.Extra = extra
+	return nil
+}
+
+func (message OpenAIMessage) MarshalJSON() ([]byte, error) {
+	fields := make(map[string]json.RawMessage, len(message.Extra)+8)
+	copyExtraRawFields(fields, message.Extra, openAIMessageFields)
+	if err := setStringField(fields, "role", message.Role); err != nil {
+		return nil, err
+	}
+	if message.Content != nil || message.contentSet {
+		if err := setField(fields, "content", message.Content); err != nil {
+			return nil, err
+		}
+	}
+	if err := setStringField(fields, "name", message.Name); err != nil {
+		return nil, err
+	}
+	if err := setStringField(fields, "tool_call_id", message.ToolCallID); err != nil {
+		return nil, err
+	}
+	setRawField(fields, "tool_calls", message.ToolCalls)
+	setRawField(fields, "function_call", message.FunctionCall)
+	setRawField(fields, "refusal", message.Refusal)
+	setRawField(fields, "annotations", message.Annotations)
+	setRawField(fields, "audio", message.Audio)
+	return json.Marshal(fields)
 }
 
 func ParseOpenAIChatRequest(body []byte) (OpenAIChatRequest, error) {
@@ -107,33 +189,108 @@ func CurrentUserIntent(messages []OpenAIMessage) string {
 	return ""
 }
 
+func ReplaceOpenAIChatMessages(body []byte, messages []OpenAIMessage) ([]byte, error) {
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, err
+	}
+	if request == nil {
+		return nil, errors.New("openai chat request body must be a JSON object")
+	}
+	if messages == nil {
+		messages = []OpenAIMessage{}
+	}
+	messageBody, err := json.Marshal(messages)
+	if err != nil {
+		return nil, err
+	}
+	request["messages"] = messageBody
+	return json.Marshal(request)
+}
+
 type RequestDigestInput struct {
-	Model          string          `json:"model,omitempty"`
-	Messages       []OpenAIMessage `json:"messages,omitempty"`
-	Tools          json.RawMessage `json:"tools,omitempty"`
-	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
-	ResponseFormat json.RawMessage `json:"response_format,omitempty"`
+	Model             string                     `json:"model,omitempty"`
+	Messages          []OpenAIMessage            `json:"messages,omitempty"`
+	Tools             json.RawMessage            `json:"tools,omitempty"`
+	ToolChoice        json.RawMessage            `json:"tool_choice,omitempty"`
+	ResponseFormat    json.RawMessage            `json:"response_format,omitempty"`
+	Temperature       json.RawMessage            `json:"temperature,omitempty"`
+	TopP              json.RawMessage            `json:"top_p,omitempty"`
+	Seed              json.RawMessage            `json:"seed,omitempty"`
+	MaxTokens         json.RawMessage            `json:"max_tokens,omitempty"`
+	MaxCompletion     json.RawMessage            `json:"max_completion_tokens,omitempty"`
+	Stop              json.RawMessage            `json:"stop,omitempty"`
+	N                 json.RawMessage            `json:"n,omitempty"`
+	PresencePenalty   json.RawMessage            `json:"presence_penalty,omitempty"`
+	FrequencyPenalty  json.RawMessage            `json:"frequency_penalty,omitempty"`
+	LogitBias         json.RawMessage            `json:"logit_bias,omitempty"`
+	Logprobs          json.RawMessage            `json:"logprobs,omitempty"`
+	TopLogprobs       json.RawMessage            `json:"top_logprobs,omitempty"`
+	ParallelToolCalls json.RawMessage            `json:"parallel_tool_calls,omitempty"`
+	Extra             map[string]json.RawMessage `json:"-"`
 }
 
 func BuildRequestDigest(input RequestDigestInput) (string, error) {
-	payload := struct {
-		Model          string          `json:"model,omitempty"`
-		Messages       []OpenAIMessage `json:"messages,omitempty"`
-		Tools          interface{}     `json:"tools,omitempty"`
-		ToolChoice     interface{}     `json:"tool_choice,omitempty"`
-		ResponseFormat interface{}     `json:"response_format,omitempty"`
-	}{
-		Model:    input.Model,
-		Messages: input.Messages,
+	payload := map[string]interface{}{}
+	if input.Model != "" {
+		payload["model"] = input.Model
 	}
-	var err error
-	if payload.Tools, err = canonicalRawMessage(input.Tools); err != nil {
+	if input.Messages != nil {
+		messages, err := canonicalValue(input.Messages)
+		if err != nil {
+			return "", err
+		}
+		payload["messages"] = messages
+	}
+	if err := addCanonicalRawField(payload, "tools", input.Tools); err != nil {
 		return "", err
 	}
-	if payload.ToolChoice, err = canonicalRawMessage(input.ToolChoice); err != nil {
+	if err := addCanonicalRawField(payload, "tool_choice", input.ToolChoice); err != nil {
 		return "", err
 	}
-	if payload.ResponseFormat, err = canonicalRawMessage(input.ResponseFormat); err != nil {
+	if err := addCanonicalRawField(payload, "response_format", input.ResponseFormat); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "temperature", input.Temperature); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "top_p", input.TopP); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "seed", input.Seed); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "max_tokens", input.MaxTokens); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "max_completion_tokens", input.MaxCompletion); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "stop", input.Stop); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "n", input.N); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "presence_penalty", input.PresencePenalty); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "frequency_penalty", input.FrequencyPenalty); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "logit_bias", input.LogitBias); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "logprobs", input.Logprobs); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "top_logprobs", input.TopLogprobs); err != nil {
+		return "", err
+	}
+	if err := addCanonicalRawField(payload, "parallel_tool_calls", input.ParallelToolCalls); err != nil {
+		return "", err
+	}
+	if err := addCanonicalExtraFields(payload, input.Extra); err != nil {
 		return "", err
 	}
 
@@ -154,8 +311,24 @@ type Usage struct {
 type OpenAIChatResponse struct {
 	AssistantContent  string
 	FinishReason      string
+	FinishReasons     []string
 	Usage             Usage
 	ContainsToolCalls bool
+}
+
+func ContainsToolUse(response OpenAIChatResponse) bool {
+	return response.ContainsToolCalls
+}
+
+func ResponseUsage(response OpenAIChatResponse) Usage {
+	return response.Usage
+}
+
+func ResponseFinishReason(response OpenAIChatResponse) string {
+	if len(response.FinishReasons) > 0 {
+		return strings.Join(response.FinishReasons, ",")
+	}
+	return response.FinishReason
 }
 
 func ParseOpenAIChatResponse(body []byte) (OpenAIChatResponse, error) {
@@ -178,13 +351,20 @@ func ParseOpenAIChatResponse(body []byte) (OpenAIChatResponse, error) {
 	if len(raw.Choices) == 0 {
 		return response, nil
 	}
-	choice := raw.Choices[0]
-	response.AssistantContent = textContent(choice.Message.Content)
-	response.FinishReason = choice.FinishReason
-	response.ContainsToolCalls = len(choice.Message.ToolCalls) > 0 ||
-		choice.Message.FunctionCall != nil ||
-		choice.FinishReason == "tool_calls" ||
-		choice.FinishReason == "function_call"
+	firstChoice := raw.Choices[0]
+	response.AssistantContent = textContent(firstChoice.Message.Content)
+	response.FinishReason = firstChoice.FinishReason
+	for _, choice := range raw.Choices {
+		if choice.FinishReason != "" {
+			response.FinishReasons = append(response.FinishReasons, choice.FinishReason)
+		}
+		if len(choice.Message.ToolCalls) > 0 ||
+			choice.Message.FunctionCall != nil ||
+			choice.FinishReason == "tool_calls" ||
+			choice.FinishReason == "function_call" {
+			response.ContainsToolCalls = true
+		}
+	}
 	return response, nil
 }
 
@@ -312,6 +492,44 @@ var sensitiveLogKeys = []string{
 	"x-provider-api-key",
 }
 
+var openAIChatRequestFields = stringSet(
+	"model",
+	"stream",
+	"messages",
+	"tools",
+	"tool_choice",
+	"response_format",
+	"temperature",
+	"top_p",
+	"seed",
+	"max_tokens",
+	"max_completion_tokens",
+	"stop",
+	"n",
+	"presence_penalty",
+	"frequency_penalty",
+	"logit_bias",
+	"logprobs",
+	"top_logprobs",
+	"parallel_tool_calls",
+)
+
+var openAIChatRequestDigestExcludedFields = stringSet(
+	"stream",
+)
+
+var openAIMessageFields = stringSet(
+	"role",
+	"content",
+	"name",
+	"tool_call_id",
+	"tool_calls",
+	"function_call",
+	"refusal",
+	"annotations",
+	"audio",
+)
+
 func RedactForLog(value string) string {
 	result := value
 	for _, key := range sensitiveLogKeys {
@@ -405,12 +623,134 @@ func redactLogKey(value, key string) string {
 	}
 }
 
+func stringSet(values ...string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func unknownRawFields(body []byte, knownFields map[string]struct{}) (map[string]json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, err
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	for field := range knownFields {
+		delete(fields, field)
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	return fields, nil
+}
+
+func fieldExists(body []byte, field string) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return false
+	}
+	_, ok := fields[field]
+	return ok
+}
+
+func copyExtraRawFields(fields map[string]json.RawMessage, extra map[string]json.RawMessage, knownFields map[string]struct{}) {
+	for field, value := range extra {
+		if len(value) == 0 {
+			continue
+		}
+		if _, known := knownFields[field]; known {
+			continue
+		}
+		fields[field] = value
+	}
+}
+
+func setStringField(fields map[string]json.RawMessage, name, value string) error {
+	if value == "" {
+		return nil
+	}
+	return setField(fields, name, value)
+}
+
+func setField(fields map[string]json.RawMessage, name string, value interface{}) error {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	fields[name] = body
+	return nil
+}
+
+func setRawField(fields map[string]json.RawMessage, name string, value json.RawMessage) {
+	if len(value) == 0 {
+		return
+	}
+	fields[name] = value
+}
+
+func addCanonicalRawField(fields map[string]interface{}, name string, raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	value, err := canonicalRawMessage(raw)
+	if err != nil {
+		return err
+	}
+	fields[name] = value
+	return nil
+}
+
+func addCanonicalExtraFields(fields map[string]interface{}, extra map[string]json.RawMessage) error {
+	for field, raw := range extra {
+		if len(raw) == 0 {
+			continue
+		}
+		if _, exists := fields[field]; exists {
+			continue
+		}
+		if _, excluded := openAIChatRequestDigestExcludedFields[field]; excluded {
+			continue
+		}
+		value, err := canonicalRawMessage(raw)
+		if err != nil {
+			return err
+		}
+		fields[field] = value
+	}
+	return nil
+}
+
 func canonicalRawMessage(raw json.RawMessage) (interface{}, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
+	return canonicalJSON(raw)
+}
+
+func canonicalValue(value interface{}) (interface{}, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return canonicalJSON(body)
+}
+
+func canonicalJSON(body []byte) (interface{}, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
 	var value interface{}
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("invalid JSON: multiple values")
+		}
 		return nil, err
 	}
 	return value, nil
