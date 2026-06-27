@@ -183,6 +183,17 @@ func memoryGateReason(ctx wrapper.HttpContext) string {
 	return ctx.GetStringContext(memoryGateContextKey, "")
 }
 
+func memoryRawContentAllowed(ctx wrapper.HttpContext, c config.PluginConfig) bool {
+	return c.Route.CaptureResponse && !ctx.GetBoolContext(memoryNoStoreContextKey, false)
+}
+
+func memoryEventUserContent(ctx wrapper.HttpContext, c config.PluginConfig) string {
+	if !memoryRawContentAllowed(ctx, c) {
+		return ""
+	}
+	return ctx.GetStringContext(memoryUserContentContextKey, "")
+}
+
 func requestPath(ctx wrapper.HttpContext) string {
 	if path := ctx.Path(); path != "" {
 		return path

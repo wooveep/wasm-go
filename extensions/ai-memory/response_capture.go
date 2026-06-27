@@ -101,6 +101,7 @@ func memoryCaptureNonStreamingResponseChunkWithLimit(ctx wrapper.HttpContext, c 
 	if capture.ParseFailed {
 		log.Warnf("[ai-memory] parse non-streaming response failed open")
 	}
+	capture = memoryApplyRawContentGate(ctx, c, capture)
 	ctx.SetContext(memoryResponseCaptureContextKey, capture)
 }
 
@@ -127,14 +128,22 @@ func memoryCaptureStreamingResponseChunk(ctx wrapper.HttpContext, c config.Plugi
 		})
 		return
 	}
-	ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
+	responseCapture := memoryResponseCapture{
 		AssistantContent:  capture.AssistantContent(),
 		FinishReason:      capture.FinishReason(),
 		Usage:             capture.Usage(),
 		StatusCode:        statusCode,
 		ContainsToolCalls: capture.ContainsToolCalls(),
 		IsStream:          true,
-	})
+	}
+	ctx.SetContext(memoryResponseCaptureContextKey, memoryApplyRawContentGate(ctx, c, responseCapture))
+}
+
+func memoryApplyRawContentGate(ctx wrapper.HttpContext, c config.PluginConfig, capture memoryResponseCapture) memoryResponseCapture {
+	if !memoryRawContentAllowed(ctx, c) {
+		capture.AssistantContent = ""
+	}
+	return capture
 }
 
 func memoryStreamCapture(ctx wrapper.HttpContext, c config.PluginConfig) *memoryStreamingCapture {

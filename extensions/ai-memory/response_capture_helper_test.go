@@ -68,6 +68,92 @@ func TestMemoryCaptureNonStreamingResponseFacts(t *testing.T) {
 	})
 }
 
+func TestMemoryRawContentEligibilityGatesNonStreamingRawFields(t *testing.T) {
+	tests := []struct {
+		name            string
+		captureResponse bool
+		noStore         bool
+	}{
+		{name: "disabled capture", captureResponse: false},
+		{name: "request no-store", captureResponse: true, noStore: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := newMemoryCaptureTestContext()
+			ctx.SetContext(memoryResponseStatusContextKey, 207)
+			ctx.SetContext(memoryUserContentContextKey, "raw helper user content")
+			if tt.noStore {
+				ctx.SetContext(memoryNoStoreContextKey, true)
+			}
+			cfg := config.PluginConfig{
+				Route: config.RouteConfig{
+					CaptureResponse:   tt.captureResponse,
+					ResponseValueFrom: "choices.0.message.content",
+					ToolCallsFrom:     []string{"choices.0.message.custom_tool_calls"},
+				},
+			}
+
+			memoryCaptureNonStreamingResponseChunk(ctx, cfg, []byte(`{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "raw helper assistant content must be omitted",
+						"custom_tool_calls": [{"id":"tool-1","name":"lookup"}]
+					},
+					"finish_reason": "stop"
+				}],
+				"usage": {"prompt_tokens": 14, "completion_tokens": 6, "total_tokens": 20}
+			}`), true, memoryCaptureNoopLog{})
+
+			capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+			require.True(t, ok)
+			require.Equal(t, 207, capture.StatusCode)
+			require.False(t, capture.IsStream)
+			require.False(t, capture.ParseFailed)
+			require.Empty(t, capture.AssistantContent)
+			require.Equal(t, "stop", capture.FinishReason)
+			require.True(t, capture.ContainsToolCalls)
+			require.Equal(t, 14, capture.Usage.PromptTokens)
+			require.Equal(t, 6, capture.Usage.CompletionTokens)
+			require.Equal(t, 20, capture.Usage.TotalTokens)
+			require.Empty(t, memoryEventUserContent(ctx, cfg))
+			require.Equal(t, "raw helper user content", ctx.GetStringContext(memoryUserContentContextKey, ""))
+		})
+	}
+}
+
+func TestMemoryEventUserContentReturnsStoredContentOnlyWhenRawCaptureAllowed(t *testing.T) {
+	tests := []struct {
+		name            string
+		captureResponse bool
+		noStore         bool
+		want            string
+	}{
+		{name: "allowed", captureResponse: true, want: "event-facing user content"},
+		{name: "disabled capture", captureResponse: false},
+		{name: "request no-store", captureResponse: true, noStore: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := newMemoryCaptureTestContext()
+			ctx.SetContext(memoryUserContentContextKey, "event-facing user content")
+			if tt.noStore {
+				ctx.SetContext(memoryNoStoreContextKey, true)
+			}
+			cfg := config.PluginConfig{
+				Route: config.RouteConfig{
+					CaptureResponse: tt.captureResponse,
+				},
+			}
+
+			require.Equal(t, tt.want, memoryEventUserContent(ctx, cfg))
+			require.Equal(t, "event-facing user content", ctx.GetStringContext(memoryUserContentContextKey, ""))
+		})
+	}
+}
+
 func TestMemoryResponseHookSkipsBodyForGatedAndAllowsStreamRequests(t *testing.T) {
 	t.Run("gated request disables response body processing", func(t *testing.T) {
 		ctx := newMemoryCaptureTestContext()
@@ -129,6 +215,7 @@ func TestMemoryCaptureStreamingResponseChunkStoresFinalCaptureFacts(t *testing.T
 	ctx.SetContext(memoryResponseStatusContextKey, 200)
 	cfg := config.PluginConfig{
 		Route: config.RouteConfig{
+			CaptureResponse: true,
 			StreamValueFrom: "choices.0.delta.content",
 			ToolCallsFrom:   []string{"choices.0.delta.vendor_tool_calls"},
 		},
@@ -166,6 +253,7 @@ func TestMemoryCaptureStreamingResponseChunkUsesConfiguredStreamValuePath(t *tes
 	ctx.SetContext(memoryResponseStatusContextKey, 200)
 	cfg := config.PluginConfig{
 		Route: config.RouteConfig{
+			CaptureResponse: true,
 			StreamValueFrom: "vendor.delta.text",
 		},
 	}
@@ -242,6 +330,7 @@ func TestMemoryCaptureStreamingResponseChunkDetectsToolCalls(t *testing.T) {
 			ctx.SetContext(memoryResponseStatusContextKey, 201)
 			cfg := config.PluginConfig{
 				Route: config.RouteConfig{
+					CaptureResponse: true,
 					StreamValueFrom: "choices.0.delta.content",
 					ToolCallsFrom:   tt.toolPaths,
 				},
@@ -286,6 +375,40 @@ func TestMemoryCaptureStreamingResponseChunkParseFailureFailsOpen(t *testing.T) 
 	require.Empty(t, capture.FinishReason)
 	require.False(t, capture.ContainsToolCalls)
 	require.Zero(t, capture.Usage)
+}
+
+func TestMemoryRawContentEligibilityGatesStreamingAssistantContent(t *testing.T) {
+	ctx := newMemoryCaptureTestContext()
+	ctx.SetContext(memoryStreamContextKey, true)
+	ctx.SetContext(memoryResponseStatusContextKey, 206)
+	ctx.SetContext(memoryUserContentContextKey, "stream raw user content")
+	cfg := config.PluginConfig{
+		Route: config.RouteConfig{
+			CaptureResponse: false,
+			StreamValueFrom: "choices.0.delta.content",
+		},
+	}
+
+	chunk := []byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"stream raw assistant content must be omitted\",\"tool_calls\":[{\"index\":0,\"id\":\"tool-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":7,\"total_tokens\":22}}\n\n" +
+		"data: [DONE]\n\n")
+
+	got := onHttpResponseBody(ctx, cfg, chunk, true, memoryCaptureNoopLog{})
+
+	require.Equal(t, chunk, got)
+	capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+	require.True(t, ok)
+	require.True(t, capture.IsStream)
+	require.False(t, capture.ParseFailed)
+	require.Equal(t, 206, capture.StatusCode)
+	require.Empty(t, capture.AssistantContent)
+	require.Equal(t, "stop", capture.FinishReason)
+	require.True(t, capture.ContainsToolCalls)
+	require.Equal(t, 15, capture.Usage.PromptTokens)
+	require.Equal(t, 7, capture.Usage.CompletionTokens)
+	require.Equal(t, 22, capture.Usage.TotalTokens)
+	require.Empty(t, memoryEventUserContent(ctx, cfg))
+	require.Equal(t, "stream raw user content", ctx.GetStringContext(memoryUserContentContextKey, ""))
 }
 
 type memoryCaptureTestContext struct {
