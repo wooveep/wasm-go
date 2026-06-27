@@ -14,11 +14,8 @@ type memoryMessageAssemblyInput struct {
 func assembleFinalMemoryMessages(input memoryMessageAssemblyInput) []sessionctx.OpenAIMessage {
 	highPriority := make([]sessionctx.OpenAIMessage, 0)
 	remaining := make([]sessionctx.OpenAIMessage, 0, len(input.Current))
-	currentUserMessages := 0
+	currentUserMessages := countCurrentUserMessages(input.Current)
 	for _, message := range input.Current {
-		if message.Role == "user" {
-			currentUserMessages++
-		}
 		if isHighPriorityMemoryMessage(message) {
 			highPriority = append(highPriority, message)
 			continue
@@ -40,6 +37,20 @@ func assembleFinalMemoryMessages(input memoryMessageAssemblyInput) []sessionctx.
 
 func isHighPriorityMemoryMessage(message sessionctx.OpenAIMessage) bool {
 	return message.Role == "system" || message.Role == "developer"
+}
+
+func hasEffectiveMemoryInjection(input memoryMessageAssemblyInput) bool {
+	return input.MemoryMessage != nil || len(input.Recent) > 0 && countCurrentUserMessages(input.Current) <= 1
+}
+
+func countCurrentUserMessages(messages []sessionctx.OpenAIMessage) int {
+	count := 0
+	for _, message := range messages {
+		if message.Role == "user" {
+			count++
+		}
+	}
+	return count
 }
 
 func memoryAssemblyInputFromResponse(response memoryConsoleAssembleResponse, injectRole string) memoryMessageAssemblyInput {

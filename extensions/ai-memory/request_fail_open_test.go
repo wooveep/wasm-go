@@ -42,29 +42,32 @@ func TestMemoryRequestFailOpen(t *testing.T) {
 			requireMemoryConsoleSafeLogs(t, host, "raw assemble failure memory")
 		})
 
-		t.Run("replacement failure after successful assemble continues upstream with original request body", func(t *testing.T) {
-			original := memoryConsoleAssembleRequestBody()
-			probe := failMemoryRequestBodyReplacement(t)
-			host, bodyAction := startMemoryFailOpenRequest(t, original)
-			require.Equal(t, types.ActionPause, bodyAction)
-			requireMemoryRecentRedisLookup(t, host)
+	})
+}
 
-			host.CallOnRedisCall(0, test.CreateRedisRespNull())
-			requireMemoryAssembleCall(t, host)
-			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
-				"role":    "system",
-				"content": "replacement failure memory",
-			}, nil))
+func TestMemoryRequestReplacementFailureFailsOpen(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		original := memoryConsoleAssembleRequestBody()
+		probe := failMemoryRequestBodyReplacement(t)
+		host, bodyAction := startMemoryFailOpenRequest(t, original)
+		require.Equal(t, types.ActionPause, bodyAction)
+		requireMemoryRecentRedisLookup(t, host)
 
-			require.Equal(t, 1, probe.calls)
-			requireMemoryExpectedMessages(t, requireMemoryRequestMessagesFromBody(t, probe.body), []memoryExpectedMessage{
-				{role: "system", content: "replacement failure memory"},
-				{role: "user", content: "current question"},
-			})
-			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
-			requireMemoryFailOpenOriginalBody(t, host, original)
-			requireMemoryConsoleSafeLogs(t, host, "replacement failure memory", "Console trace raw value", "Console diagnostic raw value")
+		host.CallOnRedisCall(0, test.CreateRedisRespNull())
+		requireMemoryAssembleCall(t, host)
+		host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
+			"role":    "system",
+			"content": "replacement failure memory",
+		}, nil))
+
+		require.Equal(t, 1, probe.calls)
+		requireMemoryExpectedMessages(t, requireMemoryRequestMessagesFromBody(t, probe.body), []memoryExpectedMessage{
+			{role: "system", content: "replacement failure memory"},
+			{role: "user", content: "current question"},
 		})
+		require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+		requireMemoryFailOpenOriginalBody(t, host, original)
+		requireMemoryConsoleSafeLogs(t, host, "replacement failure memory", "Console trace raw value", "Console diagnostic raw value")
 	})
 }
 

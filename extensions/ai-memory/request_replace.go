@@ -1,5 +1,3 @@
-//go:build !wasm
-
 package main
 
 import "github.com/higress-group/proxy-wasm-go-sdk/proxywasm"

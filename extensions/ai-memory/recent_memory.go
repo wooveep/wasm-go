@@ -97,10 +97,12 @@ func continueAfterRecentMemory(ctx wrapper.HttpContext, c config.PluginConfig, l
 	if shouldUseMemoryAssemble(c) {
 		if err := dispatchMemoryAssemble(ctx, c, log); err != nil {
 			log.Warnf("[ai-memory] Console assemble dispatch failed open: %v", err)
+			replaceMemoryRequestBodyWithRecentFallback(ctx, log)
 			proxywasm.ResumeHttpRequest()
 		}
 		return
 	}
+	replaceMemoryRequestBodyWithRecentFallback(ctx, log)
 	proxywasm.ResumeHttpRequest()
 }
 

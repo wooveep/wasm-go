@@ -113,35 +113,46 @@ func dispatchMemoryAssemble(ctx wrapper.HttpContext, c config.PluginConfig, log 
 	_, err = proxywasm.DispatchHttpCall(cluster.ClusterName(), headers, body, nil, timeout, func(numHeaders, bodySize, numTrailers int) {
 		if bodySize > maxMemoryAssembleResponseBytes {
 			log.Warnf("[ai-memory] Console assemble response too large, fail open")
+			replaceMemoryRequestBodyWithRecentFallback(ctx, log)
 			proxywasm.ResumeHttpRequest()
 			return
 		}
 		responseBody, err := proxywasm.GetHttpCallResponseBody(0, bodySize)
 		if err != nil {
 			log.Warnf("[ai-memory] Console assemble response body unavailable, fail open")
+			replaceMemoryRequestBodyWithRecentFallback(ctx, log)
 			proxywasm.ResumeHttpRequest()
 			return
 		}
 		responseHeaders, _ := proxywasm.GetHttpCallResponseHeaders()
 		statusCode := httpStatusFromHeaders(responseHeaders)
-		handleMemoryAssembleResponse(statusCode, responseBody, ctx, log)
+		handleMemoryAssembleResponse(statusCode, responseBody, ctx, c, log)
 	})
 	return err
 }
 
-func handleMemoryAssembleResponse(statusCode int, body []byte, ctx wrapper.HttpContext, log log.Log) {
+func handleMemoryAssembleResponse(statusCode int, body []byte, ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) {
 	if statusCode != http.StatusOK {
 		log.Warnf("[ai-memory] Console assemble returned status %d, fail open", statusCode)
+		replaceMemoryRequestBodyWithRecentFallback(ctx, log)
 		proxywasm.ResumeHttpRequest()
 		return
 	}
 	response, err := parseMemoryAssembleResponse(body)
 	if err != nil {
 		log.Warnf("[ai-memory] Console assemble response rejected, fail open: %v", err)
+		replaceMemoryRequestBodyWithRecentFallback(ctx, log)
 		proxywasm.ResumeHttpRequest()
 		return
 	}
 	ctx.SetContext(memoryAssembleResponseContextKey, response)
+	input := memoryAssemblyInputFromResponse(response, c.Route.InjectRole)
+	if len(input.Recent) == 0 && memoryAssembleDecisionAllowsRecent(response.Decision) {
+		input.Recent = recentMemoryMessages(ctx)
+	}
+	if input.MemoryMessage != nil || len(input.Recent) > 0 {
+		replaceMemoryRequestBody(ctx, input, log)
+	}
 	proxywasm.ResumeHttpRequest()
 }
 
@@ -203,6 +214,10 @@ func validMemoryAssembleDecision(decision string) bool {
 	default:
 		return false
 	}
+}
+
+func memoryAssembleDecisionAllowsRecent(decision string) bool {
+	return decision == memoryAssembleDecisionInject || decision == memoryAssembleDecisionRecentOnly
 }
 
 func validateMemoryMessage(message memoryAssembleMessage, allowSystem bool) error {

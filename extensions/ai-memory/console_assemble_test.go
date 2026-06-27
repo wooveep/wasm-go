@@ -125,6 +125,18 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			})
 		}
 
+		t.Run("skip decision preserves original request body without empty rewrite", func(t *testing.T) {
+			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
+			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)
+			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			requireMemoryAssembleCall(t, host)
+
+			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "skip", nil, nil))
+
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			require.Equal(t, string(original), string(host.GetRequestBody()))
+		})
+
 		t.Run("timeout falls back to Redis recent memory", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "semantic")
 			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
@@ -153,6 +165,19 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 				{role: "assistant", content: "recent safe assistant"},
 				{role: "user", content: "current question"},
 			})
+			requireMemoryConsoleSafeLogs(t, host, "raw Console memory must not be logged", "recent safe user", "recent safe assistant")
+		})
+
+		t.Run("invalid response with multi-user request preserves original body", func(t *testing.T) {
+			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
+			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)
+			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			requireMemoryAssembleCall(t, host)
+
+			host.CallOnHttpCall(memoryAssembleHeaders(), []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"system","content":"raw Console memory must not be logged"}`))
+
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			require.Equal(t, string(original), string(host.GetRequestBody()))
 			requireMemoryConsoleSafeLogs(t, host, "raw Console memory must not be logged", "recent safe user", "recent safe assistant")
 		})
 

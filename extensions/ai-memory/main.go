@@ -16,22 +16,24 @@ import (
 const (
 	pluginName = "ai-memory"
 
-	memoryGateContextKey           = "memoryGate"
-	memoryTenantContextKey         = "memoryTenant"
-	memoryConsumerContextKey       = "memoryConsumer"
-	memorySessionContextKey        = "memorySession"
-	memoryRequestIDContextKey      = "memoryRequestID"
-	memoryRouteContextKey          = "memoryRoute"
-	memoryModelContextKey          = "memoryModel"
-	memoryRequestPathContextKey    = "memoryRequestPath"
-	memoryModeContextKey           = "memoryMode"
-	memoryPolicyVersionContextKey  = "memoryPolicyVersion"
-	memoryStartedAtContextKey      = "memoryStartedAt"
-	memoryStreamContextKey         = "memoryStream"
-	memoryNoStoreContextKey        = "memoryNoStore"
-	memoryRequestDigestContextKey  = "memoryRequestDigest"
-	memoryUserContentContextKey    = "memoryUserContent"
-	memoryRecentMessagesContextKey = "memoryRecentMessages"
+	memoryGateContextKey            = "memoryGate"
+	memoryTenantContextKey          = "memoryTenant"
+	memoryConsumerContextKey        = "memoryConsumer"
+	memorySessionContextKey         = "memorySession"
+	memoryRequestIDContextKey       = "memoryRequestID"
+	memoryRouteContextKey           = "memoryRoute"
+	memoryModelContextKey           = "memoryModel"
+	memoryRequestPathContextKey     = "memoryRequestPath"
+	memoryModeContextKey            = "memoryMode"
+	memoryPolicyVersionContextKey   = "memoryPolicyVersion"
+	memoryStartedAtContextKey       = "memoryStartedAt"
+	memoryStreamContextKey          = "memoryStream"
+	memoryNoStoreContextKey         = "memoryNoStore"
+	memoryRequestDigestContextKey   = "memoryRequestDigest"
+	memoryUserContentContextKey     = "memoryUserContent"
+	memoryOriginalBodyContextKey    = "memoryOriginalBody"
+	memoryCurrentMessagesContextKey = "memoryCurrentMessages"
+	memoryRecentMessagesContextKey  = "memoryRecentMessages"
 
 	maxRequestBodyBytes = 100 * 1024 * 1024
 )
@@ -134,6 +136,8 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	ctx.SetContext(memoryStreamContextKey, request.Stream)
 	ctx.SetContext(memoryRequestDigestContextKey, digest)
 	ctx.SetContext(memoryUserContentContextKey, sessionctx.CurrentUserIntent(request.Messages))
+	ctx.SetContext(memoryOriginalBodyContextKey, append([]byte(nil), body...))
+	ctx.SetContext(memoryCurrentMessagesContextKey, append([]sessionctx.OpenAIMessage(nil), request.Messages...))
 	if err := memoryLoadRecentMemory(ctx, c, log); err != nil {
 		log.Warnf("[ai-memory] recent memory lookup failed open: %v", err)
 		if shouldUseMemoryAssemble(c) {
