@@ -214,6 +214,10 @@ func memoryAssembleResponse(t *testing.T, decision string, memoryMessage map[str
 		"trace": map[string]interface{}{
 			"policy_version": "memory-policy-v1",
 			"recent_source":  "redis",
+			"raw_trace":      "Console trace raw value",
+		},
+		"diagnostics": map[string]interface{}{
+			"raw_diagnostic": "Console diagnostic raw value",
 		},
 	})
 	require.NoError(t, err)
