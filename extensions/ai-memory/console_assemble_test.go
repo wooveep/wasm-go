@@ -155,6 +155,63 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			})
 			requireMemoryConsoleSafeLogs(t, host, "raw Console memory must not be logged", "recent safe user", "recent safe assistant")
 		})
+
+		t.Run("invalid decision and role values are not logged raw", func(t *testing.T) {
+			tests := []struct {
+				name     string
+				response []byte
+				forbid   string
+			}{
+				{
+					name:     "invalid decision",
+					response: []byte(`{"schema_version":1,"decision":"secret-invalid-decision"}`),
+					forbid:   "secret-invalid-decision",
+				},
+				{
+					name:     "invalid role",
+					response: []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"secret-invalid-role","content":"safe reject content"}}`),
+					forbid:   "secret-invalid-role",
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					host := startMemoryConsoleAssembleRequest(t, "semantic")
+					host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+					requireMemoryAssembleCall(t, host)
+
+					host.CallOnHttpCall(memoryAssembleHeaders(), tt.response)
+
+					require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+					requireMemoryConsoleSafeLogs(t, host, tt.forbid)
+				})
+			}
+		})
+
+		t.Run("oversized assemble request skips Console callout and fails open", func(t *testing.T) {
+			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", []byte(`{
+				"model": "qwen-turbo",
+				"messages": [
+					{"role": "user", "content": "`+strings.Repeat("oversized-question ", 20_000)+`"}
+				],
+				"stream": false
+			}`))
+			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+
+			require.Empty(t, host.GetHttpCalloutAttributes())
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			requireMemoryConsoleSafeLogs(t, host, "oversized-question")
+		})
+	})
+}
+
+func TestMemoryConsoleAssembleBounds(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		body := []byte(`{"schema_version":1,"decision":"skip","trace":{"raw":"` + strings.Repeat("oversized-response ", 20_000) + `"}}`)
+
+		_, err := parseMemoryAssembleResponse(body)
+
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "oversized-response")
 	})
 }
 
@@ -202,6 +259,11 @@ func memoryConsoleAssembleConfig(t *testing.T, memoryMode string) json.RawMessag
 
 func startMemoryConsoleAssembleRequest(t *testing.T, memoryMode string) test.TestHost {
 	t.Helper()
+	return startMemoryConsoleAssembleRequestWithBody(t, memoryMode, memoryConsoleAssembleRequestBody())
+}
+
+func startMemoryConsoleAssembleRequestWithBody(t *testing.T, memoryMode string, body []byte) test.TestHost {
+	t.Helper()
 	host, status := newMemoryConfigTestHost(memoryConsoleAssembleConfig(t, memoryMode))
 	t.Cleanup(host.Reset)
 	require.Equal(t, types.OnPluginStartStatusOK, status)
@@ -211,7 +273,7 @@ func startMemoryConsoleAssembleRequest(t *testing.T, memoryMode string) test.Tes
 	headerAction := host.CallOnHttpRequestHeaders(memoryConsoleAssembleHeaders())
 	require.Equal(t, types.HeaderStopIteration, headerAction)
 
-	bodyAction := host.CallOnHttpRequestBody(memoryConsoleAssembleRequestBody())
+	bodyAction := host.CallOnHttpRequestBody(body)
 	require.Equal(t, types.ActionPause, bodyAction)
 	requireMemoryRecentRedisLookup(t, host)
 	return host

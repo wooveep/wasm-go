@@ -19,7 +19,7 @@ const (
 func TestMemoryRequestInjection(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
 		t.Run("assemble facts use latest user and stable digest", func(t *testing.T) {
-			_, firstFacts := startMemoryInjectionAndRequireAssemble(t, []byte(`{
+			firstHost, firstFacts := startMemoryInjectionAndRequireAssembleWithoutCleanup(t, []byte(`{
 				"model": "qwen-turbo",
 				"stream": false,
 				"temperature": 0.2,
@@ -31,6 +31,7 @@ func TestMemoryRequestInjection(t *testing.T) {
 				],
 				"metadata": {"b": 2, "a": 1}
 			}`))
+			firstHost.Reset()
 
 			_, secondFacts := startMemoryInjectionAndRequireAssemble(t, []byte(`{"metadata":{"a":1,"b":2},"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":"latest memory intent","role":"user"}],"temperature":0.2,"stream":false,"model":"qwen-turbo"}`))
 
@@ -156,8 +157,14 @@ func memoryInjectionConfig(t *testing.T) json.RawMessage {
 
 func startMemoryInjectionAndRequireAssemble(t *testing.T, body []byte) (test.TestHost, map[string]interface{}) {
 	t.Helper()
-	host, status := newMemoryConfigTestHost(memoryInjectionConfig(t))
+	host, facts := startMemoryInjectionAndRequireAssembleWithoutCleanup(t, body)
 	t.Cleanup(host.Reset)
+	return host, facts
+}
+
+func startMemoryInjectionAndRequireAssembleWithoutCleanup(t *testing.T, body []byte) (test.TestHost, map[string]interface{}) {
+	t.Helper()
+	host, status := newMemoryConfigTestHost(memoryInjectionConfig(t))
 	require.Equal(t, types.OnPluginStartStatusOK, status)
 	require.NoError(t, host.SetRouteName("memory-route"))
 	require.NoError(t, host.SetRequestId("property-request-id"))

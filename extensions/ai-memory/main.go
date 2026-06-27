@@ -134,8 +134,15 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	ctx.SetContext(memoryStreamContextKey, request.Stream)
 	ctx.SetContext(memoryRequestDigestContextKey, digest)
 	ctx.SetContext(memoryUserContentContextKey, sessionctx.CurrentUserIntent(request.Messages))
-	if err := loadRecentMemory(ctx, c, log); err != nil {
+	if err := memoryLoadRecentMemory(ctx, c, log); err != nil {
 		log.Warnf("[ai-memory] recent memory lookup failed open: %v", err)
+		if shouldUseMemoryAssemble(c) {
+			if err := dispatchMemoryAssemble(ctx, c, log); err != nil {
+				log.Warnf("[ai-memory] Console assemble dispatch failed open: %v", err)
+				return types.ActionContinue
+			}
+			return types.ActionPause
+		}
 		return types.ActionContinue
 	}
 	return types.ActionPause

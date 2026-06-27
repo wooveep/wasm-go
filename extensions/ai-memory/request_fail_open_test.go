@@ -5,9 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
+	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/test"
+	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,6 +78,27 @@ func TestMemoryRequestReplacementFailureBoundary(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, replaced)
 		require.Equal(t, `null`, string(original))
+	})
+}
+
+func TestMemoryRecentLoadDispatchFailureStillAssembles(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		original := memoryConsoleAssembleRequestBody()
+		previous := memoryLoadRecentMemory
+		memoryLoadRecentMemory = func(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) error {
+			return errors.New("recent redis dispatch failed")
+		}
+		t.Cleanup(func() {
+			memoryLoadRecentMemory = previous
+		})
+
+		host, bodyAction := startMemoryFailOpenRequest(t, original)
+
+		require.Equal(t, types.ActionPause, bodyAction)
+		require.Empty(t, host.GetRedisCalloutAttributes())
+		facts := requireMemoryAssembleCall(t, host)
+		require.Equal(t, "semantic", facts["memory_mode"])
+		require.Equal(t, "current question", facts["current_question"])
 	})
 }
 

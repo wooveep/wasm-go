@@ -3,10 +3,14 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
+	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 )
 
@@ -17,6 +21,11 @@ const (
 	memoryAssembleDecisionRecentOnly = "recent_only"
 	memoryAssembleDecisionSkip       = "skip"
 	memoryAssembleDecisionBypass     = "bypass"
+
+	memoryAssembleResponseContextKey = "memoryAssembleResponse"
+
+	maxMemoryAssembleRequestBytes  = 256 * 1024
+	maxMemoryAssembleResponseBytes = 256 * 1024
 )
 
 type memoryNamedFact struct {
@@ -75,7 +84,95 @@ func buildMemoryAssembleRequestBody(ctx wrapper.HttpContext, c config.PluginConf
 	})
 }
 
+func shouldUseMemoryAssemble(c config.PluginConfig) bool {
+	return c.Route.MemoryMode == config.MemoryModeDigest || c.Route.MemoryMode == config.MemoryModeSemantic
+}
+
+func dispatchMemoryAssemble(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) error {
+	body, err := buildMemoryAssembleRequestBody(ctx, c)
+	if err != nil {
+		return err
+	}
+	if len(body) > maxMemoryAssembleRequestBytes {
+		return errors.New("Console assemble request too large")
+	}
+	cluster := wrapper.FQDNCluster{
+		FQDN: c.ConsoleInternal.ServiceName,
+		Port: int64(c.ConsoleInternal.ServicePort),
+	}
+	headers := [][2]string{
+		{":method", http.MethodPost},
+		{":path", c.ConsoleInternal.AssemblePath},
+		{":authority", cluster.HostName()},
+		{"content-type", "application/json"},
+	}
+	if strings.TrimSpace(c.ConsoleInternal.AuthToken) != "" {
+		headers = append(headers, [2]string{"authorization", "Bearer " + strings.TrimSpace(c.ConsoleInternal.AuthToken)})
+	}
+	timeout := memoryAssembleTimeout(c)
+	_, err = proxywasm.DispatchHttpCall(cluster.ClusterName(), headers, body, nil, timeout, func(numHeaders, bodySize, numTrailers int) {
+		if bodySize > maxMemoryAssembleResponseBytes {
+			log.Warnf("[ai-memory] Console assemble response too large, fail open")
+			proxywasm.ResumeHttpRequest()
+			return
+		}
+		responseBody, err := proxywasm.GetHttpCallResponseBody(0, bodySize)
+		if err != nil {
+			log.Warnf("[ai-memory] Console assemble response body unavailable, fail open")
+			proxywasm.ResumeHttpRequest()
+			return
+		}
+		responseHeaders, _ := proxywasm.GetHttpCallResponseHeaders()
+		statusCode := httpStatusFromHeaders(responseHeaders)
+		handleMemoryAssembleResponse(statusCode, responseBody, ctx, log)
+	})
+	return err
+}
+
+func handleMemoryAssembleResponse(statusCode int, body []byte, ctx wrapper.HttpContext, log log.Log) {
+	if statusCode != http.StatusOK {
+		log.Warnf("[ai-memory] Console assemble returned status %d, fail open", statusCode)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
+	response, err := parseMemoryAssembleResponse(body)
+	if err != nil {
+		log.Warnf("[ai-memory] Console assemble response rejected, fail open: %v", err)
+		proxywasm.ResumeHttpRequest()
+		return
+	}
+	ctx.SetContext(memoryAssembleResponseContextKey, response)
+	proxywasm.ResumeHttpRequest()
+}
+
+func memoryAssembleTimeout(c config.PluginConfig) uint32 {
+	if c.Route.AssembleTimeoutMS > 0 {
+		return uint32(c.Route.AssembleTimeoutMS)
+	}
+	if c.ConsoleInternal.TimeoutMS > 0 {
+		return uint32(c.ConsoleInternal.TimeoutMS)
+	}
+	return 100
+}
+
+func httpStatusFromHeaders(headers [][2]string) int {
+	for _, header := range headers {
+		if header[0] != ":status" {
+			continue
+		}
+		statusCode, err := strconv.Atoi(header[1])
+		if err != nil {
+			return http.StatusBadGateway
+		}
+		return statusCode
+	}
+	return http.StatusBadGateway
+}
+
 func parseMemoryAssembleResponse(body []byte) (memoryConsoleAssembleResponse, error) {
+	if len(body) > maxMemoryAssembleResponseBytes {
+		return memoryConsoleAssembleResponse{}, errors.New("Console assemble response too large")
+	}
 	var response memoryConsoleAssembleResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return memoryConsoleAssembleResponse{}, errors.New("Console assemble response is not valid JSON")
@@ -84,7 +181,7 @@ func parseMemoryAssembleResponse(body []byte) (memoryConsoleAssembleResponse, er
 		return memoryConsoleAssembleResponse{}, errors.New("unsupported Console assemble schema version")
 	}
 	if !validMemoryAssembleDecision(response.Decision) {
-		return memoryConsoleAssembleResponse{}, fmt.Errorf("unsupported Console assemble decision %q", response.Decision)
+		return memoryConsoleAssembleResponse{}, errors.New("unsupported Console assemble decision")
 	}
 	if response.MemoryMessage != nil {
 		if err := validateMemoryMessage(*response.MemoryMessage, true); err != nil {
@@ -120,7 +217,7 @@ func validateMemoryMessage(message memoryAssembleMessage, allowSystem bool) erro
 			return errors.New("developer role is not supported in recent messages")
 		}
 	default:
-		return fmt.Errorf("unsupported memory message role %q", message.Role)
+		return errors.New("unsupported memory message role")
 	}
 	if len(message.Content) > maxRecentMessageBytes {
 		return errors.New("memory message too large")
