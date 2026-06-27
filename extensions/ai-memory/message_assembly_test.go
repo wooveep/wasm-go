@@ -11,9 +11,7 @@ func TestMemoryFinalMessageAssemblyOrder(t *testing.T) {
 	memoryMessage := sessionctx.OpenAIMessage{Role: "system", Content: "Console memory context"}
 	messages := assembleFinalMemoryMessages(memoryMessageAssemblyInput{
 		Current: []sessionctx.OpenAIMessage{
-			{Role: "user", Content: "opening question"},
 			{Role: "system", Content: "client system"},
-			{Role: "assistant", Content: "opening answer"},
 			{Role: "developer", Content: "client developer"},
 			{Role: "user", Content: "current question"},
 		},
@@ -30,6 +28,29 @@ func TestMemoryFinalMessageAssemblyOrder(t *testing.T) {
 		{role: "system", content: "Console memory context"},
 		{role: "user", content: "recent user"},
 		{role: "assistant", content: "recent assistant"},
+		{role: "user", content: "current question"},
+	})
+}
+
+func TestMemoryFinalMessageAssemblySkipsRecentForMultiUserCurrentRequest(t *testing.T) {
+	memoryMessage := sessionctx.OpenAIMessage{Role: "system", Content: "Console memory context"}
+	messages := assembleFinalMemoryMessages(memoryMessageAssemblyInput{
+		Current: []sessionctx.OpenAIMessage{
+			{Role: "system", Content: "client system"},
+			{Role: "user", Content: "opening question"},
+			{Role: "assistant", Content: "opening answer"},
+			{Role: "user", Content: "current question"},
+		},
+		MemoryMessage: &memoryMessage,
+		Recent: []sessionctx.OpenAIMessage{
+			{Role: "user", Content: "recent user"},
+			{Role: "assistant", Content: "recent assistant"},
+		},
+	})
+
+	requireOpenAIMessages(t, messages, []memoryExpectedMessage{
+		{role: "system", content: "client system"},
+		{role: "system", content: "Console memory context"},
 		{role: "user", content: "opening question"},
 		{role: "assistant", content: "opening answer"},
 		{role: "user", content: "current question"},

@@ -13,7 +13,11 @@ type memoryMessageAssemblyInput struct {
 func assembleFinalMemoryMessages(input memoryMessageAssemblyInput) []sessionctx.OpenAIMessage {
 	highPriority := make([]sessionctx.OpenAIMessage, 0)
 	remaining := make([]sessionctx.OpenAIMessage, 0, len(input.Current))
+	currentUserMessages := 0
 	for _, message := range input.Current {
+		if message.Role == "user" {
+			currentUserMessages++
+		}
 		if isHighPriorityMemoryMessage(message) {
 			highPriority = append(highPriority, message)
 			continue
@@ -26,7 +30,9 @@ func assembleFinalMemoryMessages(input memoryMessageAssemblyInput) []sessionctx.
 	if input.MemoryMessage != nil {
 		finalMessages = append(finalMessages, *input.MemoryMessage)
 	}
-	finalMessages = append(finalMessages, input.Recent...)
+	if currentUserMessages <= 1 {
+		finalMessages = append(finalMessages, input.Recent...)
+	}
 	finalMessages = append(finalMessages, remaining...)
 	return finalMessages
 }
