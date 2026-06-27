@@ -95,6 +95,88 @@ func TestParseConfigValidation(t *testing.T) {
 	})
 }
 
+func TestParseConfigInjectRoleValidation(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		validExternalTargets := map[string]interface{}{
+			"redis_stream": map[string]interface{}{
+				"service_name": "redis.memory.svc.cluster.local",
+			},
+			"recent_cache": map[string]interface{}{
+				"service_name": "redis.recent.svc.cluster.local",
+			},
+			"console_internal": map[string]interface{}{
+				"service_name": "console.internal.svc.cluster.local",
+			},
+			"_rules_": []map[string]interface{}{
+				{
+					"_match_route_": []string{"memory-route"},
+					"memory_mode":   "digest",
+				},
+			},
+		}
+
+		tests := []struct {
+			name   string
+			config map[string]interface{}
+		}{
+			{
+				name: "invalid inject role",
+				config: withRouteConfig(validExternalTargets, map[string]interface{}{
+					"inject_role": "assistant",
+				}),
+			},
+			{
+				name: "developer inject role without compatibility",
+				config: withRouteConfig(validExternalTargets, map[string]interface{}{
+					"inject_role": "developer",
+				}),
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				host, status := newMemoryConfigTestHost(mustMemoryConfig(t, tt.config))
+				defer host.Reset()
+
+				require.Equal(t, types.OnPluginStartStatusFailed, status)
+			})
+		}
+	})
+}
+
+func TestParseConfigDeveloperCompatibleRoute(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		host, status := newMemoryConfigTestHost(mustMemoryConfig(t, map[string]interface{}{
+			"redis_stream": map[string]interface{}{
+				"service_name": "redis.memory.svc.cluster.local",
+			},
+			"recent_cache": map[string]interface{}{
+				"service_name": "redis.recent.svc.cluster.local",
+			},
+			"console_internal": map[string]interface{}{
+				"service_name": "console.internal.svc.cluster.local",
+			},
+			"_rules_": []map[string]interface{}{
+				{
+					"_match_route_":        []string{"memory-developer"},
+					"memory_mode":          "digest",
+					"inject_role":          "developer",
+					"developer_compatible": true,
+				},
+			},
+		}))
+		defer host.Reset()
+
+		require.Equal(t, types.OnPluginStartStatusOK, status)
+		require.NoError(t, host.SetRouteName("memory-developer"))
+		config, err := host.GetMatchConfig()
+		require.NoError(t, err)
+
+		require.Equal(t, "developer", mustStringField(t, config, "Route", "InjectRole"))
+		require.True(t, mustBoolField(t, config, "Route", "DeveloperCompatible"))
+	})
+}
+
 func withGlobalConfig(base map[string]interface{}, overrides map[string]interface{}) map[string]interface{} {
 	config := make(map[string]interface{}, len(base)+len(overrides))
 	for key, value := range base {

@@ -48,19 +48,20 @@ type ConsoleInternalConfig struct {
 }
 
 type RouteConfig struct {
-	MemoryMode        string   `yaml:"memory_mode" json:"memory_mode"`
-	RecentWindowTurns int      `yaml:"recent_window_turns" json:"recent_window_turns"`
-	MemoryTokenBudget int      `yaml:"memory_token_budget" json:"memory_token_budget"`
-	AssembleTimeoutMS int      `yaml:"assemble_timeout_ms" json:"assemble_timeout_ms"`
-	InjectRole        string   `yaml:"inject_role" json:"inject_role"`
-	SemanticTopK      int      `yaml:"semantic_top_k" json:"semantic_top_k"`
-	CaptureResponse   bool     `yaml:"capture_response" json:"capture_response"`
-	NoStoreHeader     string   `yaml:"no_store_header" json:"no_store_header"`
-	QuestionFrom      string   `yaml:"question_from" json:"question_from"`
-	ResponseValueFrom string   `yaml:"response_value_from" json:"response_value_from"`
-	StreamValueFrom   string   `yaml:"stream_value_from" json:"stream_value_from"`
-	ToolCallsFrom     []string `yaml:"tool_calls_from" json:"tool_calls_from"`
-	PolicyVersion     string   `yaml:"policy_version" json:"policy_version"`
+	MemoryMode          string   `yaml:"memory_mode" json:"memory_mode"`
+	RecentWindowTurns   int      `yaml:"recent_window_turns" json:"recent_window_turns"`
+	MemoryTokenBudget   int      `yaml:"memory_token_budget" json:"memory_token_budget"`
+	AssembleTimeoutMS   int      `yaml:"assemble_timeout_ms" json:"assemble_timeout_ms"`
+	InjectRole          string   `yaml:"inject_role" json:"inject_role"`
+	DeveloperCompatible bool     `yaml:"developer_compatible" json:"developer_compatible"`
+	SemanticTopK        int      `yaml:"semantic_top_k" json:"semantic_top_k"`
+	CaptureResponse     bool     `yaml:"capture_response" json:"capture_response"`
+	NoStoreHeader       string   `yaml:"no_store_header" json:"no_store_header"`
+	QuestionFrom        string   `yaml:"question_from" json:"question_from"`
+	ResponseValueFrom   string   `yaml:"response_value_from" json:"response_value_from"`
+	StreamValueFrom     string   `yaml:"stream_value_from" json:"stream_value_from"`
+	ToolCallsFrom       []string `yaml:"tool_calls_from" json:"tool_calls_from"`
+	PolicyVersion       string   `yaml:"policy_version" json:"policy_version"`
 }
 
 // PluginConfig is the ai-memory plugin configuration root.
@@ -125,6 +126,9 @@ func (c PluginConfig) Validate() error {
 	}
 	if c.Route.InjectRole != InjectRoleSystem && c.Route.InjectRole != InjectRoleDeveloper {
 		return fmt.Errorf("unsupported inject_role %q", c.Route.InjectRole)
+	}
+	if c.Route.InjectRole == InjectRoleDeveloper && !c.Route.DeveloperCompatible {
+		return fmt.Errorf("inject_role %q requires developer_compatible true", c.Route.InjectRole)
 	}
 	return nil
 }
@@ -224,6 +228,9 @@ func parseRouteConfig(base RouteConfig, json gjson.Result) RouteConfig {
 	base.MemoryTokenBudget = intValue(json.Get("memory_token_budget"), base.MemoryTokenBudget)
 	base.AssembleTimeoutMS = intValue(json.Get("assemble_timeout_ms"), base.AssembleTimeoutMS)
 	base.InjectRole = stringValue(json.Get("inject_role"), base.InjectRole)
+	if json.Get("developer_compatible").Exists() {
+		base.DeveloperCompatible = json.Get("developer_compatible").Bool()
+	}
 	base.SemanticTopK = intValue(json.Get("semantic_top_k"), base.SemanticTopK)
 	if json.Get("capture_response").Exists() {
 		base.CaptureResponse = json.Get("capture_response").Bool()

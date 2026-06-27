@@ -44,7 +44,7 @@
 - [x] 5.4 Implement bounded Console assemble callout for `digest` and `semantic` modes with fallback to Redis recent memory or no memory.
 - [x] 5.5 Implement final message assembly order: original high-priority messages, Console memory message, safe recent messages, then remaining current request messages.
 - [x] 5.6 Implement duplicate recent-window avoidance for current requests that already contain multiple user turns.
-- [ ] 5.7 Implement `inject_role` validation and developer-role compatibility behavior.
+- [x] 5.7 Implement `inject_role` validation and developer-role compatibility behavior.
 - [ ] 5.8 Implement request body replacement and upstream resume, with fail-open behavior on every parse, assemble, validation, or replacement error.
 
 ## 6. Response Capture and MemoryEvent Emission

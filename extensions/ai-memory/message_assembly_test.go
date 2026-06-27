@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	"github.com/stretchr/testify/require"
 )
@@ -101,10 +102,53 @@ func TestMemoryAssemblyInputFromResponseDecision(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			input := memoryAssemblyInputFromResponse(tt.response)
+			input := memoryAssemblyInputFromResponse(tt.response, config.InjectRoleSystem)
 
 			require.Equal(t, tt.wantMemory, input.MemoryMessage != nil)
 			require.Len(t, input.Recent, tt.wantRecent)
+		})
+	}
+}
+
+func TestMemoryAssemblyInputFromResponseUsesConfiguredInjectRole(t *testing.T) {
+	tests := []struct {
+		name        string
+		consoleRole string
+		injectRole  string
+		wantRole    string
+	}{
+		{
+			name:        "system route overrides Console developer message",
+			consoleRole: config.InjectRoleDeveloper,
+			injectRole:  config.InjectRoleSystem,
+			wantRole:    config.InjectRoleSystem,
+		},
+		{
+			name:        "developer route upgrades Console system message",
+			consoleRole: config.InjectRoleSystem,
+			injectRole:  config.InjectRoleDeveloper,
+			wantRole:    config.InjectRoleDeveloper,
+		},
+		{
+			name:        "empty route role defaults to system",
+			consoleRole: config.InjectRoleDeveloper,
+			wantRole:    config.InjectRoleSystem,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := memoryAssemblyInputFromResponse(memoryConsoleAssembleResponse{
+				Decision: memoryAssembleDecisionInject,
+				MemoryMessage: &memoryAssembleMessage{
+					Role:    tt.consoleRole,
+					Content: "Console memory context",
+				},
+			}, tt.injectRole)
+
+			require.NotNil(t, input.MemoryMessage)
+			require.Equal(t, tt.wantRole, input.MemoryMessage.Role)
+			require.Equal(t, "Console memory context", input.MemoryMessage.Content)
 		})
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 )
 
@@ -41,7 +42,10 @@ func isHighPriorityMemoryMessage(message sessionctx.OpenAIMessage) bool {
 	return message.Role == "system" || message.Role == "developer"
 }
 
-func memoryAssemblyInputFromResponse(response memoryConsoleAssembleResponse) memoryMessageAssemblyInput {
+func memoryAssemblyInputFromResponse(response memoryConsoleAssembleResponse, injectRole string) memoryMessageAssemblyInput {
+	if injectRole == "" {
+		injectRole = config.InjectRoleSystem
+	}
 	switch response.Decision {
 	case memoryAssembleDecisionInject:
 		input := memoryMessageAssemblyInput{
@@ -49,6 +53,7 @@ func memoryAssemblyInputFromResponse(response memoryConsoleAssembleResponse) mem
 		}
 		if response.MemoryMessage != nil {
 			message := response.MemoryMessage.toOpenAIMessage()
+			message.Role = injectRole
 			input.MemoryMessage = &message
 		}
 		return input
