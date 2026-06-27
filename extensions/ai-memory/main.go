@@ -30,6 +30,7 @@ const (
 	memoryStreamContextKey        = "memoryStream"
 	memoryNoStoreContextKey       = "memoryNoStore"
 	memoryRequestDigestContextKey = "memoryRequestDigest"
+	memoryUserContentContextKey   = "memoryUserContent"
 
 	maxRequestBodyBytes = 100 * 1024 * 1024
 )
@@ -131,6 +132,7 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	ctx.SetContext(memoryModelContextKey, request.Model)
 	ctx.SetContext(memoryStreamContextKey, request.Stream)
 	ctx.SetContext(memoryRequestDigestContextKey, digest)
+	ctx.SetContext(memoryUserContentContextKey, sessionctx.CurrentUserIntent(request.Messages))
 	return types.ActionPause
 }
 

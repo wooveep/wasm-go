@@ -38,7 +38,7 @@
 
 ## 5. Memory Assembly and Request Injection
 
-- [ ] 5.1 Implement OpenAI-compatible request body parsing, latest user content extraction, and stable digest construction.
+- [x] 5.1 Implement OpenAI-compatible request body parsing, latest user content extraction, and stable digest construction.
 - [ ] 5.2 Implement Redis recent-memory key construction, loading, validation, and miss behavior.
 - [ ] 5.3 Implement Console assemble request and response structs for `POST /internal/memory/assemble`.
 - [ ] 5.4 Implement bounded Console assemble callout for `digest` and `semantic` modes with fallback to Redis recent memory or no memory.
