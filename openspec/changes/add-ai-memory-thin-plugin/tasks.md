@@ -8,7 +8,7 @@
 
 ## 2. Tests First
 
-- [ ] 2.1 Add config parsing tests for global Redis Stream, recent-memory Redis, Console internal service, identity headers, enabled suffixes, `fail_policy`, route memory behavior, and external-target inheritance.
+- [x] 2.1 Add config parsing tests for global Redis Stream, recent-memory Redis, Console internal service, identity headers, enabled suffixes, `fail_policy`, route memory behavior, and external-target inheritance.
 - [ ] 2.2 Add validation tests for unsupported `fail_policy`, invalid `memory_mode`, route-level `redis_stream`, route-level `recent_cache`, and route-level `console_internal`.
 - [ ] 2.3 Add request gating tests for path suffixes, JSON content type, missing tenant, missing consumer, and `memory_mode: off`.
 - [ ] 2.4 Add OpenAI request parsing and injection tests for latest user extraction, request digest stability, client system/developer message preservation, memory message insertion, safe recent message insertion, and multi-user-turn duplicate avoidance.
