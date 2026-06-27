@@ -305,6 +305,30 @@ func BuildRequestDigest(input RequestDigestInput) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+func BuildOpenAIChatRequestDigest(request OpenAIChatRequest) (string, error) {
+	return BuildRequestDigest(RequestDigestInput{
+		Model:             request.Model,
+		Messages:          request.Messages,
+		Tools:             request.Tools,
+		ToolChoice:        request.ToolChoice,
+		ResponseFormat:    request.ResponseFormat,
+		Temperature:       request.Temperature,
+		TopP:              request.TopP,
+		Seed:              request.Seed,
+		MaxTokens:         request.MaxTokens,
+		MaxCompletion:     request.MaxCompletion,
+		Stop:              request.Stop,
+		N:                 request.N,
+		PresencePenalty:   request.PresencePenalty,
+		FrequencyPenalty:  request.FrequencyPenalty,
+		LogitBias:         request.LogitBias,
+		Logprobs:          request.Logprobs,
+		TopLogprobs:       request.TopLogprobs,
+		ParallelToolCalls: request.ParallelToolCalls,
+		Extra:             request.Extra,
+	})
+}
+
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
@@ -317,6 +341,10 @@ type OpenAIChatResponse struct {
 	FinishReasons     []string
 	Usage             Usage
 	ContainsToolCalls bool
+}
+
+type ResponseParseOptions struct {
+	AdditionalToolCallPaths []string
 }
 
 func ContainsToolUse(response OpenAIChatResponse) bool {
@@ -335,6 +363,10 @@ func ResponseFinishReason(response OpenAIChatResponse) string {
 }
 
 func ParseOpenAIChatResponse(body []byte) (OpenAIChatResponse, error) {
+	return ParseOpenAIChatResponseWithOptions(body, ResponseParseOptions{})
+}
+
+func ParseOpenAIChatResponseWithOptions(body []byte, opts ResponseParseOptions) (OpenAIChatResponse, error) {
 	var raw struct {
 		Choices []struct {
 			Message struct {
@@ -351,6 +383,9 @@ func ParseOpenAIChatResponse(body []byte) (OpenAIChatResponse, error) {
 	}
 
 	response := OpenAIChatResponse{Usage: raw.Usage}
+	if hasAnyJSONPath(body, opts.AdditionalToolCallPaths) {
+		response.ContainsToolCalls = true
+	}
 	if len(raw.Choices) == 0 {
 		return response, nil
 	}
@@ -363,25 +398,28 @@ func ParseOpenAIChatResponse(body []byte) (OpenAIChatResponse, error) {
 		}
 		if len(choice.Message.ToolCalls) > 0 ||
 			choice.Message.FunctionCall != nil ||
-			choice.FinishReason == "tool_calls" ||
-			choice.FinishReason == "function_call" {
+			isToolCallFinishReason(choice.FinishReason) {
 			response.ContainsToolCalls = true
 		}
 	}
 	return response, nil
 }
 
-type StreamCaptureOptions struct{}
-
-type StreamCapture struct {
-	content           strings.Builder
-	buffer            string
-	finishReason      string
-	containsToolCalls bool
+type StreamCaptureOptions struct {
+	AdditionalToolCallPaths []string
 }
 
-func NewStreamCapture(StreamCaptureOptions) *StreamCapture {
-	return &StreamCapture{}
+type StreamCapture struct {
+	content                 strings.Builder
+	buffer                  string
+	finishReason            string
+	usage                   Usage
+	containsToolCalls       bool
+	additionalToolCallPaths []string
+}
+
+func NewStreamCapture(opts StreamCaptureOptions) *StreamCapture {
+	return &StreamCapture{additionalToolCallPaths: opts.AdditionalToolCallPaths}
 }
 
 func (c *StreamCapture) AppendSSE(chunk []byte) error {
@@ -413,15 +451,23 @@ func (c *StreamCapture) AppendSSE(chunk []byte) error {
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
+			Usage *Usage `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
 			return err
+		}
+		if event.Usage != nil {
+			c.usage = *event.Usage
+		}
+		if hasAnyJSONPath([]byte(payload), c.additionalToolCallPaths) {
+			c.containsToolCalls = true
 		}
 		for _, choice := range event.Choices {
 			c.content.WriteString(rawMessageTextContent(choice.Delta.Content))
 			if len(choice.Delta.ToolCalls) > 0 ||
 				choice.Delta.FunctionCall != nil ||
-				rawContentContainsToolCalls(choice.Delta.Content) {
+				rawContentContainsToolCalls(choice.Delta.Content) ||
+				isToolCallFinishReason(choice.FinishReason) {
 				c.containsToolCalls = true
 			}
 			if choice.FinishReason != "" {
@@ -438,6 +484,10 @@ func (c *StreamCapture) AssistantContent() string {
 
 func (c *StreamCapture) FinishReason() string {
 	return c.finishReason
+}
+
+func (c *StreamCapture) Usage() Usage {
+	return c.usage
 }
 
 func (c *StreamCapture) ContainsToolCalls() bool {
@@ -670,6 +720,80 @@ func rawContentContainsToolCalls(raw json.RawMessage) bool {
 		return false
 	}
 	return len(content.ToolCalls) > 0
+}
+
+func isToolCallFinishReason(reason string) bool {
+	return reason == "tool_calls" || reason == "function_call"
+}
+
+func hasAnyJSONPath(body []byte, paths []string) bool {
+	if len(paths) == 0 {
+		return false
+	}
+	value, err := canonicalJSON(body)
+	if err != nil {
+		return false
+	}
+	for _, path := range paths {
+		if jsonPathHasValue(value, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func jsonPathHasValue(value interface{}, path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	current := value
+	for _, segment := range strings.Split(path, ".") {
+		if segment == "" {
+			return false
+		}
+		switch typed := current.(type) {
+		case map[string]interface{}:
+			next, ok := typed[segment]
+			if !ok {
+				return false
+			}
+			current = next
+		case []interface{}:
+			index, err := strconv.Atoi(segment)
+			if err != nil || index < 0 || index >= len(typed) {
+				return false
+			}
+			current = typed[index]
+		default:
+			return false
+		}
+	}
+	return jsonPathValuePresent(current)
+}
+
+func jsonPathValuePresent(value interface{}) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case []interface{}:
+		return len(typed) > 0
+	case map[string]interface{}:
+		return len(typed) > 0
+	case string:
+		return typed != ""
+	case bool:
+		return typed
+	case json.Number:
+		number, err := typed.Float64()
+		if err != nil {
+			return false
+		}
+		return number != 0
+	case float64:
+		return typed != 0
+	default:
+		return true
+	}
 }
 
 func appendLogField(fields [][2]string, name, value string, sensitiveValues ...string) [][2]string {

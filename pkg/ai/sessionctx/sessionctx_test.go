@@ -395,6 +395,38 @@ func TestOpenAIResponseParsingWithAdditionalToolCallPaths(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, canonicalResponse.ContainsToolCalls, "additional paths must not replace built-in OpenAI tool-call detection")
+
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{name: "false", value: `false`},
+		{name: "zero", value: `0`},
+		{name: "decimal zero", value: `0.0`},
+		{name: "exponent zero", value: `0e0`},
+		{name: "negative zero", value: `-0`},
+		{name: "null", value: `null`},
+		{name: "empty array", value: `[]`},
+		{name: "empty object", value: `{}`},
+		{name: "empty string", value: `""`},
+	} {
+		t.Run("does not treat "+tc.name+" configured path value as tool calls", func(t *testing.T) {
+			response, err := sessionctx.ParseOpenAIChatResponseWithOptions([]byte(`{
+				"choices": [{
+					"message": {
+						"role": "assistant",
+						"content": "non tool response",
+						"custom_tool_calls": `+tc.value+`
+					},
+					"finish_reason": "stop"
+				}]
+			}`), sessionctx.ResponseParseOptions{
+				AdditionalToolCallPaths: []string{"choices.0.message.custom_tool_calls"},
+			})
+			require.NoError(t, err)
+			require.False(t, response.ContainsToolCalls)
+		})
+	}
 }
 
 func TestStreamCapture(t *testing.T) {
@@ -469,6 +501,17 @@ func TestStreamCaptureUsageFinishReasonAndCustomToolPaths(t *testing.T) {
 	})
 	require.NoError(t, canonicalWithOptionsCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]}}]}\n\n")))
 	require.True(t, canonicalWithOptionsCapture.ContainsToolCalls(), "additional paths must not replace built-in stream tool-call detection")
+
+	emptyPathCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{
+		AdditionalToolCallPaths: []string{"choices.0.delta.vendor_tool_calls"},
+	})
+	require.NoError(t, emptyPathCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"no tool\",\"vendor_tool_calls\":false},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n")))
+	require.False(t, emptyPathCapture.ContainsToolCalls())
+	require.Equal(t, sessionctx.Usage{
+		PromptTokens:     1,
+		CompletionTokens: 1,
+		TotalTokens:      2,
+	}, emptyPathCapture.Usage())
 }
 
 func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
