@@ -35,7 +35,8 @@ const (
 	memoryCurrentMessagesContextKey = "memoryCurrentMessages"
 	memoryRecentMessagesContextKey  = "memoryRecentMessages"
 
-	maxRequestBodyBytes = 100 * 1024 * 1024
+	maxRequestBodyBytes  = 100 * 1024 * 1024
+	maxResponseBodyBytes = 100 * 1024 * 1024
 )
 
 func main() {}
@@ -153,10 +154,17 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
+	if memoryGateReason(ctx) != "" || ctx.GetBoolContext(memoryStreamContextKey, false) {
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+	memoryCaptureResponseStatus(ctx, log)
+	ctx.SetResponseBodyBufferLimit(maxResponseBodyBytes)
 	return types.ActionContinue
 }
 
 func onHttpResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log log.Log) []byte {
+	memoryCaptureNonStreamingResponseChunk(ctx, c, chunk, isLastChunk, log)
 	return chunk
 }
 

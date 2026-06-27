@@ -49,7 +49,7 @@
 
 ## 6. Response Capture and MemoryEvent Emission
 
-- [ ] 6.1 Implement non-streaming response capture for assistant content, usage, finish reason, status code, and tool-call detection.
+- [x] 6.1 Implement non-streaming response capture for assistant content, usage, finish reason, status code, and tool-call detection.
 - [ ] 6.2 Implement streaming SSE capture for split chunks, line ending variants, `[DONE]`, role-only chunks, tool-call deltas, usage, and finish reason.
 - [ ] 6.3 Implement no-store and disabled-capture gates that omit raw user and assistant content while preserving safe operational facts.
 - [ ] 6.4 Define `MemoryEvent` structs with schema version, envelope, identity, request, route, model, policy, status, stream, tool-call, usage, finish, timing, and plugin version fields.
