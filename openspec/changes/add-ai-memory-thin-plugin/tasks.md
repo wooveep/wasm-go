@@ -17,7 +17,7 @@
 - [x] 2.7 Add request body replacement fail-open tests proving parse, assemble, and replacement failures continue upstream with the original request body.
 - [x] 2.8 Add non-streaming response capture tests for assistant content, usage, finish reason, status code, tool-call detection, no-store, disabled capture, and parse failure.
 - [x] 2.9 Add streaming response capture tests for split SSE chunks, `\r\n`, `\r`, and `\n` line endings, `[DONE]`, role-only chunks, final-content buffers, tool-call deltas, usage, and finish reason.
-- [ ] 2.10 Add `MemoryEvent` payload tests covering required safe facts, optional session/route/model/policy/usage/finish fields, raw content omission gates, idempotency, stream name, field name, and Redis Stream dispatch failure fail-open behavior.
+- [x] 2.10 Add `MemoryEvent` payload tests covering required safe facts, optional session/route/model/policy/usage/finish fields, raw content omission gates, idempotency, stream name, field name, and Redis Stream dispatch failure fail-open behavior.
 - [ ] 2.11 Add privacy and isolation tests proving raw prompts, answers, credentials, authorization headers, Redis passwords, internal bearer tokens, cache streams, cache key prefixes, and cache payload schemas are not used or logged by `ai-memory`.
 - [ ] 2.12 Add resource catalog tests or checks for `resources/plugins/ai-memory` README, README_EN, `spec.yaml`, schema fields, inherited config examples, and secret placeholders.
 
