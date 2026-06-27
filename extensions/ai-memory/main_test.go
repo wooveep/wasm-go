@@ -8,7 +8,6 @@ import (
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/test"
-	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,10 +19,6 @@ func mustMemoryConfig(t *testing.T, value map[string]interface{}) json.RawMessag
 }
 
 func newMemoryConfigTestHost(config json.RawMessage) (test.TestHost, types.OnPluginStartStatus) {
-	// RED-phase bootstrap: task 2.1 defines config expectations before the
-	// production ai-memory VM context exists. Remove this once init wires the
-	// real PluginConfig parser.
-	wrapper.SetCtx[struct{}]("ai-memory")
 	return test.NewTestHost(config)
 }
 
