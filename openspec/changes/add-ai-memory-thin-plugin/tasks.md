@@ -33,7 +33,7 @@
 - [x] 4.1 Create the `extensions/ai-memory` Go module structure following local extension conventions.
 - [x] 4.2 Implement config structs and validation for `redis_stream`, `recent_cache`, `console_internal`, identity headers, path suffixes, fail policy, and route memory behavior.
 - [x] 4.3 Implement global default config plus route-level behavior override resolution.
-- [ ] 4.4 Implement request header handling for path/content-type gating, identity extraction, `memory_mode: off`, body buffering, `Accept-Encoding` removal, and `Content-Length` removal when body replacement may occur.
+- [x] 4.4 Implement request header handling for path/content-type gating, identity extraction, `memory_mode: off`, body buffering, `Accept-Encoding` removal, and `Content-Length` removal when body replacement may occur.
 - [ ] 4.5 Implement request context storage for tenant, consumer, session, request id, route, model, request path, memory mode, policy version, start time, stream flag, no-store, and request digest facts.
 
 ## 5. Memory Assembly and Request Injection
