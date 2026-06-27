@@ -2,10 +2,12 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/gjson"
@@ -14,8 +16,22 @@ import (
 const (
 	pluginName = "ai-memory"
 
-	memoryGateContextKey = "memoryGate"
-	maxRequestBodyBytes  = 100 * 1024 * 1024
+	memoryGateContextKey          = "memoryGate"
+	memoryTenantContextKey        = "memoryTenant"
+	memoryConsumerContextKey      = "memoryConsumer"
+	memorySessionContextKey       = "memorySession"
+	memoryRequestIDContextKey     = "memoryRequestID"
+	memoryRouteContextKey         = "memoryRoute"
+	memoryModelContextKey         = "memoryModel"
+	memoryRequestPathContextKey   = "memoryRequestPath"
+	memoryModeContextKey          = "memoryMode"
+	memoryPolicyVersionContextKey = "memoryPolicyVersion"
+	memoryStartedAtContextKey     = "memoryStartedAt"
+	memoryStreamContextKey        = "memoryStream"
+	memoryNoStoreContextKey       = "memoryNoStore"
+	memoryRequestDigestContextKey = "memoryRequestDigest"
+
+	maxRequestBodyBytes = 100 * 1024 * 1024
 )
 
 func main() {}
@@ -67,17 +83,31 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log lo
 		return types.ActionContinue
 	}
 	tenant, _ := proxywasm.GetHttpRequestHeader(c.TenantHeader)
-	if strings.TrimSpace(tenant) == "" {
+	tenant = strings.TrimSpace(tenant)
+	if tenant == "" {
 		markMemoryGate(ctx, "missing-tenant")
 		ctx.DontReadRequestBody()
 		return types.ActionContinue
 	}
 	consumer, _ := proxywasm.GetHttpRequestHeader(c.ConsumerHeader)
-	if strings.TrimSpace(consumer) == "" {
+	consumer = strings.TrimSpace(consumer)
+	if consumer == "" {
 		markMemoryGate(ctx, "missing-consumer")
 		ctx.DontReadRequestBody()
 		return types.ActionContinue
 	}
+	session, _ := proxywasm.GetHttpRequestHeader(c.SessionHeader)
+	requestID := currentRequestID(c.RequestIDHeader)
+	ctx.SetContext(memoryTenantContextKey, tenant)
+	ctx.SetContext(memoryConsumerContextKey, consumer)
+	ctx.SetContext(memorySessionContextKey, strings.TrimSpace(session))
+	ctx.SetContext(memoryRequestIDContextKey, requestID)
+	ctx.SetContext(memoryRouteContextKey, requestRoute())
+	ctx.SetContext(memoryRequestPathContextKey, path)
+	ctx.SetContext(memoryModeContextKey, c.Route.MemoryMode)
+	ctx.SetContext(memoryPolicyVersionContextKey, c.Route.PolicyVersion)
+	ctx.SetContext(memoryStartedAtContextKey, nowMillis())
+	ctx.SetContext(memoryNoStoreContextKey, requestHasNoStore(c.Route.NoStoreHeader))
 	ctx.SetRequestBodyBufferLimit(maxRequestBodyBytes)
 	_ = proxywasm.RemoveHttpRequestHeader("Accept-Encoding")
 	_ = proxywasm.RemoveHttpRequestHeader("Content-Length")
@@ -88,6 +118,19 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	if memoryGateReason(ctx) != "" {
 		return types.ActionContinue
 	}
+	request, err := sessionctx.ParseOpenAIChatRequest(body)
+	if err != nil {
+		markMemoryGate(ctx, "request-parse-failed")
+		return types.ActionContinue
+	}
+	digest, err := sessionctx.BuildOpenAIChatRequestDigest(request)
+	if err != nil {
+		markMemoryGate(ctx, "request-digest-failed")
+		return types.ActionContinue
+	}
+	ctx.SetContext(memoryModelContextKey, request.Model)
+	ctx.SetContext(memoryStreamContextKey, request.Stream)
+	ctx.SetContext(memoryRequestDigestContextKey, digest)
 	return types.ActionPause
 }
 
@@ -113,6 +156,48 @@ func requestPath(ctx wrapper.HttpContext) string {
 	}
 	path, _ := proxywasm.GetHttpRequestHeader(":path")
 	return path
+}
+
+func requestRoute() string {
+	routeName, err := proxywasm.GetProperty([]string{"route_name"})
+	if err != nil || len(routeName) == 0 {
+		return "-"
+	}
+	return string(routeName)
+}
+
+func currentRequestID(header string) string {
+	if requestID, _ := proxywasm.GetHttpRequestHeader(header); strings.TrimSpace(requestID) != "" {
+		return strings.TrimSpace(requestID)
+	}
+	property, _ := proxywasm.GetProperty([]string{"x_request_id"})
+	return string(property)
+}
+
+func requestHasNoStore(header string) bool {
+	if value, _ := proxywasm.GetHttpRequestHeader(header); isTruthyHeaderValue(value) {
+		return true
+	}
+	cacheControl, _ := proxywasm.GetHttpRequestHeader("cache-control")
+	for _, directive := range strings.Split(cacheControl, ",") {
+		if strings.EqualFold(strings.TrimSpace(directive), "no-store") {
+			return true
+		}
+	}
+	return false
+}
+
+func isTruthyHeaderValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "on", "true", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func nowMillis() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
 }
 
 func isJSONContentType(contentType string) bool {
