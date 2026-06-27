@@ -1,0 +1,123 @@
+package main
+
+import (
+	"testing"
+
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/test"
+	"github.com/stretchr/testify/require"
+)
+
+func TestParseConfigValidation(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		validExternalTargets := map[string]interface{}{
+			"redis_stream": map[string]interface{}{
+				"service_name": "redis.memory.svc.cluster.local",
+			},
+			"recent_cache": map[string]interface{}{
+				"service_name": "redis.recent.svc.cluster.local",
+			},
+			"console_internal": map[string]interface{}{
+				"service_name": "console.internal.svc.cluster.local",
+			},
+			"_rules_": []map[string]interface{}{
+				{
+					"_match_route_": []string{"memory-route"},
+					"memory_mode":   "digest",
+				},
+			},
+		}
+
+		tests := []struct {
+			name   string
+			config map[string]interface{}
+		}{
+			{
+				name: "unsupported fail policy",
+				config: withGlobalConfig(validExternalTargets, map[string]interface{}{
+					"fail_policy": "closed",
+				}),
+			},
+			{
+				name: "invalid memory mode",
+				config: map[string]interface{}{
+					"redis_stream": map[string]interface{}{
+						"service_name": "redis.memory.svc.cluster.local",
+					},
+					"recent_cache": map[string]interface{}{
+						"service_name": "redis.recent.svc.cluster.local",
+					},
+					"console_internal": map[string]interface{}{
+						"service_name": "console.internal.svc.cluster.local",
+					},
+					"_rules_": []map[string]interface{}{
+						{
+							"_match_route_": []string{"memory-route"},
+							"memory_mode":   "vector",
+						},
+					},
+				},
+			},
+			{
+				name: "route redis stream target",
+				config: withRouteConfig(validExternalTargets, map[string]interface{}{
+					"redis_stream": map[string]interface{}{
+						"service_name": "route.redis.memory.svc.cluster.local",
+					},
+				}),
+			},
+			{
+				name: "route recent cache target",
+				config: withRouteConfig(validExternalTargets, map[string]interface{}{
+					"recent_cache": map[string]interface{}{
+						"service_name": "route.redis.recent.svc.cluster.local",
+					},
+				}),
+			},
+			{
+				name: "route console internal target",
+				config: withRouteConfig(validExternalTargets, map[string]interface{}{
+					"console_internal": map[string]interface{}{
+						"service_name": "route.console.internal.svc.cluster.local",
+					},
+				}),
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				host, status := newMemoryConfigTestHost(mustMemoryConfig(t, tt.config))
+				defer host.Reset()
+
+				require.Equal(t, types.OnPluginStartStatusFailed, status)
+			})
+		}
+	})
+}
+
+func withGlobalConfig(base map[string]interface{}, overrides map[string]interface{}) map[string]interface{} {
+	config := make(map[string]interface{}, len(base)+len(overrides))
+	for key, value := range base {
+		config[key] = value
+	}
+	for key, value := range overrides {
+		config[key] = value
+	}
+	return config
+}
+
+func withRouteConfig(base map[string]interface{}, routeOverrides map[string]interface{}) map[string]interface{} {
+	config := make(map[string]interface{}, len(base))
+	for key, value := range base {
+		config[key] = value
+	}
+	route := map[string]interface{}{
+		"_match_route_": []string{"memory-route"},
+		"memory_mode":   "digest",
+	}
+	for key, value := range routeOverrides {
+		route[key] = value
+	}
+	config["_rules_"] = []map[string]interface{}{route}
+	return config
+}
