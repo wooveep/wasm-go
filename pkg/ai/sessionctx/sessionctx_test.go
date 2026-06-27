@@ -63,36 +63,7 @@ func TestRequestGateHelpers(t *testing.T) {
 }
 
 func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
-	body := []byte(`{
-		"model": "qwen-turbo",
-		"stream": true,
-		"tools": [{"type":"function","function":{"name":"lookup_weather","parameters":{"type":"object"}}}],
-		"tool_choice": {"function":{"name":"lookup_weather"},"type":"function"},
-		"response_format": {"type":"json_object"},
-		"temperature": 0.2,
-		"top_p": 0.9,
-		"seed": 123,
-		"max_tokens": 256,
-		"max_completion_tokens": 512,
-		"stop": ["END"],
-		"n": 1,
-		"presence_penalty": 0.3,
-		"frequency_penalty": 0.4,
-		"logit_bias": {"42": -2},
-		"logprobs": true,
-		"top_logprobs": 2,
-		"parallel_tool_calls": false,
-		"vendor_extension": {"b": 2, "a": 1},
-		"messages": [
-			{"role": "system", "content": "answer tersely"},
-			{"role": "user", "content": "older question"},
-			{"role": "assistant", "content": "older answer"},
-			{"role": "user", "content": [
-				{"type": "text", "text": "latest weather intent"},
-				{"type": "image_url", "image_url": {"url": "https://example.invalid/image.png"}}
-			]}
-		]
-	}`)
+	body := fullOpenAIChatRequestBody()
 
 	request, err := sessionctx.ParseOpenAIChatRequest(body)
 	require.NoError(t, err)
@@ -122,7 +93,7 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, regexp.MustCompile(`^[a-f0-9]{64}$`), digestA)
 
-	sameRequest, err := sessionctx.ParseOpenAIChatRequest([]byte(`{"vendor_extension":{"a":1,"b":2},"parallel_tool_calls":false,"top_logprobs":2,"logprobs":true,"logit_bias":{"42":-2},"frequency_penalty":0.4,"presence_penalty":0.3,"stream":true,"n":1,"stop":["END"],"max_completion_tokens":512,"max_tokens":256,"seed":123,"top_p":0.9,"temperature":0.2,"response_format":{"type":"json_object"},"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},"tools":[{"function":{"parameters":{"type":"object"},"name":"lookup_weather"},"type":"function"}],"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":[{"text":"latest weather intent","type":"text"},{"image_url":{"url":"https://example.invalid/image.png"},"type":"image_url"}],"role":"user"}],"model":"qwen-turbo"}`))
+	sameRequest, err := sessionctx.ParseOpenAIChatRequest(fullOpenAIChatRequestReorderedBody())
 	require.NoError(t, err)
 	digestB, err := sessionctx.BuildRequestDigest(openAIRequestDigestInput(sameRequest))
 	require.NoError(t, err)
@@ -192,6 +163,32 @@ func TestOpenAIRequestParsingIntentAndDigest(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, toolMessageDigestA, toolMessageDigestB)
+}
+
+func TestOpenAIRequestDigestConvenience(t *testing.T) {
+	bodyA := fullOpenAIChatRequestBody()
+	bodyB := fullOpenAIChatRequestReorderedBody()
+
+	requestA, err := sessionctx.ParseOpenAIChatRequest(bodyA)
+	require.NoError(t, err)
+	requestB, err := sessionctx.ParseOpenAIChatRequest(bodyB)
+	require.NoError(t, err)
+	requestB.Stream = false
+
+	digestA, err := sessionctx.BuildOpenAIChatRequestDigest(requestA)
+	require.NoError(t, err)
+	digestB, err := sessionctx.BuildOpenAIChatRequestDigest(requestB)
+	require.NoError(t, err)
+	require.Equal(t, digestA, digestB, "streaming flag and JSON field order should not change the request digest")
+
+	baselineDigest, err := sessionctx.BuildRequestDigest(openAIRequestDigestInput(requestA))
+	require.NoError(t, err)
+	require.Equal(t, baselineDigest, digestA, "convenience helper must preserve the full parsed request mapping")
+
+	requestB.Model = "qwen-plus"
+	changedDigest, err := sessionctx.BuildOpenAIChatRequestDigest(requestB)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, changedDigest)
 }
 
 func TestOpenAIRequestBodyReplacement(t *testing.T) {
@@ -337,6 +334,69 @@ func TestOpenAIResponseParsing(t *testing.T) {
 	require.Equal(t, "stop,tool_calls", sessionctx.ResponseFinishReason(multiChoiceResponse))
 }
 
+func TestOpenAIResponseParsingWithAdditionalToolCallPaths(t *testing.T) {
+	body := []byte(`{
+		"choices": [
+			{
+				"message": {
+					"role": "assistant",
+					"content": "vendor tool path preface"
+				},
+				"finish_reason": "stop"
+			},
+			{
+				"message": {
+					"role": "assistant",
+					"custom_tool_calls": [{"id": "custom-call-1", "name": "lookup_memory"}]
+				},
+				"finish_reason": "stop"
+			}
+		],
+		"usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13}
+	}`)
+
+	defaultResponse, err := sessionctx.ParseOpenAIChatResponse(body)
+	require.NoError(t, err)
+	require.False(t, defaultResponse.ContainsToolCalls)
+	require.Equal(t, "vendor tool path preface", defaultResponse.AssistantContent)
+
+	customResponse, err := sessionctx.ParseOpenAIChatResponseWithOptions(body, sessionctx.ResponseParseOptions{
+		AdditionalToolCallPaths: []string{"choices.1.message.custom_tool_calls"},
+	})
+	require.NoError(t, err)
+	require.True(t, customResponse.ContainsToolCalls)
+	require.Equal(t, "vendor tool path preface", customResponse.AssistantContent)
+	require.Equal(t, "stop", customResponse.FinishReason)
+	require.Equal(t, sessionctx.Usage{
+		PromptTokens:     10,
+		CompletionTokens: 3,
+		TotalTokens:      13,
+	}, customResponse.Usage)
+
+	canonicalResponse, err := sessionctx.ParseOpenAIChatResponseWithOptions([]byte(`{
+		"choices": [
+			{
+				"message": {
+					"role": "assistant",
+					"content": "canonical tool path preface"
+				},
+				"finish_reason": "stop"
+			},
+			{
+				"message": {
+					"role": "assistant",
+					"tool_calls": [{"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]
+				},
+				"finish_reason": "stop"
+			}
+		]
+	}`), sessionctx.ResponseParseOptions{
+		AdditionalToolCallPaths: []string{"choices.1.message.custom_tool_calls"},
+	})
+	require.NoError(t, err)
+	require.True(t, canonicalResponse.ContainsToolCalls, "additional paths must not replace built-in OpenAI tool-call detection")
+}
+
 func TestStreamCapture(t *testing.T) {
 	capture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
 
@@ -370,6 +430,45 @@ func TestStreamCapture(t *testing.T) {
 	require.NoError(t, crCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"cr \"}}]}\rdata: {\"choices\":[{\"delta\":{\"content\":\"line\"},\"finish_reason\":\"stop\"}]}\rdata: [DONE]\r")))
 	require.Equal(t, "cr line", crCapture.AssistantContent())
 	require.Equal(t, "stop", crCapture.FinishReason())
+}
+
+func TestStreamCaptureUsageFinishReasonAndCustomToolPaths(t *testing.T) {
+	finishReasonCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
+	require.NoError(t, finishReasonCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n")))
+	require.NoError(t, finishReasonCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"finish reason tool preface\"},\"finish_reason\":\"function_call\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}\n\n")))
+
+	require.Equal(t, "finish reason tool preface", finishReasonCapture.AssistantContent())
+	require.Equal(t, "function_call", finishReasonCapture.FinishReason())
+	require.True(t, finishReasonCapture.ContainsToolCalls())
+	require.Equal(t, sessionctx.Usage{
+		PromptTokens:     7,
+		CompletionTokens: 3,
+		TotalTokens:      10,
+	}, finishReasonCapture.Usage())
+
+	customPathCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{
+		AdditionalToolCallPaths: []string{"choices.0.delta.vendor_tool_calls"},
+	})
+	require.NoError(t, customPathCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"custom path preface\",\"vendor_tool_calls\":[{\"id\":\"custom-call-1\",\"name\":\"lookup_memory\"}]},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":3,\"total_tokens\":11}}\r\n\r\n")))
+
+	require.Equal(t, "custom path preface", customPathCapture.AssistantContent())
+	require.Equal(t, "stop", customPathCapture.FinishReason())
+	require.True(t, customPathCapture.ContainsToolCalls())
+	require.Equal(t, sessionctx.Usage{
+		PromptTokens:     8,
+		CompletionTokens: 3,
+		TotalTokens:      11,
+	}, customPathCapture.Usage())
+
+	toolCallsFinishCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{})
+	require.NoError(t, toolCallsFinishCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")))
+	require.True(t, toolCallsFinishCapture.ContainsToolCalls())
+
+	canonicalWithOptionsCapture := sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{
+		AdditionalToolCallPaths: []string{"choices.0.delta.vendor_tool_calls"},
+	})
+	require.NoError(t, canonicalWithOptionsCapture.AppendSSE([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]}}]}\n\n")))
+	require.True(t, canonicalWithOptionsCapture.ContainsToolCalls(), "additional paths must not replace built-in stream tool-call detection")
 }
 
 func TestEventEnvelopeAndSafeLogRedaction(t *testing.T) {
@@ -532,6 +631,43 @@ func TestRedisStreamEnvelopeAndFailOpenLogging(t *testing.T) {
 func requireStringExcludes(t *testing.T, text, label, value string) {
 	t.Helper()
 	require.Falsef(t, strings.Contains(text, value), "redacted output leaked %s", label)
+}
+
+func fullOpenAIChatRequestBody() []byte {
+	return []byte(`{
+		"model": "qwen-turbo",
+		"stream": true,
+		"tools": [{"type":"function","function":{"name":"lookup_weather","parameters":{"type":"object"}}}],
+		"tool_choice": {"function":{"name":"lookup_weather"},"type":"function"},
+		"response_format": {"type":"json_object"},
+		"temperature": 0.2,
+		"top_p": 0.9,
+		"seed": 123,
+		"max_tokens": 256,
+		"max_completion_tokens": 512,
+		"stop": ["END"],
+		"n": 1,
+		"presence_penalty": 0.3,
+		"frequency_penalty": 0.4,
+		"logit_bias": {"42": -2},
+		"logprobs": true,
+		"top_logprobs": 2,
+		"parallel_tool_calls": false,
+		"vendor_extension": {"b": 2, "a": 1},
+		"messages": [
+			{"role": "system", "content": "answer tersely"},
+			{"role": "user", "content": "older question"},
+			{"role": "assistant", "content": "older answer"},
+			{"role": "user", "content": [
+				{"type": "text", "text": "latest weather intent"},
+				{"type": "image_url", "image_url": {"url": "https://example.invalid/image.png"}}
+			]}
+		]
+	}`)
+}
+
+func fullOpenAIChatRequestReorderedBody() []byte {
+	return []byte(`{"vendor_extension":{"a":1,"b":2},"parallel_tool_calls":false,"top_logprobs":2,"logprobs":true,"logit_bias":{"42":-2},"frequency_penalty":0.4,"presence_penalty":0.3,"stream":true,"n":1,"stop":["END"],"max_completion_tokens":512,"max_tokens":256,"seed":123,"top_p":0.9,"temperature":0.2,"response_format":{"type":"json_object"},"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},"tools":[{"function":{"parameters":{"type":"object"},"name":"lookup_weather"},"type":"function"}],"messages":[{"content":"answer tersely","role":"system"},{"content":"older question","role":"user"},{"content":"older answer","role":"assistant"},{"content":[{"text":"latest weather intent","type":"text"},{"image_url":{"url":"https://example.invalid/image.png"},"type":"image_url"}],"role":"user"}],"model":"qwen-turbo"}`)
 }
 
 func jsonRaw(value string) json.RawMessage {
