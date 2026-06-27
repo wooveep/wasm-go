@@ -30,7 +30,7 @@
 
 ## 4. ai-memory Configuration and Lifecycle
 
-- [ ] 4.1 Create the `extensions/ai-memory` Go module structure following local extension conventions.
+- [x] 4.1 Create the `extensions/ai-memory` Go module structure following local extension conventions.
 - [ ] 4.2 Implement config structs and validation for `redis_stream`, `recent_cache`, `console_internal`, identity headers, path suffixes, fail policy, and route memory behavior.
 - [ ] 4.3 Implement global default config plus route-level behavior override resolution.
 - [ ] 4.4 Implement request header handling for path/content-type gating, identity extraction, `memory_mode: off`, body buffering, `Accept-Encoding` removal, and `Content-Length` removal when body replacement may occur.
