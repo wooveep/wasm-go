@@ -1,7 +1,7 @@
 ## 1. Governance and Scope
 
 - [x] 1.1 Run `openspec validate add-ai-memory-thin-plugin --strict` before implementation starts.
-- [ ] 1.2 Read `extensions/ai-memory/DESIGN.md`, `docs/2026-06-26-ai-cache-memory-shared-runtime-design.md`, this change's `proposal.md`, `design.md`, and specs before touching code.
+- [x] 1.2 Read `extensions/ai-memory/DESIGN.md`, `docs/2026-06-26-ai-cache-memory-shared-runtime-design.md`, this change's `proposal.md`, `design.md`, and specs before touching code.
 - [ ] 1.3 Run GitNexus upstream impact analysis before editing each function, method, type, or shared helper involved in `ai-memory`, `pkg/ai/sessionctx`, `ai-cache`, or resource docs.
 - [ ] 1.4 Keep durable memory ownership, embedding, vector recall, PostgreSQL writes, retention, deletion, repair, management APIs, and billing settlement out of the gateway plugin.
 - [ ] 1.5 Keep unrelated dirty files and unrelated existing OpenSpec changes out of this implementation diff.
