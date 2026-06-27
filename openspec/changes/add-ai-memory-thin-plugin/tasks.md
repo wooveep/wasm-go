@@ -26,7 +26,7 @@
 - [x] 3.1 Review `pkg/ai/sessionctx` and identify only the helper extensions required by `ai-memory`.
 - [x] 3.2 Extend shared helper tests before changing helper code for any missing message injection, stream capture, usage extraction, event envelope, Redis Stream, or redaction behavior.
 - [x] 3.3 Implement missing policy-free helper behavior without adding cache policy, memory policy, vector provider logic, pricing, settlement, retention, deletion, or durable storage ownership.
-- [ ] 3.4 Verify shared helper changes preserve existing `ai-cache` behavior and tests.
+- [x] 3.4 Verify shared helper changes preserve existing `ai-cache` behavior and tests.
 
 ## 4. ai-memory Configuration and Lifecycle
 
