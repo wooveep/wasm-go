@@ -154,16 +154,23 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
-	if memoryGateReason(ctx) != "" || ctx.GetBoolContext(memoryStreamContextKey, false) {
+	if memoryGateReason(ctx) != "" {
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
 	memoryCaptureResponseStatus(ctx, log)
+	if ctx.GetBoolContext(memoryStreamContextKey, false) {
+		return types.ActionContinue
+	}
 	ctx.SetResponseBodyBufferLimit(maxResponseBodyBytes)
 	return types.ActionContinue
 }
 
 func onHttpResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log log.Log) []byte {
+	if ctx.GetBoolContext(memoryStreamContextKey, false) {
+		memoryCaptureStreamingResponseChunk(ctx, c, chunk, isLastChunk, log)
+		return chunk
+	}
 	memoryCaptureNonStreamingResponseChunk(ctx, c, chunk, isLastChunk, log)
 	return chunk
 }

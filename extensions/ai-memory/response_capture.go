@@ -18,6 +18,8 @@ const (
 	memoryResponseBodyBufferContextKey = "memoryResponseBodyBuffer"
 	memoryResponseCaptureContextKey    = "memoryResponseCapture"
 	memoryResponseOverflowContextKey   = "memoryResponseOverflow"
+	memoryStreamCaptureContextKey      = "memoryStreamCapture"
+	memoryStreamParseFailedContextKey  = "memoryStreamParseFailed"
 )
 
 type memoryResponseCapture struct {
@@ -102,21 +104,145 @@ func memoryCaptureNonStreamingResponseChunkWithLimit(ctx wrapper.HttpContext, c 
 	ctx.SetContext(memoryResponseCaptureContextKey, capture)
 }
 
+func memoryCaptureStreamingResponseChunk(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log logs.Log) {
+	if memoryGateReason(ctx) != "" || !ctx.GetBoolContext(memoryStreamContextKey, false) {
+		return
+	}
+	capture := memoryStreamCapture(ctx, c)
+	if !ctx.GetBoolContext(memoryStreamParseFailedContextKey, false) {
+		if err := capture.AppendSSE(memoryFinalStreamingChunk(chunk, isLastChunk)); err != nil {
+			log.Warn("[ai-memory] parse streaming response failed open")
+			ctx.SetContext(memoryStreamParseFailedContextKey, true)
+		}
+	}
+	if !isLastChunk {
+		return
+	}
+	statusCode := memoryStoredResponseStatus(ctx)
+	if ctx.GetBoolContext(memoryStreamParseFailedContextKey, false) {
+		ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
+			StatusCode:  statusCode,
+			ParseFailed: true,
+			IsStream:    true,
+		})
+		return
+	}
+	ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
+		AssistantContent:  capture.AssistantContent(),
+		FinishReason:      capture.FinishReason(),
+		Usage:             capture.Usage(),
+		StatusCode:        statusCode,
+		ContainsToolCalls: capture.ContainsToolCalls(),
+		IsStream:          true,
+	})
+}
+
+func memoryStreamCapture(ctx wrapper.HttpContext, c config.PluginConfig) *memoryStreamingCapture {
+	if capture, ok := ctx.GetContext(memoryStreamCaptureContextKey).(*memoryStreamingCapture); ok && capture != nil {
+		return capture
+	}
+	capture := newMemoryStreamingCapture(c.Route.StreamValueFrom, c.Route.ToolCallsFrom)
+	ctx.SetContext(memoryStreamCaptureContextKey, capture)
+	return capture
+}
+
+type memoryStreamingCapture struct {
+	parser          *sessionctx.StreamCapture
+	streamValueFrom string
+	content         strings.Builder
+	buffer          string
+}
+
+func newMemoryStreamingCapture(streamValueFrom string, toolCallPaths []string) *memoryStreamingCapture {
+	return &memoryStreamingCapture{
+		parser: sessionctx.NewStreamCapture(sessionctx.StreamCaptureOptions{
+			AdditionalToolCallPaths: toolCallPaths,
+		}),
+		streamValueFrom: streamValueFrom,
+	}
+}
+
+func (c *memoryStreamingCapture) AppendSSE(chunk []byte) error {
+	if err := c.parser.AppendSSE(chunk); err != nil {
+		return err
+	}
+	c.buffer += string(chunk)
+	for {
+		index := strings.IndexAny(c.buffer, "\r\n")
+		if index < 0 {
+			return nil
+		}
+		separator := c.buffer[index]
+		line := strings.TrimSpace(c.buffer[:index])
+		c.buffer = c.buffer[index+1:]
+		if separator == '\r' && strings.HasPrefix(c.buffer, "\n") {
+			c.buffer = c.buffer[1:]
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		c.content.WriteString(memoryAssistantContentFromPath([]byte(payload), c.streamValueFrom, ""))
+	}
+}
+
+func (c *memoryStreamingCapture) AssistantContent() string {
+	if c.content.Len() > 0 {
+		return c.content.String()
+	}
+	return c.parser.AssistantContent()
+}
+
+func (c *memoryStreamingCapture) FinishReason() string {
+	return c.parser.FinishReason()
+}
+
+func (c *memoryStreamingCapture) Usage() sessionctx.Usage {
+	return c.parser.Usage()
+}
+
+func (c *memoryStreamingCapture) ContainsToolCalls() bool {
+	return c.parser.ContainsToolCalls()
+}
+
+func memoryFinalStreamingChunk(chunk []byte, isLastChunk bool) []byte {
+	if !isLastChunk {
+		return chunk
+	}
+	if len(chunk) == 0 {
+		return []byte("\n")
+	}
+	last := chunk[len(chunk)-1]
+	if last == '\n' || last == '\r' {
+		return chunk
+	}
+	out := append([]byte(nil), chunk...)
+	out = append(out, '\n')
+	return out
+}
+
 func memoryResponseCaptureExceedsLimit(currentBytes int, chunkBytes int, limit int) bool {
 	return limit > 0 && currentBytes > limit-chunkBytes
 }
 
 func memoryStoreParseFailedResponseCapture(ctx wrapper.HttpContext) {
-	statusCode := 0
-	if value, ok := ctx.GetContext(memoryResponseStatusContextKey).(int); ok {
-		statusCode = value
-	}
+	statusCode := memoryStoredResponseStatus(ctx)
 	ctx.SetContext(memoryResponseBodyBufferContextKey, []byte(nil))
 	ctx.SetContext(memoryResponseOverflowContextKey, true)
 	ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
 		StatusCode:  statusCode,
 		ParseFailed: true,
 	})
+}
+
+func memoryStoredResponseStatus(ctx wrapper.HttpContext) int {
+	if value, ok := ctx.GetContext(memoryResponseStatusContextKey).(int); ok {
+		return value
+	}
+	return 0
 }
 
 func memoryAssistantContentFromPath(body []byte, path string, fallback string) string {

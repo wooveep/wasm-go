@@ -1,11 +1,14 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/iface"
+	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,7 +68,7 @@ func TestMemoryCaptureNonStreamingResponseFacts(t *testing.T) {
 	})
 }
 
-func TestMemoryResponseHookSkipsBodyForGatedAndStreamRequests(t *testing.T) {
+func TestMemoryResponseHookSkipsBodyForGatedAndAllowsStreamRequests(t *testing.T) {
 	t.Run("gated request disables response body processing", func(t *testing.T) {
 		ctx := newMemoryCaptureTestContext()
 		markMemoryGate(ctx, "missing-tenant")
@@ -76,14 +79,18 @@ func TestMemoryResponseHookSkipsBodyForGatedAndStreamRequests(t *testing.T) {
 		require.True(t, ctx.dontReadResponseBody)
 	})
 
-	t.Run("stream request is left for streaming capture task", func(t *testing.T) {
-		ctx := newMemoryCaptureTestContext()
-		ctx.SetContext(memoryStreamContextKey, true)
+	t.Run("stream request keeps response body processing enabled", func(t *testing.T) {
+		test.RunGoTest(t, func(t *testing.T) {
+			host := startMemoryStreamingResponseCaptureRequest(t)
 
-		action := onHttpResponseHeaders(ctx, config.PluginConfig{}, memoryCaptureNoopLog{})
+			action := host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
 
-		require.Equal(t, types.ActionContinue, action)
-		require.True(t, ctx.dontReadResponseBody)
+			require.Equal(t, types.ActionContinue, action)
+			requireMemoryHostNeedsResponseBody(t, host)
+		})
 	})
 }
 
@@ -116,6 +123,171 @@ func TestMemoryCaptureNonStreamingResponseChunkLimitsBuffer(t *testing.T) {
 	})
 }
 
+func TestMemoryCaptureStreamingResponseChunkStoresFinalCaptureFacts(t *testing.T) {
+	ctx := newMemoryCaptureTestContext()
+	ctx.SetContext(memoryStreamContextKey, true)
+	ctx.SetContext(memoryResponseStatusContextKey, 200)
+	cfg := config.PluginConfig{
+		Route: config.RouteConfig{
+			StreamValueFrom: "choices.0.delta.content",
+			ToolCallsFrom:   []string{"choices.0.delta.vendor_tool_calls"},
+		},
+	}
+
+	chunks := [][]byte{
+		[]byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\r\n\r\n" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\"crlf \"}}]}\r\n\r\n" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\"split"),
+		[]byte(" cr \"}}]}\r" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\"lf done\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":5,\"total_tokens\":17}}\n" +
+			"data: [DONE]"),
+	}
+	for i, chunk := range chunks {
+		got := onHttpResponseBody(ctx, cfg, chunk, i == len(chunks)-1, memoryCaptureNoopLog{})
+		require.Equal(t, chunk, got)
+	}
+
+	capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+	require.True(t, ok)
+	require.True(t, capture.IsStream)
+	require.False(t, capture.ParseFailed)
+	require.Equal(t, 200, capture.StatusCode)
+	require.Equal(t, "crlf split cr lf done", capture.AssistantContent)
+	require.Equal(t, "stop", capture.FinishReason)
+	require.False(t, capture.ContainsToolCalls)
+	require.Equal(t, 12, capture.Usage.PromptTokens)
+	require.Equal(t, 5, capture.Usage.CompletionTokens)
+	require.Equal(t, 17, capture.Usage.TotalTokens)
+}
+
+func TestMemoryCaptureStreamingResponseChunkUsesConfiguredStreamValuePath(t *testing.T) {
+	ctx := newMemoryCaptureTestContext()
+	ctx.SetContext(memoryStreamContextKey, true)
+	ctx.SetContext(memoryResponseStatusContextKey, 200)
+	cfg := config.PluginConfig{
+		Route: config.RouteConfig{
+			StreamValueFrom: "vendor.delta.text",
+		},
+	}
+
+	chunks := [][]byte{
+		[]byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+			"data: {\"vendor\":{\"delta\":{\"text\":\"configured \"}},\"choices\":[{\"delta\":{}}]}\n\n"),
+		[]byte("data: {\"vendor\":{\"delta\":{\"text\":\"stream path\"}},\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":6,\"completion_tokens\":4,\"total_tokens\":10}}\n\n" +
+			"data: [DONE]\n\n"),
+	}
+	for i, chunk := range chunks {
+		got := onHttpResponseBody(ctx, cfg, chunk, i == len(chunks)-1, memoryCaptureNoopLog{})
+		require.Equal(t, chunk, got)
+	}
+
+	capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+	require.True(t, ok)
+	require.True(t, capture.IsStream)
+	require.False(t, capture.ParseFailed)
+	require.Equal(t, 200, capture.StatusCode)
+	require.Equal(t, "configured stream path", capture.AssistantContent)
+	require.Equal(t, "stop", capture.FinishReason)
+	require.False(t, capture.ContainsToolCalls)
+	require.Equal(t, 6, capture.Usage.PromptTokens)
+	require.Equal(t, 4, capture.Usage.CompletionTokens)
+	require.Equal(t, 10, capture.Usage.TotalTokens)
+}
+
+func TestMemoryCaptureStreamingResponseChunkDetectsToolCalls(t *testing.T) {
+	tests := []struct {
+		name         string
+		toolPaths    []string
+		payload      string
+		wantContent  string
+		wantFinish   string
+		wantPrompt   int
+		wantComplete int
+		wantTotal    int
+	}{
+		{
+			name:         "canonical tool-call delta",
+			payload:      `{"choices":[{"delta":{"content":"canonical preface","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}`,
+			wantContent:  "canonical preface",
+			wantFinish:   "stop",
+			wantPrompt:   7,
+			wantComplete: 3,
+			wantTotal:    10,
+		},
+		{
+			name:         "configured tool-call path",
+			toolPaths:    []string{"choices.0.delta.vendor_tool_calls"},
+			payload:      `{"choices":[{"delta":{"content":"configured preface","vendor_tool_calls":[{"id":"custom-call-1","name":"lookup_memory"}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11}}`,
+			wantContent:  "configured preface",
+			wantFinish:   "stop",
+			wantPrompt:   8,
+			wantComplete: 3,
+			wantTotal:    11,
+		},
+		{
+			name:         "finish reason only",
+			payload:      `{"choices":[{"delta":{"content":"finish reason preface"},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":9,"completion_tokens":3,"total_tokens":12}}`,
+			wantContent:  "finish reason preface",
+			wantFinish:   "tool_calls",
+			wantPrompt:   9,
+			wantComplete: 3,
+			wantTotal:    12,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := newMemoryCaptureTestContext()
+			ctx.SetContext(memoryStreamContextKey, true)
+			ctx.SetContext(memoryResponseStatusContextKey, 201)
+			cfg := config.PluginConfig{
+				Route: config.RouteConfig{
+					StreamValueFrom: "choices.0.delta.content",
+					ToolCallsFrom:   tt.toolPaths,
+				},
+			}
+
+			chunk := []byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+				"data: " + tt.payload + "\n\n" +
+				"data: [DONE]\n\n")
+			got := onHttpResponseBody(ctx, cfg, chunk, true, memoryCaptureNoopLog{})
+			require.Equal(t, chunk, got)
+
+			capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+			require.True(t, ok)
+			require.True(t, capture.IsStream)
+			require.False(t, capture.ParseFailed)
+			require.Equal(t, 201, capture.StatusCode)
+			require.Equal(t, tt.wantContent, capture.AssistantContent)
+			require.Equal(t, tt.wantFinish, capture.FinishReason)
+			require.True(t, capture.ContainsToolCalls)
+			require.Equal(t, tt.wantPrompt, capture.Usage.PromptTokens)
+			require.Equal(t, tt.wantComplete, capture.Usage.CompletionTokens)
+			require.Equal(t, tt.wantTotal, capture.Usage.TotalTokens)
+		})
+	}
+}
+
+func TestMemoryCaptureStreamingResponseChunkParseFailureFailsOpen(t *testing.T) {
+	ctx := newMemoryCaptureTestContext()
+	ctx.SetContext(memoryStreamContextKey, true)
+	ctx.SetContext(memoryResponseStatusContextKey, 502)
+	chunk := []byte("data: {not-json}\n\n")
+
+	got := onHttpResponseBody(ctx, config.PluginConfig{}, chunk, true, memoryCaptureNoopLog{})
+
+	require.Equal(t, chunk, got)
+	capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+	require.True(t, ok)
+	require.True(t, capture.IsStream)
+	require.True(t, capture.ParseFailed)
+	require.Equal(t, 502, capture.StatusCode)
+	require.Empty(t, capture.AssistantContent)
+	require.Empty(t, capture.FinishReason)
+	require.False(t, capture.ContainsToolCalls)
+	require.Zero(t, capture.Usage)
+}
+
 type memoryCaptureTestContext struct {
 	values               map[string]interface{}
 	dontReadResponseBody bool
@@ -123,6 +295,23 @@ type memoryCaptureTestContext struct {
 
 func newMemoryCaptureTestContext() *memoryCaptureTestContext {
 	return &memoryCaptureTestContext{values: map[string]interface{}{}}
+}
+
+func requireMemoryHostNeedsResponseBody(t *testing.T, host test.TestHost) {
+	t.Helper()
+	hostValue := reflect.ValueOf(host)
+	for hostValue.Kind() == reflect.Interface || hostValue.Kind() == reflect.Pointer {
+		hostValue = hostValue.Elem()
+	}
+	contextID := uint32(hostValue.FieldByName("currentContextID").Uint())
+	httpContext := proxywasm.GetHttpContext(contextID)
+	contextValue := reflect.ValueOf(httpContext)
+	for contextValue.Kind() == reflect.Interface || contextValue.Kind() == reflect.Pointer {
+		contextValue = contextValue.Elem()
+	}
+	field := contextValue.FieldByName("needResponseBody")
+	require.True(t, field.IsValid(), "test host HTTP context must expose needResponseBody")
+	require.True(t, field.Bool(), "stream response headers must not disable response body processing")
 }
 
 func (m *memoryCaptureTestContext) Scheme() string { return "" }
