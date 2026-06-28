@@ -1,8 +1,15 @@
 package main
 
+import (
+	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
+	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
+	"github.com/higress-group/wasm-go/pkg/wrapper"
+)
+
 const (
 	memoryEventSchemaVersion = 1
 	memoryEventPluginVersion = "0.1.0"
+	memoryEventKind          = "memory_event"
 )
 
 type MemoryEvent struct {
@@ -86,4 +93,100 @@ type MemoryEventFinish struct {
 type MemoryEventTiming struct {
 	StartedAtMS int64 `json:"started_at_ms"`
 	EndedAtMS   int64 `json:"ended_at_ms"`
+}
+
+func memoryBuildEvent(ctx wrapper.HttpContext, c config.PluginConfig, capture memoryResponseCapture, endedAtMS int64) MemoryEvent {
+	startedAtMS := memoryInt64Context(ctx, memoryStartedAtContextKey)
+	tenant := ctx.GetStringContext(memoryTenantContextKey, "")
+	consumer := ctx.GetStringContext(memoryConsumerContextKey, "")
+	requestID := ctx.GetStringContext(memoryRequestIDContextKey, "")
+	requestDigest := ctx.GetStringContext(memoryRequestDigestContextKey, "")
+	envelope := sessionctx.NewEventEnvelope(sessionctx.EventEnvelopeInput{
+		EventKind:     memoryEventKind,
+		Tenant:        tenant,
+		Consumer:      consumer,
+		RequestID:     requestID,
+		RequestDigest: requestDigest,
+		StartedAtMS:   startedAtMS,
+		EndedAtMS:     endedAtMS,
+	})
+
+	event := MemoryEvent{
+		SchemaVersion: memoryEventSchemaVersion,
+		MemoryEventEnvelope: MemoryEventEnvelope{
+			EventID:        envelope.EventID,
+			IdempotencyKey: envelope.IdempotencyKey,
+		},
+		MemoryEventIdentity: MemoryEventIdentity{
+			Tenant:    tenant,
+			Consumer:  consumer,
+			SessionID: ctx.GetStringContext(memorySessionContextKey, ""),
+		},
+		MemoryEventRequest: MemoryEventRequest{
+			RequestID:     requestID,
+			RequestPath:   ctx.GetStringContext(memoryRequestPathContextKey, ""),
+			RequestDigest: requestDigest,
+		},
+		MemoryEventPolicy: MemoryEventPolicy{
+			PolicyVersion: ctx.GetStringContext(memoryPolicyVersionContextKey, c.Route.PolicyVersion),
+			MemoryMode:    ctx.GetStringContext(memoryModeContextKey, c.Route.MemoryMode),
+		},
+		MemoryEventStatus:   MemoryEventStatus{StatusCode: capture.StatusCode},
+		MemoryEventStream:   MemoryEventStream{IsStream: capture.IsStream},
+		MemoryEventToolCall: MemoryEventToolCall{ContainsToolCalls: capture.ContainsToolCalls},
+		MemoryEventFinish:   MemoryEventFinish{FinishReason: capture.FinishReason},
+		MemoryEventTiming:   MemoryEventTiming{StartedAtMS: startedAtMS, EndedAtMS: endedAtMS},
+		PluginVersion:       memoryEventPluginVersion,
+		NoStore:             ctx.GetBoolContext(memoryNoStoreContextKey, false),
+		Usage:               memoryEventUsage(capture.Usage),
+	}
+	if route := ctx.GetStringContext(memoryRouteContextKey, ""); route != "" {
+		event.Route = &MemoryEventRoute{Name: route}
+	}
+	if model := ctx.GetStringContext(memoryModelContextKey, ""); model != "" {
+		event.Model = &MemoryEventModel{Name: model}
+	}
+	if memoryEventRawContentAllowed(ctx, c, capture) {
+		event.UserContent = ctx.GetStringContext(memoryUserContentContextKey, "")
+		event.AssistantContent = capture.AssistantContent
+	}
+	return event
+}
+
+func memoryEventRawContentAllowed(ctx wrapper.HttpContext, c config.PluginConfig, capture memoryResponseCapture) bool {
+	return memoryRawContentAllowed(ctx, c) &&
+		!capture.ParseFailed &&
+		!capture.UnsafeContent &&
+		memoryEventStatusEligible(capture.StatusCode)
+}
+
+func memoryEventStatusEligible(statusCode int) bool {
+	return statusCode >= 200 && statusCode < 300
+}
+
+func memoryEventUsage(usage sessionctx.Usage) *MemoryEventUsage {
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+		return nil
+	}
+	return &MemoryEventUsage{
+		Unit:   "token",
+		Input:  usage.PromptTokens,
+		Output: usage.CompletionTokens,
+		Total:  usage.TotalTokens,
+	}
+}
+
+func memoryInt64Context(ctx wrapper.HttpContext, key string) int64 {
+	switch value := ctx.GetContext(key).(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
 }

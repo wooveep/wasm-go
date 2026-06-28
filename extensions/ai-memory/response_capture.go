@@ -29,6 +29,7 @@ type memoryResponseCapture struct {
 	StatusCode        int
 	ContainsToolCalls bool
 	ParseFailed       bool
+	UnsafeContent     bool
 	IsStream          bool
 }
 
