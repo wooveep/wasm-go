@@ -72,7 +72,7 @@
 - [x] 8.2 Run focused `ai-memory` Go tests.
 - [x] 8.3 Run focused `ai-cache` regression tests affected by shared helper changes.
 - [x] 8.4 Run resource documentation/schema validation or focused checks.
-- [ ] 8.5 Run `openspec validate add-ai-memory-thin-plugin --strict`.
+- [x] 8.5 Run `openspec validate add-ai-memory-thin-plugin --strict`.
 - [ ] 8.6 Run `git diff --check`.
 - [ ] 8.7 Run `graphify update .` after code or documentation changes are complete when the implementation phase modifies project files.
 - [ ] 8.8 Run GitNexus `detect_changes` before handoff or commit and review affected symbols and execution flows.
