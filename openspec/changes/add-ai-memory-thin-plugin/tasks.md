@@ -75,4 +75,4 @@
 - [x] 8.5 Run `openspec validate add-ai-memory-thin-plugin --strict`.
 - [x] 8.6 Run `git diff --check`.
 - [x] 8.7 Run `graphify update .` after code or documentation changes are complete when the implementation phase modifies project files.
-- [ ] 8.8 Run GitNexus `detect_changes` before handoff or commit and review affected symbols and execution flows.
+- [x] 8.8 Run GitNexus `detect_changes` before handoff or commit and review affected symbols and execution flows.
