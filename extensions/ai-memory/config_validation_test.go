@@ -95,6 +95,47 @@ func TestParseConfigValidation(t *testing.T) {
 	})
 }
 
+func TestParseConfigOptionalBackends(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		t.Run("recent cache and Console service names are optional", func(t *testing.T) {
+			host, status := newMemoryConfigTestHost(mustMemoryConfig(t, map[string]interface{}{
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.memory.svc.cluster.local",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"memory-route"},
+						"memory_mode":   "digest",
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+		})
+
+		t.Run("Redis Stream service name remains required", func(t *testing.T) {
+			host, status := newMemoryConfigTestHost(mustMemoryConfig(t, map[string]interface{}{
+				"recent_cache": map[string]interface{}{
+					"service_name": "redis.recent.svc.cluster.local",
+				},
+				"console_internal": map[string]interface{}{
+					"service_name": "console.internal.svc.cluster.local",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"memory-route"},
+						"memory_mode":   "digest",
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusFailed, status)
+		})
+	})
+}
+
 func TestParseConfigInjectRoleValidation(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		validExternalTargets := map[string]interface{}{

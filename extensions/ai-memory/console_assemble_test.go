@@ -51,6 +51,69 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			})
 		}
 
+		t.Run("question_from path drives Console current_question with latest user fallback", func(t *testing.T) {
+			facts := memoryConsoleAssembleFactsWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", map[string]interface{}{
+				"question_from": "metadata.extracted_question",
+			}, true, true), []byte(`{
+				"model": "qwen-turbo",
+				"metadata": {"extracted_question": "path selected question"},
+				"messages": [
+					{"role": "user", "content": "latest user fallback"}
+				],
+				"stream": false
+			}`), memoryConsoleAssembleHeaders())
+			require.Equal(t, "path selected question", facts["current_question"])
+
+			fallbackFacts := memoryConsoleAssembleFactsWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", map[string]interface{}{
+				"question_from": "metadata.missing_question",
+			}, true, true), []byte(`{
+				"model": "qwen-turbo",
+				"messages": [
+					{"role": "user", "content": "latest user fallback"}
+				],
+				"stream": false
+			}`), memoryConsoleAssembleHeaders())
+			require.Equal(t, "latest user fallback", fallbackFacts["current_question"])
+		})
+
+		t.Run("messages digest is scoped and stable across request id retries", func(t *testing.T) {
+			body := memoryConsoleAssembleRequestBody()
+			factsA := memoryConsoleAssembleFactsWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", nil, false, true), body, memoryConsoleAssembleHeaders())
+
+			factsRetry := memoryConsoleAssembleFactsWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", nil, false, true), body, memoryConsoleAssembleHeadersWith(
+				[2]string{"x-request-id", "request-console-assemble-retry"},
+			))
+			require.Equal(t, factsA["messages_digest"], factsRetry["messages_digest"], "request_id must not affect scoped digest")
+
+			factsOtherTenant := memoryConsoleAssembleFactsWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", nil, false, true), body, memoryConsoleAssembleHeadersWith(
+				[2]string{"x-mse-tenant", "tenant-b"},
+			))
+			require.NotEqual(t, factsA["messages_digest"], factsOtherTenant["messages_digest"], "tenant must scope messages_digest")
+		})
+
+		t.Run("omitted recent cache service skips Redis lookup", func(t *testing.T) {
+			host := startMemoryConsoleAssembleRequestWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", nil, false, true), memoryConsoleAssembleRequestBody(), memoryConsoleAssembleHeaders())
+
+			require.Empty(t, host.GetRedisCalloutAttributes())
+			requireMemoryAssembleCall(t, host)
+		})
+
+		t.Run("omitted Console service skips assemble and continues without memory", func(t *testing.T) {
+			host, status := newMemoryConfigTestHost(memoryConsoleAssembleCustomConfig(t, "semantic", nil, false, false))
+			t.Cleanup(host.Reset)
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			require.NoError(t, host.SetRouteName("memory-route"))
+			require.NoError(t, host.SetRequestId("property-request-id"))
+
+			headerAction := host.CallOnHttpRequestHeaders(memoryConsoleAssembleHeaders())
+			require.Equal(t, types.HeaderStopIteration, headerAction)
+			bodyAction := host.CallOnHttpRequestBody(memoryConsoleAssembleRequestBody())
+
+			require.Equal(t, types.ActionContinue, bodyAction)
+			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, host.GetHttpCalloutAttributes())
+		})
+
 		tests := []struct {
 			name             string
 			decision         string
@@ -289,18 +352,47 @@ func startMemoryConsoleAssembleRequest(t *testing.T, memoryMode string) test.Tes
 
 func startMemoryConsoleAssembleRequestWithBody(t *testing.T, memoryMode string, body []byte) test.TestHost {
 	t.Helper()
-	host, status := newMemoryConfigTestHost(memoryConsoleAssembleConfig(t, memoryMode))
-	t.Cleanup(host.Reset)
+	return startMemoryConsoleAssembleRequestWithConfig(t, memoryConsoleAssembleConfig(t, memoryMode), body, memoryConsoleAssembleHeaders())
+}
+
+func startMemoryConsoleAssembleRequestWithConfig(t *testing.T, config json.RawMessage, body []byte, headers [][2]string) test.TestHost {
+	t.Helper()
+	return startMemoryConsoleAssembleRequestWithConfigCleanup(t, config, body, headers, true)
+}
+
+func startMemoryConsoleAssembleRequestWithConfigNoCleanup(t *testing.T, config json.RawMessage, body []byte, headers [][2]string) test.TestHost {
+	t.Helper()
+	return startMemoryConsoleAssembleRequestWithConfigCleanup(t, config, body, headers, false)
+}
+
+func memoryConsoleAssembleFactsWithConfig(t *testing.T, config json.RawMessage, body []byte, headers [][2]string) map[string]interface{} {
+	t.Helper()
+	host := startMemoryConsoleAssembleRequestWithConfigNoCleanup(t, config, body, headers)
+	defer host.Reset()
+	if len(host.GetRedisCalloutAttributes()) > 0 {
+		host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	}
+	return requireMemoryAssembleCall(t, host)
+}
+
+func startMemoryConsoleAssembleRequestWithConfigCleanup(t *testing.T, config json.RawMessage, body []byte, headers [][2]string, cleanup bool) test.TestHost {
+	t.Helper()
+	host, status := newMemoryConfigTestHost(config)
+	if cleanup {
+		t.Cleanup(host.Reset)
+	}
 	require.Equal(t, types.OnPluginStartStatusOK, status)
 	require.NoError(t, host.SetRouteName("memory-route"))
 	require.NoError(t, host.SetRequestId("property-request-id"))
 
-	headerAction := host.CallOnHttpRequestHeaders(memoryConsoleAssembleHeaders())
+	headerAction := host.CallOnHttpRequestHeaders(headers)
 	require.Equal(t, types.HeaderStopIteration, headerAction)
 
 	bodyAction := host.CallOnHttpRequestBody(body)
 	require.Equal(t, types.ActionPause, bodyAction)
-	requireMemoryRecentRedisLookup(t, host)
+	if len(host.GetRedisCalloutAttributes()) > 0 {
+		requireMemoryRecentRedisLookup(t, host)
+	}
 	return host
 }
 
@@ -325,6 +417,54 @@ func memoryConsoleAssembleRequestBody() []byte {
 		],
 		"stream": false
 	}`)
+}
+
+func memoryConsoleAssembleHeadersWith(overrides ...[2]string) [][2]string {
+	return applyMemoryRequestGatingHeaderOverrides(memoryConsoleAssembleHeaders(), overrides)
+}
+
+func memoryConsoleAssembleCustomConfig(t *testing.T, memoryMode string, routeOverrides map[string]interface{}, includeRecent bool, includeConsole bool) json.RawMessage {
+	t.Helper()
+	cfg := map[string]interface{}{
+		"redis_stream": map[string]interface{}{
+			"service_name": "redis.memory.svc.cluster.local",
+		},
+		"tenant_header":        "x-mse-tenant",
+		"consumer_header":      "x-mse-consumer",
+		"session_header":       "x-mse-session",
+		"request_id_header":    "x-request-id",
+		"enable_path_suffixes": []string{"/v1/chat/completions"},
+		"fail_policy":          "open",
+	}
+	if includeRecent {
+		cfg["recent_cache"] = map[string]interface{}{
+			"service_name": "redis.recent.svc.cluster.local",
+		}
+	}
+	if includeConsole {
+		cfg["console_internal"] = map[string]interface{}{
+			"service_name":  memoryConsoleService,
+			"service_port":  8080,
+			"assemble_path": memoryConsolePath,
+			"timeout_ms":    120,
+		}
+	}
+	route := map[string]interface{}{
+		"_match_route_":       []string{"memory-route"},
+		"memory_mode":         memoryMode,
+		"recent_window_turns": 6,
+		"memory_token_budget": 1500,
+		"assemble_timeout_ms": 80,
+		"inject_role":         "system",
+		"semantic_top_k":      3,
+		"capture_response":    true,
+		"policy_version":      "memory-policy-v1",
+	}
+	for key, value := range routeOverrides {
+		route[key] = value
+	}
+	cfg["_rules_"] = []map[string]interface{}{route}
+	return mustMemoryConfig(t, cfg)
 }
 
 func requireMemoryExpectedMessages(t *testing.T, messages []map[string]interface{}, expected []memoryExpectedMessage) {

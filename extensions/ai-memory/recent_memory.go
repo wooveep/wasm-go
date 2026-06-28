@@ -94,7 +94,7 @@ func handleRecentMemoryResponse(key string, response resp.Value, ctx wrapper.Htt
 }
 
 func continueAfterRecentMemory(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) {
-	if shouldUseMemoryAssemble(c) {
+	if memoryConsoleAssembleConfigured(c) {
 		if err := dispatchMemoryAssemble(ctx, c, log); err != nil {
 			log.Warnf("[ai-memory] Console assemble dispatch failed open: %v", err)
 			replaceMemoryRequestBodyWithRecentFallback(ctx, log)

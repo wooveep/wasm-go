@@ -128,7 +128,20 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 		markMemoryGate(ctx, "request-parse-failed")
 		return types.ActionContinue
 	}
-	digest, err := sessionctx.BuildOpenAIChatRequestDigest(request)
+	bodyDigest, err := sessionctx.BuildOpenAIChatRequestDigest(request)
+	if err != nil {
+		markMemoryGate(ctx, "request-digest-failed")
+		return types.ActionContinue
+	}
+	digest, err := sessionctx.BuildScopedRequestDigest(sessionctx.ScopedRequestDigestInput{
+		Tenant:      ctx.GetStringContext(memoryTenantContextKey, ""),
+		Consumer:    ctx.GetStringContext(memoryConsumerContextKey, ""),
+		SessionID:   ctx.GetStringContext(memorySessionContextKey, ""),
+		Route:       ctx.GetStringContext(memoryRouteContextKey, ""),
+		RequestPath: ctx.GetStringContext(memoryRequestPathContextKey, ""),
+		Model:       request.Model,
+		BodyDigest:  bodyDigest,
+	})
 	if err != nil {
 		markMemoryGate(ctx, "request-digest-failed")
 		return types.ActionContinue
@@ -136,21 +149,55 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	ctx.SetContext(memoryModelContextKey, request.Model)
 	ctx.SetContext(memoryStreamContextKey, request.Stream)
 	ctx.SetContext(memoryRequestDigestContextKey, digest)
-	ctx.SetContext(memoryUserContentContextKey, sessionctx.CurrentUserIntent(request.Messages))
+	ctx.SetContext(memoryUserContentContextKey, memoryCurrentQuestion(body, request, c.Route.QuestionFrom))
 	ctx.SetContext(memoryOriginalBodyContextKey, append([]byte(nil), body...))
 	ctx.SetContext(memoryCurrentMessagesContextKey, append([]sessionctx.OpenAIMessage(nil), request.Messages...))
-	if err := memoryLoadRecentMemory(ctx, c, log); err != nil {
-		log.Warnf("[ai-memory] recent memory lookup failed open: %v", err)
-		if shouldUseMemoryAssemble(c) {
-			if err := dispatchMemoryAssemble(ctx, c, log); err != nil {
-				log.Warnf("[ai-memory] Console assemble dispatch failed open: %v", err)
-				return types.ActionContinue
+	if memoryRecentCacheConfigured(c) {
+		if err := memoryLoadRecentMemory(ctx, c, log); err != nil {
+			log.Warnf("[ai-memory] recent memory lookup failed open: %v", err)
+			if memoryConsoleAssembleConfigured(c) {
+				if err := dispatchMemoryAssemble(ctx, c, log); err != nil {
+					log.Warnf("[ai-memory] Console assemble dispatch failed open: %v", err)
+					return types.ActionContinue
+				}
+				return types.ActionPause
 			}
-			return types.ActionPause
+			return types.ActionContinue
 		}
-		return types.ActionContinue
+		return types.ActionPause
 	}
-	return types.ActionPause
+	if memoryConsoleAssembleConfigured(c) {
+		if err := dispatchMemoryAssemble(ctx, c, log); err != nil {
+			log.Warnf("[ai-memory] Console assemble dispatch failed open: %v", err)
+			return types.ActionContinue
+		}
+		return types.ActionPause
+	}
+	return types.ActionContinue
+}
+
+func memoryCurrentQuestion(body []byte, request sessionctx.OpenAIChatRequest, path string) string {
+	if path = strings.TrimSpace(path); path != "" {
+		result := gjson.GetBytes(body, path)
+		if result.Exists() {
+			if question := strings.TrimSpace(result.String()); question != "" {
+				return question
+			}
+		}
+	}
+	return sessionctx.CurrentUserIntent(request.Messages)
+}
+
+func memoryRecentCacheConfigured(c config.PluginConfig) bool {
+	return strings.TrimSpace(c.RecentCache.ServiceName) != ""
+}
+
+func memoryConsoleInternalConfigured(c config.PluginConfig) bool {
+	return strings.TrimSpace(c.ConsoleInternal.ServiceName) != ""
+}
+
+func memoryConsoleAssembleConfigured(c config.PluginConfig) bool {
+	return shouldUseMemoryAssemble(c) && memoryConsoleInternalConfigured(c)
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {

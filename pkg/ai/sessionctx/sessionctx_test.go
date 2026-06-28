@@ -191,6 +191,56 @@ func TestOpenAIRequestDigestConvenience(t *testing.T) {
 	require.NotEqual(t, digestA, changedDigest)
 }
 
+func TestScopedRequestDigest(t *testing.T) {
+	request, err := sessionctx.ParseOpenAIChatRequest(fullOpenAIChatRequestBody())
+	require.NoError(t, err)
+	bodyDigest, err := sessionctx.BuildOpenAIChatRequestDigest(request)
+	require.NoError(t, err)
+
+	input := sessionctx.ScopedRequestDigestInput{
+		Tenant:      "tenant-a",
+		Consumer:    "consumer-a",
+		SessionID:   "session-a",
+		Route:       "route-a",
+		RequestPath: "/v1/chat/completions",
+		Model:       "qwen-turbo",
+		BodyDigest:  bodyDigest,
+	}
+	digestA, err := sessionctx.BuildScopedRequestDigest(input)
+	require.NoError(t, err)
+	require.Regexp(t, regexp.MustCompile(`^[a-f0-9]{64}$`), digestA)
+
+	withRequestID := input
+	withRequestID.RequestID = "request-a"
+	digestB, err := sessionctx.BuildScopedRequestDigest(withRequestID)
+	require.NoError(t, err)
+	require.Equal(t, digestA, digestB, "request_id must not affect scoped request digest")
+
+	withDifferentRequestID := input
+	withDifferentRequestID.RequestID = "request-b"
+	digestC, err := sessionctx.BuildScopedRequestDigest(withDifferentRequestID)
+	require.NoError(t, err)
+	require.Equal(t, digestA, digestC, "retries with identical request facts must keep the same digest")
+
+	changedSession := input
+	changedSession.SessionID = "session-b"
+	sessionDigest, err := sessionctx.BuildScopedRequestDigest(changedSession)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, sessionDigest)
+
+	changedPath := input
+	changedPath.RequestPath = "/v1/messages"
+	pathDigest, err := sessionctx.BuildScopedRequestDigest(changedPath)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, pathDigest)
+
+	changedBody := input
+	changedBody.BodyDigest = strings.Repeat("a", 64)
+	changedBodyDigest, err := sessionctx.BuildScopedRequestDigest(changedBody)
+	require.NoError(t, err)
+	require.NotEqual(t, digestA, changedBodyDigest)
+}
+
 func TestOpenAIRequestBodyReplacement(t *testing.T) {
 	original := []byte(`{
 		"model": "qwen-turbo",

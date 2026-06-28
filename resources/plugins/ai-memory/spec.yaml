@@ -78,7 +78,6 @@ spec:
           x-title-i18n:
             en-US: Redis Recent Memory Configuration
           description: Console-materialized recent memory Redis source
-          required: [service_name]
           properties:
             service_name:
               type: string
@@ -105,7 +104,6 @@ spec:
           x-title-i18n:
             en-US: Console Internal Service Configuration
           description: Optional Console assemble callout target
-          required: [service_name]
           properties:
             service_name:
               type: string
@@ -145,7 +143,7 @@ spec:
           type: string
           enum: [open]
           default: open
-      required: [redis_stream, recent_cache, console_internal]
+      required: [redis_stream]
       example:
         # Global external targets and identity defaults belong in defaultConfig.
         redis_stream:

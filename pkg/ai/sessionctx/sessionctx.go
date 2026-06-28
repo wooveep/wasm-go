@@ -233,6 +233,17 @@ type RequestDigestInput struct {
 	Extra             map[string]json.RawMessage `json:"-"`
 }
 
+type ScopedRequestDigestInput struct {
+	Tenant      string
+	Consumer    string
+	SessionID   string
+	Route       string
+	RequestPath string
+	Model       string
+	BodyDigest  string
+	RequestID   string
+}
+
 func BuildRequestDigest(input RequestDigestInput) (string, error) {
 	payload := map[string]interface{}{}
 	if input.Model != "" {
@@ -327,6 +338,29 @@ func BuildOpenAIChatRequestDigest(request OpenAIChatRequest) (string, error) {
 		ParallelToolCalls: request.ParallelToolCalls,
 		Extra:             request.Extra,
 	})
+}
+
+func BuildScopedRequestDigest(input ScopedRequestDigestInput) (string, error) {
+	payload := map[string]string{}
+	addString := func(key, value string) {
+		if value = strings.TrimSpace(value); value != "" {
+			payload[key] = value
+		}
+	}
+	addString("tenant", input.Tenant)
+	addString("consumer", input.Consumer)
+	addString("session_id", input.SessionID)
+	addString("route", input.Route)
+	addString("request_path", input.RequestPath)
+	addString("model", input.Model)
+	addString("body_digest", input.BodyDigest)
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 type Usage struct {

@@ -115,12 +115,6 @@ func (c PluginConfig) Validate() error {
 	if c.RedisStream.ServiceName == "" {
 		return fmt.Errorf("redis_stream.service_name is required")
 	}
-	if c.RecentCache.ServiceName == "" {
-		return fmt.Errorf("recent_cache.service_name is required")
-	}
-	if c.ConsoleInternal.ServiceName == "" {
-		return fmt.Errorf("console_internal.service_name is required")
-	}
 	if !validMemoryMode(c.Route.MemoryMode) {
 		return fmt.Errorf("unsupported memory_mode %q", c.Route.MemoryMode)
 	}
