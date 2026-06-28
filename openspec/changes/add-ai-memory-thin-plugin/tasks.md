@@ -60,7 +60,7 @@
 ## 7. Documentation and Resource Catalog
 
 - [x] 7.1 Update `extensions/ai-memory` README documentation for responsibilities, configuration, request flow, Console assemble, Redis recent memory, response capture, events, fail-open behavior, privacy, and plugin ordering.
-- [ ] 7.2 Add `resources/plugins/ai-memory/README.md`, `README_EN.md`, and `spec.yaml`.
+- [x] 7.2 Add `resources/plugins/ai-memory/README.md`, `README_EN.md`, and `spec.yaml`.
 - [ ] 7.3 Document Console-owned responsibilities and gateway non-goals in extension and resource documentation.
 - [ ] 7.4 Document isolation from `ai-cache` streams, key prefixes, vector namespaces, payload schemas, retention, deletion, management APIs, and authorization checks.
 - [ ] 7.5 Document recommended ordering after identity/quota and before `ai-cache` and `ai-proxy`.
