@@ -53,6 +53,7 @@ func TestMemoryResourceCatalog(t *testing.T) {
 				"memory_token_budget",
 				"assemble_timeout_ms",
 				"inject_role",
+				"developer_compatible",
 				"semantic_top_k",
 				"capture_response",
 				"no_store_header",
@@ -60,6 +61,7 @@ func TestMemoryResourceCatalog(t *testing.T) {
 				"response_value_from",
 				"stream_value_from",
 				"tool_calls_from",
+				"policy_version",
 			})
 			requireMemoryResourceAbsentKeys(t, routeProps, []string{"redis_stream", "recent_cache", "console_internal"})
 			requireMemoryResourceAdditionalPropertiesFalse(t, routeSchema)
@@ -88,6 +90,7 @@ func TestMemoryResourceCatalog(t *testing.T) {
 				"memory_token_budget",
 				"assemble_timeout_ms",
 				"inject_role",
+				"developer_compatible",
 				"semantic_top_k",
 				"capture_response",
 				"no_store_header",
@@ -95,6 +98,7 @@ func TestMemoryResourceCatalog(t *testing.T) {
 				"response_value_from",
 				"stream_value_from",
 				"tool_calls_from",
+				"policy_version",
 			})
 			requireMemoryResourceAbsentKeys(t, routeExample, []string{"redis_stream", "recent_cache", "console_internal"})
 			requireMemoryResourceAbsentKeys(t, routeExample, []string{
