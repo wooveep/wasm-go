@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -41,6 +42,22 @@ func TestMemoryPrivacyAndIsolation(t *testing.T) {
 
 			combinedLower := strings.ToLower(memoryEventJSON(t, event) + "\n" + memoryPrivacyRedisCommands(t, host) + "\n" + memoryPrivacyLogs(host))
 			requireMemoryPrivacyNoForbiddenValues(t, "observable privacy surface", combinedLower, memoryPrivacyCredentialHeaderNames()...)
+		})
+
+		t.Run("raw event payload is not mirrored into plugin logs", func(t *testing.T) {
+			const (
+				rawUserContent      = "privacy raw prompt allowed in event only"
+				rawAssistantContent = "privacy raw answer allowed in event only"
+			)
+			host := startMemoryEventRequestWithBody(t, true, memoryEventRequestBody(t, rawUserContent, nil))
+			callMemoryEventResponse(t, host, 200, memoryEventResponseBody(t, rawAssistantContent, "stop", 6, 4, 10))
+
+			event := requireMemoryResponseCaptureEvent(t, host)
+			require.Equal(t, rawUserContent, event["user_content"])
+			require.Equal(t, rawAssistantContent, event["assistant_content"])
+
+			decodedLogs := memoryPrivacyDecodedBase64LogFragments(memoryPrivacyLogs(host))
+			requireMemoryPrivacyNoForbiddenValues(t, "decoded plugin logs", decodedLogs, rawUserContent, rawAssistantContent)
 		})
 
 		t.Run("inbound credentials are not forwarded to Console assemble or logs", func(t *testing.T) {
@@ -255,4 +272,16 @@ func memoryPrivacyLogs(host test.TestHost) string {
 	logs = append(logs, host.GetErrorLogs()...)
 	logs = append(logs, host.GetCriticalLogs()...)
 	return strings.Join(logs, "\n")
+}
+
+func memoryPrivacyDecodedBase64LogFragments(logs string) string {
+	var decoded []string
+	for _, token := range strings.Fields(logs) {
+		token = strings.Trim(token, ",")
+		body, err := base64.StdEncoding.DecodeString(token)
+		if err == nil {
+			decoded = append(decoded, string(body))
+		}
+	}
+	return strings.Join(decoded, "\n")
 }

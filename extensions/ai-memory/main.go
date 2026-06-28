@@ -169,9 +169,15 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log l
 func onHttpResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log log.Log) []byte {
 	if ctx.GetBoolContext(memoryStreamContextKey, false) {
 		memoryCaptureStreamingResponseChunk(ctx, c, chunk, isLastChunk, log)
+		if isLastChunk {
+			memoryEmitEventAfterResponseCompletion(ctx, c, log)
+		}
 		return chunk
 	}
 	memoryCaptureNonStreamingResponseChunk(ctx, c, chunk, isLastChunk, log)
+	if isLastChunk {
+		memoryEmitEventAfterResponseCompletion(ctx, c, log)
+	}
 	return chunk
 }
 

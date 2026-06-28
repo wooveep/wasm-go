@@ -1,15 +1,26 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"strings"
+
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
+	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
+	logs "github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
+	"github.com/tidwall/resp"
 )
 
 const (
 	memoryEventSchemaVersion = 1
 	memoryEventPluginVersion = "0.1.0"
 	memoryEventKind          = "memory_event"
+	memoryEventField         = "event"
+
+	memoryEventDeliveredContextKey = "memoryEventDelivered"
 )
 
 type MemoryEvent struct {
@@ -174,6 +185,93 @@ func memoryEventUsage(usage sessionctx.Usage) *MemoryEventUsage {
 		Output: usage.CompletionTokens,
 		Total:  usage.TotalTokens,
 	}
+}
+
+func memoryEmitEventAfterResponseCompletion(ctx wrapper.HttpContext, c config.PluginConfig, log logs.Log) {
+	if memoryGateReason(ctx) != "" || ctx.GetBoolContext(memoryEventDeliveredContextKey, false) {
+		return
+	}
+	capture, ok := ctx.GetContext(memoryResponseCaptureContextKey).(memoryResponseCapture)
+	if !ok {
+		return
+	}
+	ctx.SetContext(memoryEventDeliveredContextKey, true)
+
+	event := memoryBuildEvent(ctx, c, capture, nowMillis())
+	command, err := sessionctx.BuildRedisStreamXADD(sessionctx.RedisStreamXADDInput{
+		Stream: c.RedisStream.Stream,
+		Field:  memoryEventField,
+		Event:  event,
+	})
+	if err != nil {
+		log.Warnf("[ai-memory] Redis Stream event build failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+		return
+	}
+	if err := memoryDispatchEventXADD(c, event, command, log); err != nil {
+		log.Warnf("[ai-memory] Redis Stream dispatch failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+	}
+}
+
+func memoryDispatchEventXADD(c config.PluginConfig, event MemoryEvent, command []string, log logs.Log) error {
+	clusterName := memoryRedisStreamClusterName(c.RedisStream)
+	if err := proxywasm.RedisInit(clusterName, c.RedisStream.Username, c.RedisStream.Password, uint32(c.RedisStream.Timeout)); err != nil {
+		return err
+	}
+	_, err := proxywasm.DispatchRedisCall(clusterName, memoryRedisCommandQuery(command), func(status, responseSize int) {
+		if status != 0 {
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s status:%d", event.RequestID, c.RedisStream.Stream, status)
+			return
+		}
+		response, err := proxywasm.GetRedisCallResponse(0, responseSize)
+		if err != nil {
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+			return
+		}
+		value, err := memoryRedisResponseValue(response)
+		if err != nil {
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+			return
+		}
+		if err := value.Error(); err != nil {
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+			return
+		}
+		log.Debugf("[ai-memory] Redis Stream delivery accepted, request_id:%s stream:%s id:%s", event.RequestID, c.RedisStream.Stream, value.String())
+	})
+	return err
+}
+
+func memoryRedisStreamClusterName(c config.RedisStreamConfig) string {
+	clusterName := wrapper.FQDNCluster{
+		FQDN: c.ServiceName,
+		Port: int64(c.ServicePort),
+	}.ClusterName()
+	params := make([]string, 0, 3)
+	if c.Database != 0 {
+		params = append(params, fmt.Sprintf("db=%d", c.Database))
+	}
+	params = append(params, "buffer_flush_timeout=0", "max_buffer_size_before_flush=0")
+	return clusterName + "?" + strings.Join(params, "&")
+}
+
+func memoryRedisCommandQuery(command []string) []byte {
+	var buf bytes.Buffer
+	writer := resp.NewWriter(&buf)
+	values := make([]resp.Value, 0, len(command))
+	for _, item := range command {
+		values = append(values, resp.StringValue(item))
+	}
+	writer.WriteArray(values)
+	return buf.Bytes()
+}
+
+func memoryRedisResponseValue(response []byte) (resp.Value, error) {
+	reader := resp.NewReader(bytes.NewReader(response))
+	value, _, err := reader.ReadValue()
+	if err != nil && err != io.EOF {
+		return resp.Value{}, err
+	}
+	return value, nil
 }
 
 func memoryInt64Context(ctx wrapper.HttpContext, key string) int64 {

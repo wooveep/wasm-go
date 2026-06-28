@@ -53,9 +53,12 @@ func TestMemoryEventPayload(t *testing.T) {
 			requireMemoryEventJSONExcludes(t, event, "response-extra-should-not-appear", "unpermitted_response_field")
 			require.NotContains(t, eventJSON, "cache:events")
 
-			secondHost := startMemoryEventRequestWithBody(t, true, requestBody)
-			callMemoryEventResponse(t, secondHost, 200, responseBody)
-			secondEvent := requireMemoryResponseCaptureEvent(t, secondHost)
+			host.CallOnRedisCall(0, test.CreateRedisRespString("1700000000000-0"))
+			host.CompleteHttp()
+
+			startMemoryEventRequestOnHost(t, host, requestBody)
+			callMemoryEventResponse(t, host, 200, responseBody)
+			secondEvent := requireMemoryResponseCaptureEvent(t, host)
 			require.Equal(t, event["request_digest"], secondEvent["request_digest"])
 			require.Equal(t, event["idempotency_key"], secondEvent["idempotency_key"])
 			require.NotEmpty(t, secondEvent["event_id"])
@@ -167,7 +170,12 @@ func startMemoryEventRequestWithBody(t *testing.T, captureResponse bool, body []
 	require.Equal(t, types.OnPluginStartStatusOK, status)
 	require.NoError(t, host.SetRouteName("memory-route"))
 	require.NoError(t, host.SetRequestId("property-request-id"))
+	startMemoryEventRequestOnHost(t, host, body, extraHeaders...)
+	return host
+}
 
+func startMemoryEventRequestOnHost(t *testing.T, host test.TestHost, body []byte, extraHeaders ...[2]string) {
+	t.Helper()
 	headers := applyMemoryRequestGatingHeaderOverrides(memoryConsoleAssembleHeaders(), [][2]string{
 		{"x-request-id", "request-response-capture-1"},
 	})
@@ -181,7 +189,6 @@ func startMemoryEventRequestWithBody(t *testing.T, captureResponse bool, body []
 
 	host.CallOnRedisCall(0, test.CreateRedisRespNull())
 	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
-	return host
 }
 
 func callMemoryEventResponse(t *testing.T, host test.TestHost, statusCode int, responseBody []byte) {
