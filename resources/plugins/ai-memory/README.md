@@ -143,6 +143,17 @@ matchRules:
 推荐将 `ai-memory` 放在 identity 和 `ai-quota` 之后，确保可信租户和 consumer identity 已经可用。
 当 memory injection 会影响模型请求时，将 `ai-memory` 放在 `ai-cache` 和 `ai-proxy` 之前。
 
+## 插件顺序建议
+
+推荐请求链路顺序：
+
+1. Identity 或 authentication 插件先写入可信 tenant 和 consumer headers。
+2. `ai-quota` 基于可信身份执行配额判断，可在记忆处理前拒绝超额请求。
+3. `ai-memory` 注入 memory，并记录响应事实。
+4. `ai-cache` 在 memory-enabled routes 上只使用保守策略：consumer-scoped cache、
+   memory-policy 或 digest-aware keys，或直接 bypass。
+5. `ai-proxy` 将最终 memory-adjusted request 转发给 provider。
+
 `ai-memory` 与 `ai-cache` 隔离：memory stream 使用 `memory:events`，recent key prefix 使用
 `memory:recent`，payload schema 与 cache payload schema 分离。vector namespace、retention、
 deletion、management APIs、authorization checks 和 repair policy 都由 Console 侧管理。

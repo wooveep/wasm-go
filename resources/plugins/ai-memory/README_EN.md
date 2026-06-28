@@ -156,6 +156,19 @@ Run `ai-memory` after identity plugins and `ai-quota` so trusted tenant and
 consumer identity are available. Run it before `ai-cache` and `ai-proxy` when
 memory injection can affect the model request.
 
+## Ordering Recommendation
+
+Recommended request-path order:
+
+1. Identity or authentication plugins populate trusted tenant and consumer
+   headers.
+2. `ai-quota` runs with the trusted identity and can reject over-quota traffic
+   before memory work starts.
+3. `ai-memory` injects memory and records response facts.
+4. `ai-cache` runs only with a conservative policy for memory-enabled routes:
+   consumer-scoped cache, memory-policy or digest-aware keys, or bypass.
+5. `ai-proxy` forwards the final memory-adjusted request to the provider.
+
 `ai-memory` is isolated from `ai-cache`: memory events use `memory:events`,
 recent keys use `memory:recent`, and MemoryEvent payload schemas are separate
 from cache payload schemas. Vector namespaces, retention, deletion, management
