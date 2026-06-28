@@ -160,3 +160,15 @@ memory injection can affect the model request.
 recent keys use `memory:recent`, and MemoryEvent payload schemas are separate
 from cache payload schemas. Vector namespaces, retention, deletion, management
 APIs, authorization checks, and repair policy belong to Console.
+
+## Cache and Memory Isolation
+
+| Concern | `ai-memory` boundary |
+| --- | --- |
+| Redis Stream | Uses `memory:events`; never writes cache streams. |
+| Redis key prefix | Reads Console-materialized recent memory under `memory:recent`; never reads or writes cache key prefixes. |
+| Vector namespace | Does not create, read, or mutate vector namespaces; Console owns memory vector indexing. |
+| Payload schema | Emits `MemoryEvent`; never reuses cache request, response, replay, or settlement payload schemas. |
+| Retention and deletion | Does not enforce retention or deletion; Console owns memory lifecycle policy. |
+| Management APIs | Exposes no memory management APIs from the gateway. |
+| Authorization checks | Trusts upstream identity headers and leaves memory authorization checks to Console APIs and workers. |

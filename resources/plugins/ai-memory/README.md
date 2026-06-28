@@ -146,3 +146,15 @@ matchRules:
 `ai-memory` 与 `ai-cache` 隔离：memory stream 使用 `memory:events`，recent key prefix 使用
 `memory:recent`，payload schema 与 cache payload schema 分离。vector namespace、retention、
 deletion、management APIs、authorization checks 和 repair policy 都由 Console 侧管理。
+
+## Cache 与 Memory 隔离矩阵
+
+| 关注点 | `ai-memory` 边界 |
+| --- | --- |
+| Redis Stream | 使用 `memory:events`，不会写入 cache stream。 |
+| Redis key prefix | 只读取 Console 物化的 `memory:recent` recent memory，不读写 cache key prefixes。 |
+| Vector namespace | 不创建、不读取、不修改 vector namespaces；memory vector indexing 由 Console 负责。 |
+| Payload schema | 只投递 `MemoryEvent`，不复用 cache request、response、replay 或 settlement payload schemas。 |
+| Retention / deletion | 不执行 retention 或 deletion policy；memory lifecycle 由 Console 管理。 |
+| Management APIs | 网关不暴露 memory management APIs。 |
+| Authorization checks | 网关信任上游身份头，memory authorization checks 由 Console API 和 worker 负责。 |

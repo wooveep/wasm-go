@@ -185,6 +185,18 @@ recent state uses `memory:recent`, MemoryEvent payload schemas are separate
 from cache payload schemas, and Console owns any memory vector namespace,
 retention, deletion, management API, authorization, and repair policy.
 
+## Cache and Memory Isolation
+
+| Concern | `ai-memory` boundary |
+| --- | --- |
+| Redis Stream | Uses `memory:events`; never writes cache streams. |
+| Redis key prefix | Reads Console materialized recent memory under `memory:recent`; never reads or writes cache key prefixes. |
+| Vector namespace | Does not create, read, or mutate vector namespaces; Console owns memory vector indexing. |
+| Payload schema | Emits `MemoryEvent`; never reuses cache request, response, replay, or settlement payload schemas. |
+| Retention and deletion | Does not enforce retention or deletion; Console owns memory lifecycle policy. |
+| Management APIs | Exposes no memory management APIs from the gateway. |
+| Authorization checks | Trusts upstream identity headers and leaves memory authorization checks to Console APIs and workers. |
+
 When `ai-memory` and `ai-cache` are both enabled, use a conservative cache
 policy such as consumer-scoped cache, memory-policy or digest-aware cache keys,
 or cache bypass until Console materializes memory-aware replay records.
