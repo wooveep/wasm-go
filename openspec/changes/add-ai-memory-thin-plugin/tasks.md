@@ -69,7 +69,7 @@
 ## 8. Verification
 
 - [x] 8.1 Run focused shared helper tests.
-- [ ] 8.2 Run focused `ai-memory` Go tests.
+- [x] 8.2 Run focused `ai-memory` Go tests.
 - [ ] 8.3 Run focused `ai-cache` regression tests affected by shared helper changes.
 - [ ] 8.4 Run resource documentation/schema validation or focused checks.
 - [ ] 8.5 Run `openspec validate add-ai-memory-thin-plugin --strict`.

@@ -57,6 +57,7 @@ type memoryConsoleAssembleResponse struct {
 	RecentMessages []memoryAssembleMessage `json:"recent_messages,omitempty"`
 	Trace          map[string]interface{}  `json:"trace,omitempty"`
 	Diagnostics    map[string]interface{}  `json:"diagnostics,omitempty"`
+	Error          string                  `json:"error,omitempty"`
 }
 
 type memoryAssembleMessage struct {
@@ -190,6 +191,9 @@ func parseMemoryAssembleResponse(body []byte) (memoryConsoleAssembleResponse, er
 	}
 	if response.SchemaVersion != memoryAssembleSchemaVersion {
 		return memoryConsoleAssembleResponse{}, errors.New("unsupported Console assemble schema version")
+	}
+	if strings.TrimSpace(response.Error) != "" {
+		return memoryConsoleAssembleResponse{}, errors.New("Console assemble returned error response")
 	}
 	if !validMemoryAssembleDecision(response.Decision) {
 		return memoryConsoleAssembleResponse{}, errors.New("unsupported Console assemble decision")
