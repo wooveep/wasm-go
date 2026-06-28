@@ -42,6 +42,19 @@ call vector databases, call provider models for memory work, enforce retention
 or deletion policy, expose memory management APIs, calculate backend model cost,
 or create billing statements.
 
+## Ownership Boundary
+
+Console owns every durable or policy-heavy memory concern: PostgreSQL records,
+recent-window materialization, daily digests, semantic recall, embeddings,
+vector indexes, retention, deletion, repair, management APIs, authorization
+checks, and backend model cost attribution.
+
+The gateway plugin is intentionally not a memory system of record. It does not
+persist conversations, generate memory artifacts, choose retention policy,
+operate vector storage, repair missing turns, expose operator APIs, or settle
+billing. It only consumes Console-derived runtime state and emits one
+best-effort event for Console workers.
+
 ## Configuration
 
 Global `defaultConfig` holds external targets and identity settings. Route

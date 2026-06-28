@@ -39,6 +39,18 @@ deletion、repair、management API，以及 backend model cost attribution 都�
 provider model 做记忆工作，不执行 retention/deletion policy，不暴露管理 API，不做
 backend model cost 归因或 billing settlement。
 
+## 所有权边界
+
+Console 负责所有持久化和重策略记忆职责：PostgreSQL 记录、recent-window
+materialization、daily digest、semantic recall、embeddings、vector indexes、
+retention、deletion、repair、management APIs、authorization checks 和 backend
+model cost attribution。
+
+网关插件不是记忆系统的事实来源。它不持久化会话，不生成记忆制品，不选择 retention
+policy，不操作 vector storage，不修复缺失 turn，不暴露运维管理 API，也不做 billing
+settlement。它只消费 Console 派生的运行时状态，并向 Console worker 投递一次
+best-effort 事件。
+
 ## 隐私边界
 
 `ai-memory` 不会记录 raw prompts、raw answers、credentials、Authorization
