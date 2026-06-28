@@ -60,6 +60,28 @@ func TestMemoryPrivacyAndIsolation(t *testing.T) {
 			requireMemoryPrivacyNoForbiddenValues(t, "decoded plugin logs", decodedLogs, rawUserContent, rawAssistantContent)
 		})
 
+		t.Run("redis stream failure logs only safe diagnostics", func(t *testing.T) {
+			const (
+				rawUserContent      = "privacy raw prompt inside redis failure"
+				rawAssistantContent = "privacy raw answer inside redis failure"
+				redisSecret         = "redis-password-secret"
+			)
+			responseBody := memoryEventResponseBody(t, rawAssistantContent, "stop", 6, 4, 10)
+			host := startMemoryEventRequestWithBody(t, true, memoryEventRequestBody(t, rawUserContent, nil))
+			callMemoryEventResponse(t, host, 200, responseBody)
+			event := requireMemoryResponseCaptureEvent(t, host)
+			require.Equal(t, rawUserContent, event["user_content"])
+			require.Equal(t, rawAssistantContent, event["assistant_content"])
+			requireMemoryEventXADDCommand(t, host)
+
+			host.CallOnRedisCall(0, test.CreateRedisRespError(rawUserContent+" "+rawAssistantContent+" "+redisSecret))
+
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			require.Nil(t, host.GetLocalResponse())
+			require.Equal(t, string(responseBody), string(host.GetResponseBody()))
+			requireMemoryPrivacyNoForbiddenValues(t, "plugin logs", memoryPrivacyLogs(host), rawUserContent, rawAssistantContent, redisSecret)
+		})
+
 		t.Run("inbound credentials are not forwarded to Console assemble or logs", func(t *testing.T) {
 			host := startMemoryPrivacyAssembleRequest(t, memoryEventRequestBody(t, "privacy assemble prompt", nil), memoryPrivacyCredentialHeaders()...)
 			host.CallOnRedisCall(0, test.CreateRedisRespNull())

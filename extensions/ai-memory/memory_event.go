@@ -224,16 +224,16 @@ func memoryDispatchEventXADD(c config.PluginConfig, event MemoryEvent, command [
 		}
 		response, err := proxywasm.GetRedisCallResponse(0, responseSize)
 		if err != nil {
-			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s reason:response_unavailable", event.RequestID, c.RedisStream.Stream)
 			return
 		}
 		value, err := memoryRedisResponseValue(response)
 		if err != nil {
-			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s reason:response_parse_failed", event.RequestID, c.RedisStream.Stream)
 			return
 		}
 		if err := value.Error(); err != nil {
-			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s err:%v", event.RequestID, c.RedisStream.Stream, err)
+			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s reason:redis_response_error", event.RequestID, c.RedisStream.Stream)
 			return
 		}
 		log.Debugf("[ai-memory] Redis Stream delivery accepted, request_id:%s stream:%s id:%s", event.RequestID, c.RedisStream.Stream, value.String())
