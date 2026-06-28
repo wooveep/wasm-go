@@ -135,6 +135,20 @@ matchRules:
 `memory_mode` accepts `off`, `recent-only`, `digest`, and `semantic`.
 `fail_policy` currently supports only `open`.
 
+## Schema Examples
+
+The `spec.yaml` `configSchema.openAPIV3Schema.example` shows the global
+`defaultConfig`: Redis Stream `redis_stream`, Redis recent memory
+`recent_cache`, Console internal service `console_internal`, identity headers,
+`enable_path_suffixes`, and `fail_policy: open` are deployment-level settings.
+
+The `routeConfigSchema.openAPIV3Schema.example` shows route memory behavior for
+`matchRules[].config`: `memory_mode`, `recent_window_turns`,
+`memory_token_budget`, `assemble_timeout_ms`, `semantic_top_k`,
+`capture_response`, the no-store header, and request/response extraction paths.
+The route example does not include Redis or Console external targets; those are
+inherited from `defaultConfig`.
+
 ## Request and Response Flow
 
 The header phase checks path suffix, JSON content type, tenant, and consumer

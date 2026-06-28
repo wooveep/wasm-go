@@ -147,6 +147,7 @@ spec:
           default: open
       required: [redis_stream, recent_cache, console_internal]
       example:
+        # Global external targets and identity defaults belong in defaultConfig.
         redis_stream:
           service_name: redis-stack-server.higress-system.svc.cluster.local
           service_port: 6379
@@ -232,6 +233,7 @@ spec:
         policy_version:
           type: string
       example:
+        # Route examples map to matchRules[].config and inherit global targets.
         memory_mode: semantic
         recent_window_turns: 6
         memory_token_budget: 1500

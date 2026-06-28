@@ -64,7 +64,7 @@
 - [x] 7.3 Document Console-owned responsibilities and gateway non-goals in extension and resource documentation.
 - [x] 7.4 Document isolation from `ai-cache` streams, key prefixes, vector namespaces, payload schemas, retention, deletion, management APIs, and authorization checks.
 - [x] 7.5 Document recommended ordering after identity/quota and before `ai-cache` and `ai-proxy`.
-- [ ] 7.6 Add resource schema examples showing global external targets in `defaultConfig` and route memory behavior in `matchRules[].config`.
+- [x] 7.6 Add resource schema examples showing global external targets in `defaultConfig` and route memory behavior in `matchRules[].config`.
 
 ## 8. Verification
 

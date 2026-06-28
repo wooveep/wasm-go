@@ -126,6 +126,19 @@ matchRules:
 `memory_mode` 支持 `off`、`recent-only`、`digest` 和 `semantic`。`fail_policy`
 当前只支持 `open`。
 
+## Schema 示例
+
+`spec.yaml` 的 `configSchema.openAPIV3Schema.example` 展示全局
+`defaultConfig`：Redis Stream `redis_stream`、Redis recent memory
+`recent_cache`、Console internal service `console_internal`、identity headers、
+`enable_path_suffixes` 和 `fail_policy: open` 都在全局配置中定义。
+
+`routeConfigSchema.openAPIV3Schema.example` 展示 `matchRules[].config` 中的路由
+memory behavior：`memory_mode`、`recent_window_turns`、`memory_token_budget`、
+`assemble_timeout_ms`、`semantic_top_k`、`capture_response`、no-store header 和
+request/response extraction paths。路由示例不包含 Redis 或 Console 外部目标，
+这些目标从 `defaultConfig` 继承。
+
 ## 请求和响应流程
 
 请求头阶段检查路径后缀、JSON content-type、租户和 consumer identity。缺少身份或路径不匹配时，
