@@ -35,9 +35,11 @@ deletion、repair、management API，以及 backend model cost attribution 都�
   投递 MemoryEvent。
 - 对 Redis、Console、解析、替换、响应捕获和事件投递失败执行 fail-open。
 
-插件不写 PostgreSQL，不生成摘要，不生成 embedding，不调用 vector database，不调用
-provider model 做记忆工作，不执行 retention/deletion policy，不暴露管理 API，不做
-backend model cost 归因或 billing settlement。
+插件不写 PostgreSQL，不生成 daily memory digest 或持久化记忆摘要，不生成
+embedding，不调用 vector database，不调用 provider model 做记忆工作，不执行
+retention/deletion policy，不暴露管理 API，不做 backend model cost 归因或
+billing settlement。它可以生成 request digest，作为 Console assemble 和
+MemoryEvent 幂等使用的安全协议事实。
 
 ## 所有权边界
 

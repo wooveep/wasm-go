@@ -37,10 +37,11 @@ The plugin handles only request-time and response-time gateway work:
 - Fail-open behavior for Redis, Console, parsing, replacement, capture, and
   event dispatch failures.
 
-The plugin does not write PostgreSQL, generate digests, generate embeddings,
-call vector databases, call provider models for memory work, enforce retention
-or deletion policy, expose memory management APIs, calculate backend model cost,
-or create billing statements.
+The plugin does not write PostgreSQL, generate daily memory digests, generate
+embeddings, call vector databases, call provider models for memory work,
+enforce retention or deletion policy, expose memory management APIs, calculate
+backend model cost, or create billing statements. It may build a request digest
+as a safe protocol fact for Console assemble and MemoryEvent idempotency.
 
 ## Ownership Boundary
 

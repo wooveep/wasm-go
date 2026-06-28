@@ -39,10 +39,11 @@ The plugin:
 - Uses fail-open behavior for Redis, Console, parsing, replacement, response
   capture, and event dispatch failures.
 
-The plugin does not write PostgreSQL, generate digests, generate embeddings,
-call vector databases, call provider models for memory work, apply retention or
-deletion policy, expose management APIs, calculate backend model cost, or create
-billing settlement records.
+The plugin does not write PostgreSQL, generate daily memory digests, generate
+embeddings, call vector databases, call provider models for memory work, apply
+retention or deletion policy, expose management APIs, calculate backend model
+cost, or create billing settlement records. It may build a request digest as a
+safe protocol fact for Console assemble and MemoryEvent idempotency.
 
 ## Ownership Boundary
 
