@@ -51,6 +51,6 @@
 
 ## 6. Optional Live Compatibility Check
 
-- [ ] 6.1 Build or package the updated ai-proxy plugin for the local Higress environment when implementation verification requires a live gateway check.
+- [x] 6.1 Build or package the updated ai-proxy plugin for the local Higress environment when implementation verification requires a live gateway check.
 - [ ] 6.2 Run the Modelfusion local E2E media checks against the updated plugin and verify image generation and audio speech no longer report `plugin_conversion_gap`.
 - [ ] 6.3 Record sanitized evidence for any remaining upstream provider errors without exposing API keys, temporary URLs, or credentials.
