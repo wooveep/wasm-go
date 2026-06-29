@@ -6,12 +6,13 @@ metadata:
 spec:
   defaultConfig:
     redis_stream:
-      service_name: redis-stack-server.higress-system.svc.cluster.local
+      service_name: redis-stack-server.dns
       service_port: 6379
       database: 0
       timeout: 500
       stream: billing:events
     quota_scope: global
+    event_kind: customer_usage
     provider: default
     tenant_header: x-mse-tenant
     consumer_header: x-mse-consumer
@@ -25,6 +26,12 @@ spec:
     - qwen
     config:
       quota_scope: route:qwen
+      provider: dashscope
+  - ingress:
+    - ai-memory-digest
+    config:
+      event_kind: internal_cost
+      quota_scope: internal:ai-memory.digest
       provider: dashscope
   phase: UNSPECIFIED_PHASE
   priority: 270

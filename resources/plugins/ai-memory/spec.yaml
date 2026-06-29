@@ -36,7 +36,7 @@ spec:
               title: 服务名称
               x-title-i18n:
                 en-US: Service Name
-              default: redis-stack-server.higress-system.svc.cluster.local
+              default: redis-stack-server.dns
             service_port:
               type: integer
               title: 服务端口
@@ -81,7 +81,7 @@ spec:
           properties:
             service_name:
               type: string
-              default: redis-stack-server.higress-system.svc.cluster.local
+              default: redis-stack-server.dns
             service_port:
               type: integer
               default: 6379
@@ -107,7 +107,7 @@ spec:
           properties:
             service_name:
               type: string
-              default: modelfusion-console-api.higress-system.svc.cluster.local
+              default: modelfusion-console-api.dns
             service_port:
               type: integer
               default: 80
@@ -147,7 +147,7 @@ spec:
       example:
         # Global external targets and identity defaults belong in defaultConfig.
         redis_stream:
-          service_name: redis-stack-server.higress-system.svc.cluster.local
+          service_name: redis-stack-server.dns
           service_port: 6379
           username: ""
           password: <redis-password>
@@ -155,7 +155,7 @@ spec:
           timeout: 500
           stream: memory:events
         recent_cache:
-          service_name: redis-stack-server.higress-system.svc.cluster.local
+          service_name: redis-stack-server.dns
           service_port: 6379
           username: ""
           password: <redis-password>
@@ -163,7 +163,7 @@ spec:
           timeout: 50
           key_prefix: memory:recent
         console_internal:
-          service_name: modelfusion-console-api.higress-system.svc.cluster.local
+          service_name: modelfusion-console-api.dns
           service_port: 80
           assemble_path: /internal/memory/assemble
           timeout_ms: 100

@@ -1,0 +1,663 @@
+apiVersion: 1.0.0
+info:
+  type: enterprise
+  category: ai
+  image: platform_wasm/ai-cache
+  name: ai-cache
+  title: AI 缓存
+  x-title-i18n:
+    en-US: AI Cache
+  description: 缓存大语言模型的响应结果，显著降低相似问题的响应时延并节省成本。
+  x-description-i18n:
+    en-US: Cache the response of large language models, significantly reduce the response latency of similar problems and save costs.
+  iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
+  readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-cache/README.md
+  x-readmeUrl-i18n:
+    en-US: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-cache/README_EN.md
+  version: 1.0.0
+  contact:
+    name: johnlanni
+  gatewayMinVersion: "2.0.0"
+spec:
+  phase: default
+  priority: 800
+  configSchema:
+    openAPIV3Schema:
+      title: ai-cache
+      type: object
+      properties:
+        vector:
+          type: object
+          title: 向量数据库配置
+          x-title-i18n:
+            en-US: Vector Store Configuration
+          properties:
+            type:
+              type: string
+              title: 向量数据库类型
+              x-title-i18n:
+                en-US: Vector Store Type
+              description: 向量存储服务提供者类型
+              x-description-i18n:
+                en-US: Vector store provider type
+              enum:
+                - dashvector
+                - chroma
+                - elasticsearch
+                - weaviate
+                - pinecone
+                - qdrant
+                - milvus
+            serviceName:
+              type: string
+              title: 向量数据库服务名称
+              x-title-i18n:
+                en-US: Vector Service Name
+              description: 向量存储服务名称
+              x-description-i18n:
+                en-US: Vector store service name
+            serviceHost:
+              type: string
+              title: 向量数据库服务域名
+              x-title-i18n:
+                en-US: Vector Service Host
+              description: 向量存储服务域名，部分 provider 要求必填
+              x-description-i18n:
+                en-US: Vector store host, required by some providers
+            servicePort:
+              type: integer
+              title: 向量数据库服务端口
+              x-title-i18n:
+                en-US: Vector Service Port
+              default: 443
+            apiKey:
+              type: string
+              title: 向量数据库 API Key
+              x-title-i18n:
+                en-US: Vector API Key
+            topK:
+              type: integer
+              title: TopK
+              x-title-i18n:
+                en-US: Top K
+              default: 1
+            timeout:
+              type: integer
+              title: 向量数据库超时时间
+              x-title-i18n:
+                en-US: Vector Timeout
+              description: 请求向量数据库服务的超时时间，单位毫秒
+              x-description-i18n:
+                en-US: Timeout for vector store requests in milliseconds
+              default: 10000
+            collectionID:
+              type: string
+              title: Collection ID
+              x-title-i18n:
+                en-US: Collection ID
+            threshold:
+              type: number
+              title: 相似度阈值
+              x-title-i18n:
+                en-US: Similarity Threshold
+              default: 1000
+            thresholdRelation:
+              type: string
+              title: 阈值比较方式
+              x-title-i18n:
+                en-US: Threshold Relation
+              enum:
+                - lt
+                - lte
+                - gt
+                - gte
+              default: lt
+            esUsername:
+              type: string
+              title: ElasticSearch 用户名
+              x-title-i18n:
+                en-US: ElasticSearch Username
+            esPassword:
+              type: string
+              title: ElasticSearch 密码
+              x-title-i18n:
+                en-US: ElasticSearch Password
+          required:
+            - type
+            - serviceName
+        embedding:
+          type: object
+          title: 文本向量化配置
+          x-title-i18n:
+            en-US: Embedding Configuration
+          properties:
+            type:
+              type: string
+              title: 文本向量化服务类型
+              x-title-i18n:
+                en-US: Embedding Service Type
+              enum:
+                - dashscope
+                - openai
+                - azure
+                - cohere
+                - ollama
+                - huggingface
+                - textin
+                - xfyun
+            serviceName:
+              type: string
+              title: 文本向量化服务名称
+              x-title-i18n:
+                en-US: Embedding Service Name
+            serviceHost:
+              type: string
+              title: 文本向量化服务域名
+              x-title-i18n:
+                en-US: Embedding Service Host
+            servicePort:
+              type: integer
+              title: 文本向量化服务端口
+              x-title-i18n:
+                en-US: Embedding Service Port
+              default: 443
+            timeout:
+              type: integer
+              title: 文本向量化超时时间
+              x-title-i18n:
+                en-US: Embedding Timeout
+              description: 请求文本向量化服务的超时时间，单位毫秒
+              x-description-i18n:
+                en-US: Timeout for embedding requests in milliseconds
+              default: 10000
+            model:
+              type: string
+              title: 模型名称
+              x-title-i18n:
+                en-US: Model Name
+            apiKey:
+              type: string
+              title: API Key
+              x-title-i18n:
+                en-US: API Key
+            apiVersion:
+              type: string
+              title: Azure API 版本
+              x-title-i18n:
+                en-US: Azure API Version
+            textinAppId:
+              type: string
+              title: TextIn App ID
+              x-title-i18n:
+                en-US: TextIn App ID
+            textinSecretCode:
+              type: string
+              title: TextIn Secret Code
+              x-title-i18n:
+                en-US: TextIn Secret Code
+            textinMatryoshkaDim:
+              type: integer
+              title: TextIn 向量维度
+              x-title-i18n:
+                en-US: TextIn Matryoshka Dim
+            appId:
+              type: string
+              title: 讯飞应用 ID
+              x-title-i18n:
+                en-US: XFYun App ID
+            apiSecret:
+              type: string
+              title: 讯飞 API Secret
+              x-title-i18n:
+                en-US: XFYun API Secret
+          required:
+            - type
+            - serviceName
+        cache:
+          type: object
+          title: 缓存服务配置
+          x-title-i18n:
+            en-US: Cache Configuration
+          properties:
+            type:
+              type: string
+              title: 缓存服务类型
+              x-title-i18n:
+                en-US: Cache Type
+              enum:
+                - redis
+            serviceName:
+              type: string
+              title: 缓存服务名称
+              x-title-i18n:
+                en-US: Cache Service Name
+            serviceHost:
+              type: string
+              title: 缓存服务域名
+              x-title-i18n:
+                en-US: Cache Service Host
+            servicePort:
+              type: integer
+              title: 缓存服务端口
+              x-title-i18n:
+                en-US: Cache Service Port
+              default: 6379
+            username:
+              type: string
+              title: 缓存服务用户名
+              x-title-i18n:
+                en-US: Cache Username
+            password:
+              type: string
+              title: 缓存服务密码
+              x-title-i18n:
+                en-US: Cache Password
+            timeout:
+              type: integer
+              title: 缓存服务超时时间
+              x-title-i18n:
+                en-US: Cache Timeout
+              default: 10000
+            cacheTTL:
+              type: integer
+              title: 缓存过期时间
+              x-title-i18n:
+                en-US: Cache TTL
+              default: 0
+            cacheKeyPrefix:
+              type: string
+              title: 缓存 Key 前缀
+              x-title-i18n:
+                en-US: Cache Key Prefix
+              default: "higress-ai-cache:"
+            database:
+              type: integer
+              title: 数据库 ID
+              x-title-i18n:
+                en-US: Database ID
+              default: 0
+          required:
+            - type
+            - serviceName
+        cacheKeyStrategy:
+          type: string
+          title: 缓存键生成策略
+          x-title-i18n:
+            en-US: Cache Key Strategy
+          description: 决定如何根据历史问题生成缓存键
+          x-description-i18n:
+            en-US: Strategy for generating cache keys from history
+          enum:
+            - lastQuestion
+            - allQuestions
+            - disabled
+          default: lastQuestion
+        enableSemanticCache:
+          type: boolean
+          title: 启用语义缓存
+          x-title-i18n:
+            en-US: Enable Semantic Cache
+          default: false
+        cacheKeyFrom:
+          type: string
+          title: 从请求 Body 中提取缓存 Key
+          x-title-i18n:
+            en-US: Cache Key From Request Body
+          description: 从请求 Body 中基于 GJSON PATH 语法提取字符串
+          x-description-i18n:
+            en-US: Extract a string from request Body based on GJSON PATH syntax
+          default: "messages.@reverse.0.content"
+        cacheValueFrom:
+          type: string
+          title: 从响应 Body 中提取缓存值
+          x-title-i18n:
+            en-US: Cache Value From Response Body
+          description: 从响应 Body 中基于 GJSON PATH 语法提取字符串
+          x-description-i18n:
+            en-US: Extract a string from response Body based on GJSON PATH syntax
+          default: "choices.0.message.content"
+        cacheStreamValueFrom:
+          type: string
+          title: 从流式响应 Body 中提取缓存值
+          x-title-i18n:
+            en-US: Cache Value From Stream Response Body
+          description: 从流式响应 Body 中基于 GJSON PATH 语法提取字符串
+          x-description-i18n:
+            en-US: Extract a string from streaming response Body based on GJSON PATH syntax
+          default: "choices.0.delta.content"
+        cacheToolCallsFrom:
+          type: string
+          title: 从流式响应 Body 中提取 Tool Calls
+          x-title-i18n:
+            en-US: Cache Tool Calls From Stream Response Body
+          default: "choices.0.delta.content.tool_calls"
+        materialized_lookup:
+          type: object
+          title: 物化回放查询
+          x-title-i18n:
+            en-US: Materialized Replay Lookup
+          description: 薄缓存模式下从 Redis 读取 Console 预生成的结构化回放记录。
+          x-description-i18n:
+            en-US: Reads Console-materialized structured replay records from Redis in thin cache mode.
+          properties:
+            redis:
+              type: object
+              title: Redis物化回放配置
+              x-title-i18n:
+                en-US: Redis Materialized Replay Configuration
+              properties:
+                enabled:
+                  type: boolean
+                  title: 启用 Redis 回放查询
+                  x-title-i18n:
+                    en-US: Enable Redis Replay Lookup
+                  default: false
+                service_name:
+                  type: string
+                  title: Redis服务名称
+                  x-title-i18n:
+                    en-US: Redis Service Name
+                  default: redis-stack-server.dns
+                service_port:
+                  type: integer
+                  title: Redis服务端口
+                  x-title-i18n:
+                    en-US: Redis Service Port
+                  default: 6379
+                key_prefix:
+                  type: string
+                  title: 回放 Key 前缀
+                  x-title-i18n:
+                    en-US: Replay Key Prefix
+                  default: "cache:materialized:"
+                timeout:
+                  type: integer
+                  title: Redis超时时间
+                  x-title-i18n:
+                    en-US: Redis Timeout
+                  description: Redis 查询超时时间，单位毫秒。
+                  x-description-i18n:
+                    en-US: Redis lookup timeout in milliseconds.
+                  default: 80
+        console_lookup:
+          type: object
+          title: Console回源查询
+          x-title-i18n:
+            en-US: Console Lookup
+          description: Redis miss 后可选调用 Console 内部查询接口。
+          x-description-i18n:
+            en-US: Optional Console internal lookup after Redis miss.
+          properties:
+            enabled:
+              type: boolean
+              title: 启用 Console 查询
+              x-title-i18n:
+                en-US: Enable Console Lookup
+              default: false
+            service_name:
+              type: string
+              title: Console服务名称
+              x-title-i18n:
+                en-US: Console Service Name
+              default: modelfusion-console-api.dns
+            service_port:
+              type: integer
+              title: Console服务端口
+              x-title-i18n:
+                en-US: Console Service Port
+              default: 80
+            path:
+              type: string
+              title: 查询路径
+              x-title-i18n:
+                en-US: Lookup Path
+              default: /internal/cache/lookup
+            timeout:
+              type: integer
+              title: Console超时时间
+              x-title-i18n:
+                en-US: Console Timeout
+              description: Console callout 超时时间，单位毫秒。
+              x-description-i18n:
+                en-US: Console callout timeout in milliseconds.
+              default: 120
+        redis_stream:
+          type: object
+          title: CacheEvent Redis Stream
+          x-title-i18n:
+            en-US: CacheEvent Redis Stream
+          description: 上游响应结束后投递 CacheEvent 的 Redis Stream 目标。
+          x-description-i18n:
+            en-US: Redis Stream target used to emit CacheEvent after upstream response completion.
+          properties:
+            enabled:
+              type: boolean
+              title: 启用事件投递
+              x-title-i18n:
+                en-US: Enable Event Emission
+              default: false
+            service_name:
+              type: string
+              title: Redis服务名称
+              x-title-i18n:
+                en-US: Redis Service Name
+              default: redis-stack-server.dns
+            service_port:
+              type: integer
+              title: Redis服务端口
+              x-title-i18n:
+                en-US: Redis Service Port
+              default: 6379
+            stream:
+              type: string
+              title: Stream名称
+              x-title-i18n:
+                en-US: Stream Name
+              default: cache:events
+            field:
+              type: string
+              title: Stream字段
+              x-title-i18n:
+                en-US: Stream Field
+              default: event
+            timeout:
+              type: integer
+              title: Redis超时时间
+              x-title-i18n:
+                en-US: Redis Timeout
+              default: 100
+        route_policy:
+          type: object
+          title: 路由缓存策略
+          x-title-i18n:
+            en-US: Route Cache Policy
+          description: 控制薄缓存查询、回放、旁路和 memory-aware 缓存行为。
+          x-description-i18n:
+            en-US: Controls thin cache lookup, replay, bypass, and memory-aware cache behavior.
+          properties:
+            enable_redis_lookup:
+              type: boolean
+              title: 启用 Redis 查询
+              x-title-i18n:
+                en-US: Enable Redis Lookup
+              default: true
+            enable_console_lookup:
+              type: boolean
+              title: 启用 Console 查询
+              x-title-i18n:
+                en-US: Enable Console Lookup
+              default: false
+            enable_replay:
+              type: boolean
+              title: 启用本地回放
+              x-title-i18n:
+                en-US: Enable Local Replay
+              default: true
+            enable_bypass:
+              type: boolean
+              title: 启用缓存旁路
+              x-title-i18n:
+                en-US: Enable Cache Bypass
+              default: false
+            enabled_path_suffixes:
+              type: array
+              title: 生效路径后缀
+              x-title-i18n:
+                en-US: Enabled Path Suffixes
+              items:
+                type: string
+            memory:
+              type: object
+              title: Memory-aware缓存策略
+              x-title-i18n:
+                en-US: Memory-aware Cache Policy
+              properties:
+                enabled:
+                  type: boolean
+                  title: 启用记忆感知缓存
+                  x-title-i18n:
+                    en-US: Enable Memory-aware Cache
+                  default: false
+                cache_mode:
+                  type: string
+                  title: 记忆缓存模式
+                  x-title-i18n:
+                    en-US: Memory Cache Mode
+                  enum: [policy_digest, bypass]
+                policy_version:
+                  type: string
+                  title: 记忆策略版本
+                  x-title-i18n:
+                    en-US: Memory Policy Version
+                digest_header:
+                  type: string
+                  title: 记忆摘要请求头
+                  x-title-i18n:
+                    en-US: Memory Digest Header
+                  default: x-mse-memory-digest
+        tenant_header:
+          type: string
+          title: 租户 Header
+          x-title-i18n:
+            en-US: Tenant Header
+          default: x-mse-tenant
+        consumer_header:
+          type: string
+          title: Consumer Header
+          x-title-i18n:
+            en-US: Consumer Header
+          default: x-mse-consumer
+        session_header:
+          type: string
+          title: Session Header
+          x-title-i18n:
+            en-US: Session Header
+          default: x-openclaw-session-key
+        cache_scope:
+          type: string
+          title: 缓存作用域
+          x-title-i18n:
+            en-US: Cache Scope
+          enum: [tenant, consumer]
+          default: tenant
+        cache_policy_version:
+          type: string
+          title: 缓存策略版本
+          x-title-i18n:
+            en-US: Cache Policy Version
+          description: 启用薄缓存查询、回放或事件投递时用于区分 Console 物化策略版本。
+          x-description-i18n:
+            en-US: Distinguishes Console materialization policy versions when thin cache lookup, replay, or event emission is enabled.
+        fail_policy:
+          type: string
+          title: 失败策略
+          x-title-i18n:
+            en-US: Failure Policy
+          enum: [open, closed]
+          default: open
+        responseTemplate:
+          type: string
+          title: 响应模板
+          x-title-i18n:
+            en-US: Response Template
+          description: 返回 HTTP 响应模板，用 %s 标记 cache value 替换位置
+          x-description-i18n:
+            en-US: HTTP response template, %s is replaced by cache value
+          default: '{"id":"from-cache","choices":[{"index":0,"message":{"role":"assistant","content":"%s"},"finish_reason":"stop"}],"model":"from-cache","object":"chat.completion","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'
+        streamResponseTemplate:
+          type: string
+          title: 流式响应模板
+          x-title-i18n:
+            en-US: Stream Response Template
+          description: 返回流式 HTTP 响应模板，用 %s 标记 cache value 替换位置
+          x-description-i18n:
+            en-US: Streaming HTTP response template, %s is replaced by cache value
+          default: 'data:{"id":"from-cache","choices":[{"index":0,"delta":{"role":"assistant","content":"%s"},"finish_reason":"stop"}],"model":"from-cache","object":"chat.completion","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\ndata:[DONE]\n\n'
+      example:
+        embedding:
+          type: dashscope
+          serviceName: my-dashscope.dns
+          apiKey: your-api-key
+        vector:
+          type: dashvector
+          serviceName: my-dashvector.dns
+          collectionID: your-collection-id
+          serviceHost: your-domain
+          apiKey: your-api-key
+        cache:
+          type: redis
+          serviceName: my-redis.dns
+          servicePort: 6379
+          timeout: 100
+          cacheTTL: 300
+        cacheKeyStrategy: lastQuestion
+        enableSemanticCache: true
+        cacheKeyFrom: "messages.@reverse.0.content"
+        cacheValueFrom: "choices.0.message.content"
+        cacheStreamValueFrom: "choices.0.delta.content"
+        cacheToolCallsFrom: "choices.0.delta.content.tool_calls"
+        materialized_lookup:
+          redis:
+            enabled: true
+            service_name: redis-stack-server.dns
+            service_port: 6379
+            key_prefix: "cache:materialized:"
+            timeout: 80
+        console_lookup:
+          enabled: true
+          service_name: modelfusion-console-api.dns
+          service_port: 80
+          path: /internal/cache/lookup
+          timeout: 120
+        redis_stream:
+          enabled: true
+          service_name: redis-stack-server.dns
+          service_port: 6379
+          stream: cache:events
+          field: event
+          timeout: 100
+        route_policy:
+          enable_redis_lookup: true
+          enable_console_lookup: true
+          enable_replay: true
+          enable_bypass: false
+          enabled_path_suffixes:
+          - /v1/chat/completions
+          - /v1/messages
+          memory:
+            enabled: true
+            cache_mode: policy_digest
+            policy_version: memory-policy-v1
+            digest_header: x-mse-memory-digest
+        tenant_header: x-mse-tenant
+        consumer_header: x-mse-consumer
+        session_header: x-openclaw-session-key
+        cache_scope: tenant
+        cache_policy_version: cache-policy-v1
+        fail_policy: open
+        responseTemplate: |
+          {"id":"from-cache","choices":[{"index":0,"message":{"role":"assistant","content":"%s"},"finish_reason":"stop"}],"model":"from-cache","object":"chat.completion","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
+        streamResponseTemplate: |
+          data:{"id":"from-cache","choices":[{"index":0,"delta":{"role":"assistant","content":"%s"},"finish_reason":"stop"}],"model":"from-cache","object":"chat.completion","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
+
+          data:[DONE]

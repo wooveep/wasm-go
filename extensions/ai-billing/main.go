@@ -32,6 +32,9 @@ const (
 
 	FailPolicyOpen = "open"
 
+	eventKindCustomerUsage = "customer_usage"
+	eventKindInternalCost  = "internal_cost"
+
 	ctxBillingEnabled   = "ai-billing-enabled"
 	ctxStartTime        = "ai-billing-start-time"
 	ctxEventID          = "ai-billing-event-id"
@@ -85,6 +88,7 @@ func init() {
 
 type BillingConfig struct {
 	RedisStream        RedisStream `yaml:"redis_stream"`
+	EventKind          string      `yaml:"event_kind"`
 	QuotaScope         string      `yaml:"quota_scope"`
 	Provider           string      `yaml:"provider"`
 	TenantHeader       string      `yaml:"tenant_header"`
@@ -106,6 +110,7 @@ type RedisStream struct {
 
 type BillingEvent struct {
 	EventID         string       `json:"event_id"`
+	EventKind       string       `json:"event_kind"`
 	IdempotencyKey  string       `json:"idempotency_key"`
 	RequestID       string       `json:"request_id"`
 	Tenant          string       `json:"tenant"`
@@ -194,6 +199,12 @@ func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *Bill
 	if value := configJson.Get("quota_scope"); value.Exists() {
 		config.QuotaScope = stringDefault(value.String(), defaultQuotaScope)
 	}
+	if value := configJson.Get("event_kind"); value.Exists() {
+		config.EventKind = stringDefault(value.String(), eventKindCustomerUsage)
+		if err := validateEventKind(config.EventKind); err != nil {
+			return err
+		}
+	}
 	if value := configJson.Get("provider"); value.Exists() {
 		config.Provider = stringDefault(value.String(), defaultProvider)
 	}
@@ -220,6 +231,10 @@ func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *Bill
 }
 
 func parseConfigFields(configJson gjson.Result, config *BillingConfig) error {
+	config.EventKind = stringDefault(configJson.Get("event_kind").String(), eventKindCustomerUsage)
+	if err := validateEventKind(config.EventKind); err != nil {
+		return err
+	}
 	config.QuotaScope = stringDefault(configJson.Get("quota_scope").String(), defaultQuotaScope)
 	config.Provider = stringDefault(configJson.Get("provider").String(), defaultProvider)
 	config.TenantHeader = stringDefault(configJson.Get("tenant_header").String(), defaultTenantHeader)
@@ -234,6 +249,15 @@ func parseConfigFields(configJson gjson.Result, config *BillingConfig) error {
 	}
 	config.EnablePathSuffixes = suffixes
 	return nil
+}
+
+func validateEventKind(value string) error {
+	switch value {
+	case eventKindCustomerUsage, eventKindInternalCost:
+		return nil
+	default:
+		return errors.New("event_kind only supports customer_usage or internal_cost")
+	}
 }
 
 func parseRedisStream(redisStream gjson.Result, config *BillingConfig) error {
@@ -608,6 +632,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	}
 	event := BillingEvent{
 		EventID:        eventID,
+		EventKind:      stringDefault(config.EventKind, eventKindCustomerUsage),
 		IdempotencyKey: idempotencyKey,
 		RequestID:      requestID,
 		Tenant:         ctx.GetStringContext(ctxTenant, ""),

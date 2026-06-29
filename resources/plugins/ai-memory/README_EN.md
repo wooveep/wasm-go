@@ -80,7 +80,7 @@ external targets. The first version rejects route-level `redis_stream`,
 ```yaml
 defaultConfig:
   redis_stream:
-    service_name: redis-stack-server.higress-system.svc.cluster.local
+    service_name: redis-stack-server.dns
     service_port: 6379
     username: ""
     password: <redis-password>
@@ -88,7 +88,7 @@ defaultConfig:
     timeout: 500
     stream: memory:events
   recent_cache:
-    service_name: redis-stack-server.higress-system.svc.cluster.local
+    service_name: redis-stack-server.dns
     service_port: 6379
     username: ""
     password: <redis-password>
@@ -96,7 +96,7 @@ defaultConfig:
     timeout: 50
     key_prefix: memory:recent
   console_internal:
-    service_name: modelfusion-console-api.higress-system.svc.cluster.local
+    service_name: modelfusion-console-api.dns
     service_port: 80
     assemble_path: /internal/memory/assemble
     timeout_ms: 100

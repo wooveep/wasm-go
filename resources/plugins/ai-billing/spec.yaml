@@ -8,9 +8,9 @@ info:
   title: AI Billing Events
   x-title-i18n:
     zh-CN: AI 账单事件
-  description: Generate request-level AI billing events with provider-authoritative cache-aware token usage, tokenizer-based estimates when provider usage is absent, and fail-open Bearer-authenticated delivery to billing-service.
+  description: Generate request-level AI billing events through Redis Stream, using provider-authoritative token usage when available, tokenizer-based estimates when usage is absent, and internal_cost events for platform-owned internal AI Routes.
   x-description-i18n:
-    zh-CN: 生成请求级 AI 账单事件，优先使用 provider 上报的 cache-aware token usage，缺失时使用 tokenizer 估算，并通过默认 fail-open、Bearer 鉴权的 HTTP callout 上报给 billing-service。
+    zh-CN: 通过 Redis Stream 生成请求级 AI 账单事件，优先使用 provider 上报的 token usage，缺失时使用 tokenizer 估算，并支持内部 AI Route 的 internal_cost 平台成本事件。
   iconUrl: https://img.alicdn.com/imgextra/i1/O1CN018iKKih1iVx287RltL_!!6000000004419-2-tps-42-42.png
   readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-billing/README.md
   x-readmeUrl-i18n:
@@ -25,60 +25,75 @@ spec:
     openAPIV3Schema:
       type: object
       properties:
-        billing_service:
+        redis_stream:
           type: object
-          title: Billing Service配置
+          title: Redis Stream配置
           x-title-i18n:
-            en-US: Billing Service Configuration
-          description: billing-service HTTP callout 目标
+            en-US: Redis Stream Configuration
+          description: BillingEvent Redis Stream XADD target
           x-description-i18n:
-            en-US: billing-service HTTP callout target
+            en-US: BillingEvent Redis Stream XADD target
           required: [service_name]
           properties:
             service_name:
               type: string
-              title: 服务名称
+              title: Redis服务名称
               x-title-i18n:
-                en-US: Service Name
-              description: billing-service 服务名称
+                en-US: Redis Service Name
+              description: Redis 服务名或 Console 管理的 MCPBridge 服务名
               x-description-i18n:
-                en-US: billing-service service name
-              default: modelfusion-console.higress-system.svc.cluster.local
+                en-US: Redis service name or Console-managed MCPBridge service name
+              default: redis-stack-server.dns
             service_port:
               type: integer
-              title: 服务端口
+              title: Redis服务端口
               x-title-i18n:
-                en-US: Service Port
-              description: billing-service 服务端口
-              x-description-i18n:
-                en-US: billing-service service port
-              default: 80
-            path:
+                en-US: Redis Service Port
+              default: 6379
+            username:
               type: string
-              title: 上报路径
+              title: Redis用户名
               x-title-i18n:
-                en-US: Delivery Path
-              description: billing event 上报路径
+                en-US: Redis Username
+            password:
+              type: string
+              title: Redis密码
+              x-title-i18n:
+                en-US: Redis Password
+              description: Redis 密码，需按敏感字段处理
               x-description-i18n:
-                en-US: Billing event delivery path
-              default: /internal/billing/events
+                en-US: Redis password. Treat as sensitive
+            database:
+              type: integer
+              title: Redis数据库
+              x-title-i18n:
+                en-US: Redis Database
+              default: 0
             timeout:
               type: integer
-              title: Callout超时
+              title: Redis超时时间
               x-title-i18n:
-                en-US: Callout Timeout
-              description: HTTP callout 超时时间，单位毫秒
+                en-US: Redis Timeout
+              description: Redis callout 超时时间，单位毫秒
               x-description-i18n:
-                en-US: HTTP callout timeout in milliseconds
+                en-US: Redis callout timeout in milliseconds
               default: 500
-            auth_token:
+            stream:
               type: string
-              title: 鉴权密钥
+              title: Stream名称
               x-title-i18n:
-                en-US: Auth Token
-              description: billing-service 共享鉴权密钥，用于生成 Authorization Bearer 鉴权头；示例使用占位符
-              x-description-i18n:
-                en-US: Shared secret used to generate the Authorization Bearer header for billing-service authorization; examples use a placeholder
+                en-US: Stream Name
+              default: billing:events
+        event_kind:
+          type: string
+          title: 事件类型
+          x-title-i18n:
+            en-US: Event Kind
+          description: Billing event 类型。customer_usage 用于普通客户用量账单；internal_cost 用于内部 AI Route 的平台成本归因。
+          x-description-i18n:
+            en-US: Billing event type. customer_usage is for ordinary customer usage billing; internal_cost is for platform-owned internal AI Route cost attribution.
+          enum: [customer_usage, internal_cost]
+          default: customer_usage
         quota_scope:
           type: string
           title: 额度作用域
@@ -136,14 +151,17 @@ spec:
             en-US: Delivery failure policy. Currently supports open
           enum: [open]
           default: open
-      required: [billing_service]
+      required: [redis_stream]
       example:
-        billing_service:
-          service_name: modelfusion-console.higress-system.svc.cluster.local
-          service_port: 8080
-          path: /internal/billing/events
-          timeout: 750
-          auth_token: <shared-secret>
+        redis_stream:
+          service_name: redis-stack-server.dns
+          service_port: 6379
+          username: ""
+          password: <redis-password>
+          database: 0
+          timeout: 500
+          stream: billing:events
+        event_kind: customer_usage
         quota_scope: global
         provider: default
         tenant_header: x-mse-tenant
@@ -156,6 +174,16 @@ spec:
     openAPIV3Schema:
       type: object
       properties:
+        event_kind:
+          type: string
+          title: 事件类型
+          x-title-i18n:
+            en-US: Event Kind
+          description: 规则级 event_kind 覆盖。内部 AI Route 可配置为 internal_cost，只做平台成本归因。
+          x-description-i18n:
+            en-US: Rule-level event_kind override. Internal AI Routes can use internal_cost for platform cost attribution only.
+          enum: [customer_usage, internal_cost]
+          default: customer_usage
         quota_scope:
           type: string
           title: 额度作用域
@@ -214,5 +242,6 @@ spec:
           enum: [open]
           default: open
       example:
-        quota_scope: route:qwen
+        event_kind: internal_cost
+        quota_scope: internal:ai-memory.digest
         provider: dashscope

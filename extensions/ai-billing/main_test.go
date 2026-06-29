@@ -129,6 +129,48 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, defaultConsumerHeader, billingConfig.ConsumerHeader)
 		})
 
+		t.Run("default event kind and rule override internal cost", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"event_kind": "customer_usage",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+				},
+				"_rules_": []map[string]interface{}{
+					{
+						"_match_route_": []string{"route-internal-cost"},
+						"event_kind":    "internal_cost",
+						"quota_scope":   "internal:ai-memory.digest",
+					},
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, eventKindCustomerUsage, billingConfig.EventKind)
+
+			require.NoError(t, host.SetRouteName("route-internal-cost"))
+			config, err = host.GetMatchConfig()
+			require.NoError(t, err)
+			billingConfig = config.(*BillingConfig)
+			require.Equal(t, eventKindInternalCost, billingConfig.EventKind)
+			require.Equal(t, "internal:ai-memory.digest", billingConfig.QuotaScope)
+		})
+
+		t.Run("unsupported event kind fails parsing", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"event_kind": "invoice",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusFailed, status)
+		})
+
 		t.Run("global redis stream with defaultable fields", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"redis_stream": map[string]interface{}{
@@ -1765,6 +1807,32 @@ func TestBuildBillingEventUsesOnlyRequestIdSources(t *testing.T) {
 	require.NotEqual(t, event.RequestID, "tenant-a")
 	require.NotEqual(t, event.RequestID, "consumer-a")
 	require.NotEqual(t, event.RequestID, "200")
+}
+
+func TestBuildBillingEventIncludesConfiguredEventKind(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxEventID, "018f4c7c-3333-7abc-8333-333333333333")
+	ctx.SetContext(ctxIdempotencyKey, "018f4c7c-3333-7abc-8333-333333333333")
+	ctx.SetContext(ctxRequestPath, "/v1/chat/completions")
+	ctx.SetContext(ctxRequestID, "req-1")
+	ctx.SetContext(ctxTenant, "tenant-a")
+	ctx.SetContext(ctxConsumer, "consumer-a")
+	ctx.SetContext(ctxProvider, "openai")
+	ctx.SetContext(ctxQuotaScope, "internal:ai-memory.digest")
+	ctx.SetContext(ctxRoute, "internal-ai-memory-digest")
+	ctx.SetContext(ctxCluster, "llm-qwen-019ebb2c.internal.dns")
+	ctx.SetContext(ctxPriceVersion, "pv-7")
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+	ctx.SetContext(ctxInputToken, int64(3))
+	ctx.SetContext(ctxOutputToken, int64(5))
+	ctx.SetContext(ctxUsageSource, usageSourceProvider)
+
+	body, err := json.Marshal(buildBillingEvent(ctx, BillingConfig{EventKind: eventKindInternalCost}, false))
+	require.NoError(t, err)
+
+	var event map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &event))
+	require.Equal(t, eventKindInternalCost, event["event_kind"])
 }
 
 func TestBuildBillingEventDerivesMissingInputFromTotalAndOutput(t *testing.T) {
