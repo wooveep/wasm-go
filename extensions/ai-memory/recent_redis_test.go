@@ -68,7 +68,7 @@ func TestMemoryRecentRedis(t *testing.T) {
 			},
 			{
 				name:      "expiration",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"expires_at_ms": time.Now().Add(-time.Minute).UnixMilli()})),
+				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"expires_at_ms": int64(1)})),
 			},
 			{
 				name: "unsupported roles",

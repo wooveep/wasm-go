@@ -152,6 +152,7 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	ctx.SetContext(memoryUserContentContextKey, memoryCurrentQuestion(body, request, c.Route.QuestionFrom))
 	ctx.SetContext(memoryOriginalBodyContextKey, append([]byte(nil), body...))
 	ctx.SetContext(memoryCurrentMessagesContextKey, append([]sessionctx.OpenAIMessage(nil), request.Messages...))
+	ctx.SetContext(memoryRecentMessagesContextKey, nil)
 	if memoryRecentCacheConfigured(c) {
 		if err := memoryLoadRecentMemory(ctx, c, log); err != nil {
 			log.Warnf("[ai-memory] recent memory lookup failed open: %v", err)

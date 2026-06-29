@@ -8,7 +8,9 @@ require (
 	github.com/higress-group/proxy-wasm-go-sdk v0.0.0-20251103120604-77e9cce339d2
 	github.com/higress-group/wasm-go v1.0.10-0.20260120033417-1c84f010156d
 	github.com/stretchr/testify v1.9.0
+	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/resp v0.1.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -16,13 +18,9 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/tetratelabs/wazero v1.7.2 // indirect
-	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/higress-group/proxy-wasm-go-sdk => /home/cloudyi/CodeWorkspace/higress-plugin/proxy-wasm-go-sdk
-
-replace github.com/higress-group/wasm-go => /home/cloudyi/CodeWorkspace/higress-plugin/wasm-go
+replace github.com/higress-group/wasm-go => ../..
