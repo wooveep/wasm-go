@@ -269,6 +269,72 @@ func TestPluginConfig_ThinPluginConfigValidation(t *testing.T) {
 	require.Error(t, cfg.Validate())
 }
 
+func TestPluginConfig_RejectsLegacyOnlineCacheConfig(t *testing.T) {
+	validThinConfig := map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis-stack-server.higress-system.svc.cluster.local",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"cache_policy_version": "policy-v1",
+	}
+
+	for name, configPatch := range map[string]map[string]interface{}{
+		"cache provider": {
+			"cache": map[string]interface{}{
+				"type":        "redis",
+				"serviceName": "redis.static",
+			},
+		},
+		"embedding provider": {
+			"embedding": map[string]interface{}{
+				"type":        "dashscope",
+				"serviceName": "dashscope.static",
+				"apiKey":      "placeholder",
+			},
+		},
+		"vector provider": {
+			"vector": map[string]interface{}{
+				"type":         "dashvector",
+				"serviceName":  "dashvector.static",
+				"serviceHost":  "dashvector.example.com",
+				"apiKey":       "placeholder",
+				"collectionID": "collection-a",
+			},
+		},
+		"legacy extraction keys": {
+			"cacheKeyStrategy":     "lastQuestion",
+			"cacheKeyFrom":         "messages.@reverse.0.content",
+			"cacheValueFrom":       "choices.0.message.content",
+			"cacheStreamValueFrom": "choices.0.delta.content",
+			"cacheToolCallsFrom":   "choices.0.delta.tool_calls",
+		},
+		"legacy response templates": {
+			"responseTemplate":       `{"choices":[{"message":{"content":"%s"}}]}`,
+			"streamResponseTemplate": "data:%s\n\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rawConfig := map[string]interface{}{}
+			for key, value := range validThinConfig {
+				rawConfig[key] = value
+			}
+			for key, value := range configPatch {
+				rawConfig[key] = value
+			}
+			cfgBytes, err := json.Marshal(rawConfig)
+			require.NoError(t, err)
+
+			cfg := parseThinConfig(t, cfgBytes)
+			require.ErrorContains(t, cfg.Validate(), "legacy online cache configuration is not supported")
+		})
+	}
+}
+
 func TestPluginConfig_ThinPluginRouteOverrideInheritsExternalTargets(t *testing.T) {
 	globalConfig := map[string]interface{}{
 		"materialized_lookup": map[string]interface{}{

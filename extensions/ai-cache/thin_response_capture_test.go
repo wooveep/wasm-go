@@ -32,12 +32,6 @@ func (h thinResponseCaptureHost) thinMaterializedLookup() (bool, string) {
 func thinResponseCaptureConfig(t *testing.T) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(map[string]interface{}{
-		"cache": map[string]interface{}{
-			"type":           "redis",
-			"serviceName":    "redis.static",
-			"servicePort":    6379,
-			"cacheKeyPrefix": "higress-ai-cache:",
-		},
 		"materialized_lookup": map[string]interface{}{
 			"redis": map[string]interface{}{
 				"enabled":      true,
@@ -66,10 +60,6 @@ func thinResponseCaptureConfig(t *testing.T) json.RawMessage {
 		"session_header":       "x-mse-session",
 		"cache_scope":          "consumer",
 		"cache_policy_version": "policy-v1",
-		"cacheKeyStrategy":     "lastQuestion",
-		"cacheKeyFrom":         "messages.@reverse.0.content",
-		"cacheValueFrom":       "choices.0.message.content",
-		"cacheStreamValueFrom": "choices.0.delta.content",
 	})
 	require.NoError(t, err)
 	return data

@@ -18,12 +18,6 @@ const (
 func thinConsoleLookupConfig(t *testing.T, routeConsoleEnabled bool) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(map[string]interface{}{
-		"cache": map[string]interface{}{
-			"type":           "redis",
-			"serviceName":    "redis.static",
-			"servicePort":    6379,
-			"cacheKeyPrefix": "higress-ai-cache:",
-		},
 		"materialized_lookup": map[string]interface{}{
 			"redis": map[string]interface{}{
 				"enabled":      true,

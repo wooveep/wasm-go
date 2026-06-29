@@ -114,61 +114,12 @@ func TestThinRequestGating(t *testing.T) {
 			require.NotEmpty(t, host.GetRedisCalloutAttributes())
 		})
 
-		t.Run("legacy no-store request is not treated as thin gate", func(t *testing.T) {
-			host, status := test.NewTestHost(basicRedisConfig)
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-
-			headerAction := host.CallOnHttpRequestHeaders([][2]string{
-				{":authority", "example.com"},
-				{":path", "/api/chat"},
-				{":method", "POST"},
-				{"content-type", "application/json"},
-				{"cache-control", "no-store"},
-			})
-			require.Equal(t, types.HeaderStopIteration, headerAction)
-
-			bodyAction := host.CallOnHttpRequestBody([]byte(`{
-				"model": "qwen-turbo",
-				"messages": [{"role": "user", "content": "legacy cache?"}],
-				"stream": false
-			}`))
-			require.Equal(t, types.ActionPause, bodyAction)
-			require.NotEmpty(t, host.GetRedisCalloutAttributes())
-		})
-
-		t.Run("legacy missing content type does not mark cache gate", func(t *testing.T) {
-			host, status := test.NewTestHost(basicRedisConfig)
-			defer host.Reset()
-			require.Equal(t, types.OnPluginStartStatusOK, status)
-
-			headerAction := host.CallOnHttpRequestHeaders([][2]string{
-				{":authority", "example.com"},
-				{":path", "/api/chat"},
-				{":method", "POST"},
-			})
-			require.Equal(t, types.ActionContinue, headerAction)
-
-			bodyAction := host.CallOnHttpRequestBody([]byte(`{
-				"model": "qwen-turbo",
-				"messages": [{"role": "user", "content": "legacy cache?"}],
-				"stream": false
-			}`))
-			require.Equal(t, types.ActionPause, bodyAction)
-			require.NotEmpty(t, host.GetRedisCalloutAttributes())
-		})
 	})
 }
 
 func thinRequestGatingConfig(t *testing.T, cacheScope string, enableBypass bool) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(map[string]interface{}{
-		"cache": map[string]interface{}{
-			"type":           "redis",
-			"serviceName":    "redis.static",
-			"servicePort":    6379,
-			"cacheKeyPrefix": "higress-ai-cache:",
-		},
 		"materialized_lookup": map[string]interface{}{
 			"redis": map[string]interface{}{
 				"enabled":      true,

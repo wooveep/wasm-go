@@ -1,5 +1,3 @@
-// 这个文件中主要将OnHttpRequestHeaders、OnHttpRequestBody、OnHttpResponseHeaders、OnHttpResponseBody这四个函数实现
-// 其中的缓存思路调用cache.go中的逻辑，然后cache.go中的逻辑会调用textEmbeddingProvider和vectorStoreProvider中的逻辑（实例）
 package main
 
 import (
@@ -14,31 +12,25 @@ import (
 )
 
 const (
-	PLUGIN_NAME                 = "ai-cache"
-	CACHE_KEY_CONTEXT_KEY       = "cacheKey"
-	CACHE_KEY_EMBEDDING_KEY     = "cacheKeyEmbedding"
-	CACHE_CONTENT_CONTEXT_KEY   = "cacheContent"
-	CACHE_GATE_CONTEXT_KEY      = "cacheGate"
-	PARTIAL_MESSAGE_CONTEXT_KEY = "partialMessage"
-	TOOL_CALLS_CONTEXT_KEY      = "toolCalls"
-	STREAM_CONTEXT_KEY          = "stream"
-	SKIP_CACHE_HEADER           = "x-higress-skip-ai-cache"
-	CACHE_TENANT_CONTEXT_KEY    = "cacheTenant"
-	CACHE_CONSUMER_CONTEXT_KEY  = "cacheConsumer"
-	CACHE_SESSION_CONTEXT_KEY   = "cacheSession"
-	CACHE_PATH_CONTEXT_KEY      = "cacheRequestPath"
-	CACHE_ROUTE_CONTEXT_KEY     = "cacheRoute"
-	CACHE_MODEL_CONTEXT_KEY     = "cacheModel"
-	CACHE_DIGEST_CONTEXT_KEY    = "cacheRequestDigest"
-	CACHE_MATERIALIZED_KEY      = "cacheMaterializedKey"
-	CACHE_USER_CONTENT_KEY      = "cacheUserContent"
-	CACHE_REQUEST_ID_KEY        = "cacheRequestID"
-	CACHE_EVENT_STARTED_AT_KEY  = "cacheEventStartedAt"
-	CACHE_RESPONSE_STATUS_KEY   = "cacheResponseStatus"
-	CACHE_RESPONSE_NOSTORE_KEY  = "cacheResponseNoStore"
-	CACHE_SENSITIVE_KEY         = "cacheSensitive"
-	CACHE_STREAM_CAPTURE_KEY    = "cacheStreamCapture"
-	ERROR_PARTIAL_MESSAGE_KEY   = "errorPartialMessage"
+	PLUGIN_NAME                = "ai-cache"
+	CACHE_GATE_CONTEXT_KEY     = "cacheGate"
+	STREAM_CONTEXT_KEY         = "stream"
+	SKIP_CACHE_HEADER          = "x-higress-skip-ai-cache"
+	CACHE_TENANT_CONTEXT_KEY   = "cacheTenant"
+	CACHE_CONSUMER_CONTEXT_KEY = "cacheConsumer"
+	CACHE_SESSION_CONTEXT_KEY  = "cacheSession"
+	CACHE_PATH_CONTEXT_KEY     = "cacheRequestPath"
+	CACHE_ROUTE_CONTEXT_KEY    = "cacheRoute"
+	CACHE_MODEL_CONTEXT_KEY    = "cacheModel"
+	CACHE_DIGEST_CONTEXT_KEY   = "cacheRequestDigest"
+	CACHE_MATERIALIZED_KEY     = "cacheMaterializedKey"
+	CACHE_USER_CONTENT_KEY     = "cacheUserContent"
+	CACHE_REQUEST_ID_KEY       = "cacheRequestID"
+	CACHE_EVENT_STARTED_AT_KEY = "cacheEventStartedAt"
+	CACHE_RESPONSE_STATUS_KEY  = "cacheResponseStatus"
+	CACHE_RESPONSE_NOSTORE_KEY = "cacheResponseNoStore"
+	CACHE_SENSITIVE_KEY        = "cacheSensitive"
+	CACHE_STREAM_CAPTURE_KEY   = "cacheStreamCapture"
 
 	DEFAULT_MAX_BODY_BYTES uint32 = 100 * 1024 * 1024
 )
@@ -58,9 +50,6 @@ func init() {
 }
 
 func parseConfig(json gjson.Result, c *config.PluginConfig, log log.Log) error {
-	// config.EmbeddingProviderConfig.FromJson(json.Get("embeddingProvider"))
-	// config.VectorDatabaseProviderConfig.FromJson(json.Get("vectorBaseProvider"))
-	// config.RedisConfig.FromJson(json.Get("redis"))
 	c.FromJson(json, log)
 	if err := c.Validate(); err != nil {
 		return err
@@ -162,48 +151,12 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 		ctx.SetContext(STREAM_CONTEXT_KEY, struct{}{})
 	}
 
-	if c.HasThinConfig() {
-		return onThinHttpRequestBody(ctx, c, body, log, stream)
-	}
-
-	var key string
-	if c.CacheKeyStrategy == config.CACHE_KEY_STRATEGY_LAST_QUESTION {
-		log.Debugf("[onHttpRequestBody] cache key strategy is last question, cache key from: %s", c.CacheKeyFrom)
-		key = bodyJson.Get(c.CacheKeyFrom).String()
-	} else if c.CacheKeyStrategy == config.CACHE_KEY_STRATEGY_ALL_QUESTIONS {
-		log.Debugf("[onHttpRequestBody] cache key strategy is all questions, cache key from: messages")
-		messages := bodyJson.Get("messages").Array()
-		var userMessages []string
-		for _, msg := range messages {
-			if msg.Get("role").String() == "user" {
-				userMessages = append(userMessages, msg.Get("content").String())
-			}
-		}
-		key = strings.Join(userMessages, "\n")
-	} else if c.CacheKeyStrategy == config.CACHE_KEY_STRATEGY_DISABLED {
-		log.Info("[onHttpRequestBody] cache key strategy is disabled")
-		ctx.DontReadResponseBody()
-		return types.ActionContinue
-	} else {
-		log.Warnf("[onHttpRequestBody] unknown cache key strategy: %s", c.CacheKeyStrategy)
+	if !c.HasThinConfig() {
+		log.Warn("[onHttpRequestBody] thin cache config is disabled, fail open")
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
-
-	ctx.SetContext(CACHE_KEY_CONTEXT_KEY, key)
-	log.Debugf("[onHttpRequestBody] key: %s", key)
-	if key == "" {
-		log.Debug("[onHttpRequestBody] parse key from request body failed")
-		ctx.DontReadResponseBody()
-		return types.ActionContinue
-	}
-
-	if err := CheckCacheForKey(key, ctx, c, log, stream, true); err != nil {
-		log.Errorf("[onHttpRequestBody] check cache for key: %s failed, error: %v", key, err)
-		return types.ActionContinue
-	}
-
-	return types.ActionPause
+	return onThinHttpRequestBody(ctx, c, body, log, stream)
 }
 
 func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []byte, log log.Log, stream bool) types.Action {
@@ -286,10 +239,6 @@ func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log l
 		ctx.WriteUserAttributeToLogWithKey(wrapper.AILogKey)
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
-	}
-	if ctx.GetContext(CACHE_KEY_CONTEXT_KEY) != nil {
-		ctx.SetUserAttribute("cache_status", "miss")
-		ctx.WriteUserAttributeToLogWithKey(wrapper.AILogKey)
 	}
 	if c.HasThinConfig() && ctx.GetContext(CACHE_MATERIALIZED_KEY) != nil {
 		captureThinResponseHeaders(ctx, log)
@@ -374,47 +323,6 @@ func onHttpResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chunk []
 
 	if c.HasThinConfig() && ctx.GetContext(CACHE_MATERIALIZED_KEY) != nil {
 		handleThinResponseBody(ctx, c, chunk, isLastChunk, log)
-		return chunk
 	}
-
-	if ctx.GetContext(TOOL_CALLS_CONTEXT_KEY) != nil || ctx.GetContext(ERROR_PARTIAL_MESSAGE_KEY) != nil {
-		return chunk
-	}
-
-	key := ctx.GetContext(CACHE_KEY_CONTEXT_KEY)
-	if key == nil {
-		log.Debug("[onHttpResponseBody] key is nil, skip cache")
-		return chunk
-	}
-
-	stream := ctx.GetContext(STREAM_CONTEXT_KEY)
-	var err error
-	if !isLastChunk {
-		if stream == nil {
-			err = handleNonStreamChunk(ctx, c, chunk, log)
-		} else {
-			err = handleStreamChunk(ctx, c, unifySSEChunk(chunk), log)
-		}
-		if err != nil {
-			log.Errorf("[onHttpResponseBody] handle non last chunk failed, error: %v", err)
-			// Set an empty struct in the context to indicate an error in processing the partial message
-			ctx.SetContext(ERROR_PARTIAL_MESSAGE_KEY, struct{}{})
-		}
-		return chunk
-	}
-	var value string
-	if stream == nil {
-		value, err = processNonStreamLastChunk(ctx, c, chunk, log)
-	} else {
-		value, err = processStreamLastChunk(ctx, c, unifySSEChunk(chunk), log)
-	}
-
-	if err != nil {
-		log.Errorf("[onHttpResponseBody] process last chunk failed, error: %v", err)
-		return chunk
-	}
-
-	cacheResponse(ctx, c, key.(string), value, log)
-	uploadEmbeddingAndAnswer(ctx, c, key.(string), value, log)
 	return chunk
 }
