@@ -52,6 +52,29 @@ func TestChatCompletionsAdapterInjectsMemoryIntoMessages(t *testing.T) {
 	require.JSONEq(t, `0.2`, string(payload.Temperature))
 }
 
+func TestChatCompletionsAdapterSkipsOverBudgetMemoryInjection(t *testing.T) {
+	adapter := ChatCompletionsAdapter{}
+	original := []byte(`{
+		"model": "qwen-turbo",
+		"messages": [
+			{"role": "system", "content": "You are concise."},
+			{"role": "user", "content": "What did we decide?"}
+		],
+		"stream": false
+	}`)
+
+	injected, err := adapter.InjectContext(original, InjectableContext{
+		Text:          "Memory: this should not fit in the budget.",
+		Placement:     InjectionSystem,
+		TokenEstimate: 128,
+		TokenBudget:   64,
+	})
+
+	require.NoError(t, err)
+	require.JSONEq(t, string(original), string(injected))
+	require.NotContains(t, string(injected), "this should not fit")
+}
+
 func TestChatCompletionsAdapterCapturesNonStreamResponse(t *testing.T) {
 	adapter := ChatCompletionsAdapter{}
 	exchange, err := adapter.CaptureResponse(ResponseCaptureInput{
@@ -219,6 +242,21 @@ func TestChatCompletionsAdapterSerializesReplayPayload(t *testing.T) {
 	require.Len(t, frames, 2)
 	requireJSONEqual(t, `{"choices":[{"delta":{"content":"cached"},"finish_reason":null}]}`, frames[0])
 	require.Equal(t, "[DONE]", frames[1])
+}
+
+func TestChatCompletionsAdapterRejectsMismatchedReplayPayloadWithoutLeakingBody(t *testing.T) {
+	adapter := ChatCompletionsAdapter{}
+	_, err := adapter.SerializeReplay(ReplayPayload{
+		Protocol:    ProtocolMessages,
+		StatusCode:  200,
+		ContentType: "application/json",
+		Body:        json.RawMessage(`{"api_key":"sk-should-not-leak","content":"raw prompt should not leak"}`),
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "replay protocol mismatch")
+	require.NotContains(t, err.Error(), "sk-should-not-leak")
+	require.NotContains(t, err.Error(), "raw prompt")
 }
 
 func chatCompletionsReplaySSEDataFrames(t *testing.T, body []byte) []string {

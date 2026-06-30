@@ -65,6 +65,7 @@ type InjectableContext struct {
 	Messages      []Message          `json:"messages,omitempty"`
 	ContentBlocks []ContentBlock     `json:"content_blocks,omitempty"`
 	TokenEstimate int                `json:"token_estimate,omitempty"`
+	TokenBudget   int                `json:"token_budget,omitempty"`
 	Digest        string             `json:"digest,omitempty"`
 	Source        string             `json:"source,omitempty"`
 }

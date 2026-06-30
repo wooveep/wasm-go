@@ -72,6 +72,29 @@ func TestMessagesAdapterDoesNotMutateRequestWhenContextIsEmpty(t *testing.T) {
 	require.NotContains(t, string(injected), `"system":null`)
 }
 
+func TestMessagesAdapterSkipsOverBudgetMemoryInjection(t *testing.T) {
+	adapter := MessagesAdapter{}
+	original := []byte(`{
+		"model": "claude-sonnet",
+		"system": [{"type":"text","text":"You are concise."}],
+		"messages": [
+			{"role": "user", "content": [{"type":"text","text":"What did we decide?"}]}
+		],
+		"stream": false
+	}`)
+
+	injected, err := adapter.InjectContext(original, InjectableContext{
+		Text:          "Memory: this should not fit in the budget.",
+		Placement:     InjectionSystem,
+		TokenEstimate: 128,
+		TokenBudget:   64,
+	})
+
+	require.NoError(t, err)
+	require.JSONEq(t, string(original), string(injected))
+	require.NotContains(t, string(injected), "this should not fit")
+}
+
 func TestMessagesAdapterCapturesNonStreamResponse(t *testing.T) {
 	adapter := MessagesAdapter{}
 	exchange, err := adapter.CaptureResponse(ResponseCaptureInput{
@@ -248,6 +271,21 @@ func TestMessagesAdapterSerializesReplayPayload(t *testing.T) {
 	require.Equal(t, "message_delta", frames[4].Event)
 	require.Equal(t, "message_stop", frames[5].Event)
 	requireJSONEqual(t, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"cached"}}`, frames[2].Data)
+}
+
+func TestMessagesAdapterRejectsMismatchedReplayPayloadWithoutLeakingBody(t *testing.T) {
+	adapter := MessagesAdapter{}
+	_, err := adapter.SerializeReplay(ReplayPayload{
+		Protocol:    ProtocolResponses,
+		StatusCode:  200,
+		ContentType: "application/json",
+		Body:        json.RawMessage(`{"api_key":"sk-should-not-leak","content":"raw prompt should not leak"}`),
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "replay protocol mismatch")
+	require.NotContains(t, err.Error(), "sk-should-not-leak")
+	require.NotContains(t, err.Error(), "raw prompt")
 }
 
 type messagesReplaySSEFrame struct {

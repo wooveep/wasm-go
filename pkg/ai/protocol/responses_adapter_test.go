@@ -86,6 +86,29 @@ func TestResponsesAdapterInjectsMemoryIntoInputContent(t *testing.T) {
 	require.Equal(t, "Draft a reply.", payload.Input[1].Content[0].Text)
 }
 
+func TestResponsesAdapterSkipsOverBudgetMemoryInjection(t *testing.T) {
+	adapter := ResponsesAdapter{}
+	original := []byte(`{
+		"model": "gpt-4.1",
+		"instructions": "You are concise.",
+		"input": [
+			{"role":"user","content":[{"type":"input_text","text":"What did we decide?"}]}
+		],
+		"stream": false
+	}`)
+
+	injected, err := adapter.InjectContext(original, InjectableContext{
+		Text:          "Memory: this should not fit in the budget.",
+		Placement:     InjectionInstructions,
+		TokenEstimate: 128,
+		TokenBudget:   64,
+	})
+
+	require.NoError(t, err)
+	require.JSONEq(t, string(original), string(injected))
+	require.NotContains(t, string(injected), "this should not fit")
+}
+
 func TestResponsesAdapterCapturesNonStreamOutputTextAndItems(t *testing.T) {
 	adapter := ResponsesAdapter{}
 	exchange, err := adapter.CaptureResponse(ResponseCaptureInput{
@@ -305,6 +328,21 @@ func TestResponsesAdapterSerializesReplayPayload(t *testing.T) {
 	})
 	deltaFrame := requireResponsesReplayFrame(t, frames, "response.output_text.delta")
 	requireJSONEqual(t, `{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"cached"}`, deltaFrame.Data)
+}
+
+func TestResponsesAdapterRejectsMismatchedReplayPayloadWithoutLeakingBody(t *testing.T) {
+	adapter := ResponsesAdapter{}
+	_, err := adapter.SerializeReplay(ReplayPayload{
+		Protocol:    ProtocolChatCompletions,
+		StatusCode:  200,
+		ContentType: "application/json",
+		Body:        json.RawMessage(`{"api_key":"sk-should-not-leak","content":"raw prompt should not leak"}`),
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "replay protocol mismatch")
+	require.NotContains(t, err.Error(), "sk-should-not-leak")
+	require.NotContains(t, err.Error(), "raw prompt")
 }
 
 type responsesReplaySSEFrame struct {

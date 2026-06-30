@@ -52,6 +52,9 @@ type SerializedReplay struct {
 type ChatCompletionsAdapter struct{}
 
 func (ChatCompletionsAdapter) InjectContext(body []byte, context InjectableContext) ([]byte, error) {
+	if contextExceedsTokenBudget(context) {
+		return append([]byte(nil), body...), nil
+	}
 	request, err := sessionctx.ParseOpenAIChatRequest(body)
 	if err != nil {
 		return nil, err
@@ -145,6 +148,9 @@ func (ChatCompletionsAdapter) BuildCacheDigest(input RequestParseInput) (CacheDi
 }
 
 func (ChatCompletionsAdapter) SerializeReplay(payload ReplayPayload) (SerializedReplay, error) {
+	if err := validateReplayProtocol(payload, ProtocolChatCompletions); err != nil {
+		return SerializedReplay{}, err
+	}
 	if err := payload.Validate(len(payload.StreamChunks) > 0); err != nil {
 		return SerializedReplay{}, err
 	}
@@ -296,6 +302,17 @@ func buildDigestPayload(protocol ProtocolKind, model string, fields map[string]j
 		payload["injected_context_digest"] = contextDigest
 	}
 	return input, payload, nil
+}
+
+func contextExceedsTokenBudget(context InjectableContext) bool {
+	return context.TokenBudget > 0 && context.TokenEstimate > context.TokenBudget
+}
+
+func validateReplayProtocol(payload ReplayPayload, expected ProtocolKind) error {
+	if payload.Protocol != expected {
+		return fmt.Errorf("replay protocol mismatch: expected %s", expected)
+	}
+	return nil
 }
 
 type sseFrame struct {

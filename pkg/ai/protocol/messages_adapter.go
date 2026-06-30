@@ -14,6 +14,9 @@ type messagesContentBlock struct {
 }
 
 func (MessagesAdapter) InjectContext(body []byte, context InjectableContext) ([]byte, error) {
+	if contextExceedsTokenBudget(context) {
+		return append([]byte(nil), body...), nil
+	}
 	injected := messagesContextBlocks(context)
 	if len(injected) == 0 {
 		return append([]byte(nil), body...), nil
@@ -115,6 +118,9 @@ func (MessagesAdapter) BuildCacheDigest(input RequestParseInput) (CacheDigestRes
 }
 
 func (MessagesAdapter) SerializeReplay(payload ReplayPayload) (SerializedReplay, error) {
+	if err := validateReplayProtocol(payload, ProtocolMessages); err != nil {
+		return SerializedReplay{}, err
+	}
 	if err := payload.Validate(len(payload.StreamChunks) > 0); err != nil {
 		return SerializedReplay{}, err
 	}

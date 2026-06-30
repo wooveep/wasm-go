@@ -8,6 +8,9 @@ import (
 type ResponsesAdapter struct{}
 
 func (ResponsesAdapter) InjectContext(body []byte, context InjectableContext) ([]byte, error) {
+	if contextExceedsTokenBudget(context) {
+		return append([]byte(nil), body...), nil
+	}
 	fields, err := decodeObject(body)
 	if err != nil {
 		return nil, err
@@ -137,6 +140,9 @@ func (ResponsesAdapter) BuildCacheDigest(input RequestParseInput) (CacheDigestRe
 }
 
 func (ResponsesAdapter) SerializeReplay(payload ReplayPayload) (SerializedReplay, error) {
+	if err := validateReplayProtocol(payload, ProtocolResponses); err != nil {
+		return SerializedReplay{}, err
+	}
 	if err := payload.Validate(len(payload.StreamChunks) > 0); err != nil {
 		return SerializedReplay{}, err
 	}
