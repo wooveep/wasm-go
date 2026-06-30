@@ -163,28 +163,6 @@ func (ChatCompletionsAdapter) SerializeReplay(payload ReplayPayload) (Serialized
 	}, nil
 }
 
-type ResponsesAdapter struct{}
-
-func (ResponsesAdapter) InjectContext([]byte, InjectableContext) ([]byte, error) {
-	return nil, errAdapterNotImplemented
-}
-
-func (ResponsesAdapter) CaptureResponse(ResponseCaptureInput) (NormalizedExchange, error) {
-	return NormalizedExchange{}, errAdapterNotImplemented
-}
-
-func (ResponsesAdapter) CaptureStream(ResponseStreamInput) (NormalizedExchange, error) {
-	return NormalizedExchange{}, errAdapterNotImplemented
-}
-
-func (ResponsesAdapter) BuildCacheDigest(RequestParseInput) (CacheDigestResult, error) {
-	return CacheDigestResult{}, errAdapterNotImplemented
-}
-
-func (ResponsesAdapter) SerializeReplay(ReplayPayload) (SerializedReplay, error) {
-	return SerializedReplay{}, errAdapterNotImplemented
-}
-
 func chatContextMessages(context InjectableContext) []sessionctx.OpenAIMessage {
 	if len(context.Messages) > 0 {
 		out := make([]sessionctx.OpenAIMessage, 0, len(context.Messages))

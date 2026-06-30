@@ -100,6 +100,7 @@ func TestResponsesAdapterCapturesNonStreamOutputTextAndItems(t *testing.T) {
 				{"id":"call_1","type":"function_call","name":"lookup","arguments":"{}"}
 			],
 			"status": "completed",
+			"finish_reason": "tool_calls",
 			"usage": {"input_tokens": 15, "output_tokens": 6, "total_tokens": 21}
 		}`),
 	})
@@ -107,7 +108,7 @@ func TestResponsesAdapterCapturesNonStreamOutputTextAndItems(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ProtocolResponses, exchange.Request.Protocol)
 	require.Equal(t, "We decided to ship on Tuesday.", exchange.Response.Text)
-	require.Equal(t, "completed", exchange.Response.FinishReason)
+	require.Equal(t, "tool_calls", exchange.Response.FinishReason)
 	require.True(t, exchange.Response.ContainsToolCalls)
 	require.Equal(t, Usage{InputTokens: 15, OutputTokens: 6, TotalTokens: 21}, exchange.Usage)
 
@@ -165,6 +166,23 @@ func TestResponsesAdapterCapturesResponsesStreamEvents(t *testing.T) {
 	require.JSONEq(t, `{"type":"response.function_call_arguments.delta","item_id":"call_1","output_index":1,"delta":"{\"topic\":"}`, string(functionCallDelta.Data))
 	requireResponsesStreamEvent(t, exchange.StreamChunks, "response.function_call_arguments.done")
 	requireResponsesStreamEvent(t, exchange.StreamChunks, "response.completed")
+}
+
+func TestResponsesAdapterCapturesCompletedStreamOutputFallback(t *testing.T) {
+	adapter := ResponsesAdapter{}
+	exchange, err := adapter.CaptureStream(ResponseStreamInput{
+		StatusCode: 200,
+		Chunks: [][]byte{
+			[]byte("event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_stream_fixture\",\"object\":\"response\",\"model\":\"gpt-4.1\",\"status\":\"in_progress\"}}\n\n"),
+			[]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream_fixture\",\"status\":\"completed\",\"finish_reason\":\"stop\",\"output\":[{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"completed fallback\"}]}],\"usage\":{\"input_tokens\":11,\"output_tokens\":2,\"total_tokens\":13}}}\n\n"),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProtocolResponses, exchange.Request.Protocol)
+	require.Equal(t, "completed fallback", exchange.Response.Text)
+	require.Equal(t, "stop", exchange.Response.FinishReason)
+	require.Equal(t, Usage{InputTokens: 11, OutputTokens: 2, TotalTokens: 13}, exchange.Usage)
 }
 
 func TestResponsesAdapterBuildsCacheDigest(t *testing.T) {
