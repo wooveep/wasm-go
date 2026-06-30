@@ -12,7 +12,7 @@ func TestMessagesAdapterInjectsMemoryIntoSystemContentBlocks(t *testing.T) {
 	adapter := MessagesAdapter{}
 	injected, err := adapter.InjectContext([]byte(`{
 		"model": "claude-sonnet",
-		"system": [{"type":"text","text":"You are concise."}],
+		"system": [{"type":"text","text":"You are concise.","cache_control":{"type":"ephemeral"}}],
 		"messages": [
 			{"role": "user", "content": [{"type":"text","text":"What did we decide?"}]}
 		],
@@ -32,8 +32,11 @@ func TestMessagesAdapterInjectsMemoryIntoSystemContentBlocks(t *testing.T) {
 		Model  string `json:"model"`
 		Stream bool   `json:"stream"`
 		System []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type         string `json:"type"`
+			Text         string `json:"text"`
+			CacheControl struct {
+				Type string `json:"type"`
+			} `json:"cache_control"`
 		} `json:"system"`
 		Messages []struct {
 			Role    string `json:"role"`
@@ -52,10 +55,21 @@ func TestMessagesAdapterInjectsMemoryIntoSystemContentBlocks(t *testing.T) {
 	require.Equal(t, "trace-messages-a", payload.Metadata.TraceID)
 	require.Len(t, payload.System, 2)
 	require.Equal(t, "You are concise.", payload.System[0].Text)
+	require.Equal(t, "ephemeral", payload.System[0].CacheControl.Type)
 	require.Equal(t, "Memory: ship on Tuesday.", payload.System[1].Text)
 	require.Len(t, payload.Messages, 1)
 	require.Equal(t, "user", payload.Messages[0].Role)
 	require.Equal(t, "What did we decide?", payload.Messages[0].Content[0].Text)
+}
+
+func TestMessagesAdapterDoesNotMutateRequestWhenContextIsEmpty(t *testing.T) {
+	adapter := MessagesAdapter{}
+	original := []byte(`{"model":"claude-sonnet","messages":[{"role":"user","content":[{"type":"text","text":"ping"}]}],"stream":false}`)
+	injected, err := adapter.InjectContext(original, InjectableContext{})
+
+	require.NoError(t, err)
+	require.JSONEq(t, string(original), string(injected))
+	require.NotContains(t, string(injected), `"system":null`)
 }
 
 func TestMessagesAdapterCapturesNonStreamResponse(t *testing.T) {

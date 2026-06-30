@@ -163,28 +163,6 @@ func (ChatCompletionsAdapter) SerializeReplay(payload ReplayPayload) (Serialized
 	}, nil
 }
 
-type MessagesAdapter struct{}
-
-func (MessagesAdapter) InjectContext([]byte, InjectableContext) ([]byte, error) {
-	return nil, errAdapterNotImplemented
-}
-
-func (MessagesAdapter) CaptureResponse(ResponseCaptureInput) (NormalizedExchange, error) {
-	return NormalizedExchange{}, errAdapterNotImplemented
-}
-
-func (MessagesAdapter) CaptureStream(ResponseStreamInput) (NormalizedExchange, error) {
-	return NormalizedExchange{}, errAdapterNotImplemented
-}
-
-func (MessagesAdapter) BuildCacheDigest(RequestParseInput) (CacheDigestResult, error) {
-	return CacheDigestResult{}, errAdapterNotImplemented
-}
-
-func (MessagesAdapter) SerializeReplay(ReplayPayload) (SerializedReplay, error) {
-	return SerializedReplay{}, errAdapterNotImplemented
-}
-
 type ResponsesAdapter struct{}
 
 func (ResponsesAdapter) InjectContext([]byte, InjectableContext) ([]byte, error) {
