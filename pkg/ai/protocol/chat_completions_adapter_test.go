@@ -102,6 +102,32 @@ func TestChatCompletionsAdapterCapturesSSEResponse(t *testing.T) {
 	require.True(t, exchange.StreamChunks[1].Replayable)
 }
 
+func TestChatCompletionsAdapterCapturesSplitSSEFramesForReplay(t *testing.T) {
+	adapter := ChatCompletionsAdapter{}
+	exchange, err := adapter.CaptureStream(ResponseStreamInput{
+		StatusCode: 200,
+		Chunks: [][]byte{
+			[]byte("data: {\"id\":\"chatcmpl-split\",\"object\":\"chat.completion.chunk\",\"created\":1782420000,"),
+			[]byte("\"model\":\"qwen-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"split\"},\"finish_reason\":null}]}\n"),
+			[]byte("\n"),
+			[]byte("data: {\"id\":\"chatcmpl-split\",\"object\":\"chat.completion.chunk\",\"created\":1782420000,\"model\":\"qwen-turbo\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" frame\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":2,\"total_tokens\":14}}\n\ndata: [DONE]\n\n"),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "split frame", exchange.Response.Text)
+	require.Equal(t, "stop", exchange.Response.FinishReason)
+	require.Equal(t, Usage{InputTokens: 12, OutputTokens: 2, TotalTokens: 14}, exchange.Usage)
+	require.Len(t, exchange.StreamChunks, 2)
+	require.Equal(t, "split", exchange.StreamChunks[0].TextDelta)
+	require.Equal(t, " frame", exchange.StreamChunks[1].TextDelta)
+	frames := chatCompletionsReplaySSEDataFrames(t, dataOnlySSEReplay(exchange.StreamChunks, true))
+	require.Len(t, frames, 3)
+	requireJSONEqual(t, `{"id":"chatcmpl-split","object":"chat.completion.chunk","created":1782420000,"model":"qwen-turbo","choices":[{"index":0,"delta":{"content":"split"},"finish_reason":null}]}`, frames[0])
+	requireJSONEqual(t, `{"id":"chatcmpl-split","object":"chat.completion.chunk","created":1782420000,"model":"qwen-turbo","choices":[{"index":0,"delta":{"content":" frame"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}`, frames[1])
+	require.Equal(t, "[DONE]", frames[2])
+}
+
 func TestChatCompletionsAdapterBuildsCacheDigest(t *testing.T) {
 	adapter := ChatCompletionsAdapter{}
 	bodyWithoutStream := []byte(`{
