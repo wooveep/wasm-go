@@ -31,6 +31,70 @@ func TestThinMemoryAwareCache(t *testing.T) {
 			requireThinMemoryAwareKeysDiffer(t, keyA, keyPolicyChanged, "memory policy version must affect memory-aware cache lookup key or policy material")
 		})
 
+		t.Run("lookup key and materialization event digest are based on final memory-adjusted request body", func(t *testing.T) {
+			originalBody := thinMemoryAwareDefaultRequestBody()
+			memoryAdjustedBody := []byte(`{
+				"model": "qwen-turbo",
+				"messages": [
+					{"role": "system", "content": "Relevant memory: prefers metric units."},
+					{"role": "user", "content": "weather?"}
+				],
+				"stream": false
+			}`)
+
+			originalKey := thinMemoryAwareLookupKeyForBody(t, "policy_digest", "memory-policy-v1", "memory-digest-a", "consumer-a", originalBody)
+			host, action := startThinMemoryAwareRequestWithBody(t, "policy_digest", "memory-policy-v1", "memory-digest-a", "consumer-a", memoryAdjustedBody)
+			defer host.Reset()
+			require.Equal(t, types.ActionPause, action)
+			requireThinMemoryAwareNoLegacyCacheCalls(t, host)
+			adjustedKey := requireThinMemoryAwareMaterializedGetKey(t, host)
+
+			requireThinMemoryAwareKeysDiffer(t, originalKey, adjustedKey, "ai-cache must compute memory-aware materialized lookup keys from the final memory-adjusted request body")
+
+			originalModel, originalDigest, err := BuildOpenAIRequestDigest(originalBody)
+			require.NoError(t, err)
+			adjustedModel, adjustedDigest, err := BuildOpenAIRequestDigest(memoryAdjustedBody)
+			require.NoError(t, err)
+			require.Equal(t, originalModel, adjustedModel)
+			requireThinMemoryAwareKeysDiffer(t, originalDigest, adjustedDigest, "memory injection must affect the digest used for materialization")
+			adjustedMaterial, err := BuildScopedCacheKeyMaterial(ScopedCacheKeyInput{
+				KeyPrefix:          "cache:materialized:",
+				Tenant:             "tenant-a",
+				Consumer:           "consumer-a",
+				CacheScope:         "consumer",
+				Route:              "test-route-default",
+				Model:              adjustedModel,
+				RequestDigest:      adjustedDigest,
+				CachePolicyVersion: strings.Join([]string{"policy-v1", "memory", "memory-policy-v1", "memory-digest-a"}, "|"),
+			})
+			require.NoError(t, err)
+			require.Equal(t, adjustedMaterial.RedisKey, adjustedKey)
+
+			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action = host.CallOnHttpResponseBody([]byte(`{
+				"id": "chatcmpl-memory-aware-materialize",
+				"object": "chat.completion",
+				"model": "qwen-turbo",
+				"choices": [{
+					"index": 0,
+					"message": {"role": "assistant", "content": "metric weather answer"},
+					"finish_reason": "stop"
+				}],
+				"usage": {"prompt_tokens": 12, "completion_tokens": 4, "total_tokens": 16}
+			}`))
+			require.Equal(t, types.ActionContinue, action)
+			event := requireThinMemoryAwareCacheEvent(t, host)
+			require.Equal(t, adjustedDigest, event["request_digest"])
+			require.NotEqual(t, originalDigest, event["request_digest"])
+			require.Equal(t, "weather?", event["user_content"])
+			require.Equal(t, "metric weather answer", event["assistant_content"])
+		})
+
 		t.Run("configured memory bypass skips cache lookup and continues upstream", func(t *testing.T) {
 			host, action := startThinMemoryAwareRequest(t, "bypass", "memory-policy-v1", "memory-digest-a", "consumer-a")
 			defer host.Reset()
@@ -55,7 +119,12 @@ func TestThinMemoryAwareCache(t *testing.T) {
 
 func thinMemoryAwareLookupKey(t *testing.T, mode, memoryPolicyVersion, memoryDigest, consumer string) string {
 	t.Helper()
-	host, action := startThinMemoryAwareRequest(t, mode, memoryPolicyVersion, memoryDigest, consumer)
+	return thinMemoryAwareLookupKeyForBody(t, mode, memoryPolicyVersion, memoryDigest, consumer, thinMemoryAwareDefaultRequestBody())
+}
+
+func thinMemoryAwareLookupKeyForBody(t *testing.T, mode, memoryPolicyVersion, memoryDigest, consumer string, body []byte) string {
+	t.Helper()
+	host, action := startThinMemoryAwareRequestWithBody(t, mode, memoryPolicyVersion, memoryDigest, consumer, body)
 	defer host.Reset()
 	require.Equal(t, types.ActionPause, action)
 	requireThinMemoryAwareNoLegacyCacheCalls(t, host)
@@ -79,8 +148,16 @@ func thinMemoryAwareConfig(t *testing.T, mode, memoryPolicyVersion string) json.
 				"timeout":      80,
 			},
 		},
-		"console_lookup": map[string]interface{}{
+		"redis_stream": map[string]interface{}{
 			"enabled":      true,
+			"service_name": "redis.static",
+			"service_port": 6379,
+			"stream":       thinResponseCaptureStreamName,
+			"field":        thinResponseCaptureStreamField,
+			"timeout":      120,
+		},
+		"console_lookup": map[string]interface{}{
+			"enabled":      false,
 			"service_name": thinConsoleService,
 			"service_port": 8080,
 			"path":         thinConsolePath,
@@ -88,7 +165,7 @@ func thinMemoryAwareConfig(t *testing.T, mode, memoryPolicyVersion string) json.
 		},
 		"route_policy": map[string]interface{}{
 			"enable_redis_lookup":   true,
-			"enable_console_lookup": true,
+			"enable_console_lookup": false,
 			"enable_replay":         true,
 			"enabled_path_suffixes": []string{"/v1/chat/completions"},
 			"memory": map[string]interface{}{
@@ -110,6 +187,11 @@ func thinMemoryAwareConfig(t *testing.T, mode, memoryPolicyVersion string) json.
 
 func startThinMemoryAwareRequest(t *testing.T, mode, memoryPolicyVersion, memoryDigest, consumer string) (test.TestHost, types.Action) {
 	t.Helper()
+	return startThinMemoryAwareRequestWithBody(t, mode, memoryPolicyVersion, memoryDigest, consumer, thinMemoryAwareDefaultRequestBody())
+}
+
+func startThinMemoryAwareRequestWithBody(t *testing.T, mode, memoryPolicyVersion, memoryDigest, consumer string, body []byte) (test.TestHost, types.Action) {
+	t.Helper()
 	host, status := test.NewTestHost(thinMemoryAwareConfig(t, mode, memoryPolicyVersion))
 	require.Equal(t, types.OnPluginStartStatusOK, status)
 	require.NoError(t, host.SetRouteName("test-route-default"))
@@ -127,14 +209,18 @@ func startThinMemoryAwareRequest(t *testing.T, mode, memoryPolicyVersion, memory
 	})
 	require.Equal(t, types.HeaderStopIteration, action)
 
-	action = host.CallOnHttpRequestBody([]byte(`{
+	action = host.CallOnHttpRequestBody(body)
+	return host, action
+}
+
+func thinMemoryAwareDefaultRequestBody() []byte {
+	return []byte(`{
 		"model": "qwen-turbo",
 		"messages": [
 			{"role": "user", "content": "weather?"}
 		],
 		"stream": false
-	}`))
-	return host, action
+	}`)
 }
 
 func requireThinMemoryAwareMaterializedGetKey(t *testing.T, host test.TestHost) string {
@@ -149,6 +235,15 @@ func requireThinMemoryAwareMaterializedGetKey(t *testing.T, host test.TestHost) 
 	}
 	require.Failf(t, "missing memory-aware materialized Redis lookup", "redis calls=%s", thinResponseCaptureCallSummary(t, host))
 	return ""
+}
+
+func requireThinMemoryAwareCacheEvent(t *testing.T, host test.TestHost) map[string]interface{} {
+	t.Helper()
+	event, ok := thinResponseCaptureEvent(t, host)
+	if !ok {
+		require.Failf(t, "missing memory-aware CacheEvent XADD", "redis calls=%s", thinResponseCaptureCallSummary(t, host))
+	}
+	return event
 }
 
 func requireThinMemoryAwareNoLegacyCacheCalls(t *testing.T, host test.TestHost) {
