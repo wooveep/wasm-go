@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/resp"
@@ -323,6 +324,145 @@ data: [DONE]
 	})
 }
 
+func TestThinMessagesResponseCapture(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		host := startThinMessagesResponseCaptureRequest(t)
+		defer host.Reset()
+
+		host.CallOnHttpResponseHeaders([][2]string{
+			{":status", "200"},
+			{"content-type", "application/json"},
+		})
+		action := host.CallOnHttpResponseBody([]byte(`{
+			"id": "msg-cache-event",
+			"type": "message",
+			"role": "assistant",
+			"model": "claude-sonnet",
+			"content": [
+				{"type":"text","text":"Messages cache answer"}
+			],
+			"stop_reason": "end_turn",
+			"usage": {"input_tokens": 14, "output_tokens": 7}
+		}`))
+		require.Equal(t, types.ActionContinue, action)
+
+		event := requireThinResponseCaptureEvent(t, host)
+		require.Equal(t, "tenant-a", event["tenant"])
+		require.Equal(t, "consumer-a", event["consumer"])
+		require.Equal(t, "session-a", event["session_id"])
+		require.Equal(t, "test-route-messages", event["route"])
+		require.Equal(t, "claude-sonnet", event["model"])
+		require.Equal(t, "request-messages-1", event["request_id"])
+		require.Equal(t, "/v1/messages", event["request_path"])
+		require.Equal(t, "consumer", event["cache_scope"])
+		require.Equal(t, "policy-v1", event["cache_policy_version"])
+		require.Equal(t, expectedThinMessagesResponseCaptureRequestDigest(t), event["request_digest"])
+		require.Equal(t, "summarize launch plan", event["user_content"])
+		require.Equal(t, "Messages cache answer", event["assistant_content"])
+		require.Equal(t, "end_turn", event["finish_reason"])
+		require.EqualValues(t, 200, event["status_code"])
+		require.Equal(t, false, event["is_stream"])
+		require.Equal(t, false, event["contains_tool_calls"])
+		require.Equal(t, false, event["no_store"])
+		require.Equal(t, false, event["sensitive"])
+		requireThinMessagesResponseCaptureUsage(t, event, 14, 7, 21)
+		requireThinResponseNoLegacyCacheSet(t, host)
+	})
+}
+
+func startThinMessagesResponseCaptureRequest(t *testing.T) test.TestHost {
+	t.Helper()
+	host, status := test.NewTestHost(thinMessagesResponseCaptureConfig(t))
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+	require.NoError(t, host.SetRouteName("test-route-messages"))
+	require.NoError(t, host.SetRequestId("request-messages-1"))
+
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/messages"},
+		{":method", "POST"},
+		{"content-type", "application/json"},
+		{"x-mse-tenant", "tenant-a"},
+		{"x-mse-consumer", "consumer-a"},
+		{"x-mse-session", "session-a"},
+	})
+	require.Equal(t, types.HeaderStopIteration, action)
+
+	action = host.CallOnHttpRequestBody(thinMessagesResponseCaptureRequestBody())
+	require.Equal(t, types.ActionPause, action)
+	require.NotEmpty(t, host.GetRedisCalloutAttributes(), "request should issue Redis lookup before upstream capture")
+	materializedLookup := thinResponseHasMaterializedLookup(t, host)
+	lookupSummary := thinResponseCaptureCallSummary(t, host)
+	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+	return thinResponseCaptureHost{
+		TestHost:           host,
+		materializedLookup: materializedLookup,
+		lookupSummary:      lookupSummary,
+	}
+}
+
+func thinMessagesResponseCaptureRequestBody() []byte {
+	return []byte(`{
+		"model": "claude-sonnet",
+		"messages": [{
+			"role": "user",
+			"content": [{"type":"text","text":"summarize launch plan"}]
+		}],
+		"stream": false
+	}`)
+}
+
+func expectedThinMessagesResponseCaptureRequestDigest(t *testing.T) string {
+	t.Helper()
+	adapter := protocol.MessagesAdapter{}
+	digest, err := adapter.BuildCacheDigest(protocol.RequestParseInput{
+		Method: "POST",
+		Path:   "/v1/messages",
+		Body:   thinMessagesResponseCaptureRequestBody(),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, digest.Digest)
+	require.NotContains(t, digest.Digest, "summarize launch plan")
+	return digest.Digest
+}
+
+func thinMessagesResponseCaptureConfig(t *testing.T) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis.static",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"redis_stream": map[string]interface{}{
+			"enabled":      true,
+			"service_name": "redis.static",
+			"service_port": 6379,
+			"stream":       thinResponseCaptureStreamName,
+			"field":        thinResponseCaptureStreamField,
+			"timeout":      120,
+		},
+		"route_policy": map[string]interface{}{
+			"enable_redis_lookup":   true,
+			"enable_console_lookup": false,
+			"enable_replay":         true,
+			"enabled_path_suffixes": []string{"/v1/messages"},
+		},
+		"tenant_header":        "x-mse-tenant",
+		"consumer_header":      "x-mse-consumer",
+		"session_header":       "x-mse-session",
+		"cache_scope":          "consumer",
+		"cache_policy_version": "policy-v1",
+	})
+	require.NoError(t, err)
+	return data
+}
+
 func callThinResponseStreamChunks(t *testing.T, host test.TestHost, chunks ...string) {
 	t.Helper()
 	for i, chunk := range chunks {
@@ -407,6 +547,15 @@ func requireThinResponseCaptureUsage(t *testing.T, event map[string]interface{},
 	require.Truef(t, ok, "event usage must be an object; event=%s", thinResponseCaptureEventSnippet(t, event))
 	require.EqualValues(t, promptTokens, usage["prompt_tokens"])
 	require.EqualValues(t, completionTokens, usage["completion_tokens"])
+	require.EqualValues(t, totalTokens, usage["total_tokens"])
+}
+
+func requireThinMessagesResponseCaptureUsage(t *testing.T, event map[string]interface{}, inputTokens, outputTokens, totalTokens int) {
+	t.Helper()
+	usage, ok := event["usage"].(map[string]interface{})
+	require.Truef(t, ok, "event usage must be an object; event=%s", thinResponseCaptureEventSnippet(t, event))
+	require.EqualValues(t, inputTokens, usage["input_tokens"])
+	require.EqualValues(t, outputTokens, usage["output_tokens"])
 	require.EqualValues(t, totalTokens, usage["total_tokens"])
 }
 
