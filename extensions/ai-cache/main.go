@@ -6,6 +6,7 @@ import (
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/gjson"
@@ -166,9 +167,26 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 		return types.ActionContinue
 	}
 
-	model, requestDigest, err := BuildOpenAIRequestDigest(body)
+	path := ctx.GetStringContext(CACHE_PATH_CONTEXT_KEY, "")
+	if path == "" {
+		path = requestPath(ctx)
+		ctx.SetContext(CACHE_PATH_CONTEXT_KEY, path)
+	}
+	_, adapter, ok := thinProtocolAdapterForPath(path)
+	if !ok {
+		markCacheGate(ctx, "unsupported-path")
+		log.Warnf("[onThinHttpRequestBody] unsupported request path for protocol adapter: %s", path)
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
+	method, _ := proxywasm.GetHttpRequestHeader(":method")
+	digest, err := adapter.BuildCacheDigest(protocol.RequestParseInput{
+		Method: method,
+		Path:   path,
+		Body:   body,
+	})
 	if err != nil {
-		log.Warnf("[onThinHttpRequestBody] build request digest failed, fail open: %v", err)
+		log.Warnf("[onThinHttpRequestBody] build protocol request digest failed, fail open: %v", err)
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
@@ -185,8 +203,8 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 		Consumer:           ctx.GetStringContext(CACHE_CONSUMER_CONTEXT_KEY, ""),
 		CacheScope:         c.CacheScope,
 		Route:              requestRoute(),
-		Model:              model,
-		RequestDigest:      requestDigest,
+		Model:              digest.Input.Model,
+		RequestDigest:      digest.Digest,
 		CachePolicyVersion: cachePolicyVersion,
 	})
 	if err != nil {

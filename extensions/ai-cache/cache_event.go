@@ -8,6 +8,7 @@ import (
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	logs "github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
@@ -19,51 +20,47 @@ const thinCachePluginVersion = "ai-cache-thin-v1"
 
 type ThinCacheEvent struct {
 	sessionctx.EventEnvelope
-	SessionID          string            `json:"session_id,omitempty"`
-	Route              string            `json:"route"`
-	Model              string            `json:"model"`
-	RequestPath        string            `json:"request_path"`
-	CacheScope         string            `json:"cache_scope"`
-	CachePolicyVersion string            `json:"cache_policy_version"`
-	StatusCode         int               `json:"status_code"`
-	IsStream           bool              `json:"is_stream"`
-	ContainsToolCalls  bool              `json:"contains_tool_calls"`
-	NoStore            bool              `json:"no_store"`
-	Sensitive          bool              `json:"sensitive"`
-	PluginVersion      string            `json:"plugin_version"`
-	UserContent        string            `json:"user_content,omitempty"`
-	AssistantContent   string            `json:"assistant_content,omitempty"`
-	FinishReason       string            `json:"finish_reason,omitempty"`
-	Usage              *sessionctx.Usage `json:"usage,omitempty"`
+	SessionID          string          `json:"session_id,omitempty"`
+	Route              string          `json:"route"`
+	Model              string          `json:"model"`
+	RequestPath        string          `json:"request_path"`
+	CacheScope         string          `json:"cache_scope"`
+	CachePolicyVersion string          `json:"cache_policy_version"`
+	StatusCode         int             `json:"status_code"`
+	IsStream           bool            `json:"is_stream"`
+	ContainsToolCalls  bool            `json:"contains_tool_calls"`
+	NoStore            bool            `json:"no_store"`
+	Sensitive          bool            `json:"sensitive"`
+	PluginVersion      string          `json:"plugin_version"`
+	UserContent        string          `json:"user_content,omitempty"`
+	AssistantContent   string          `json:"assistant_content,omitempty"`
+	FinishReason       string          `json:"finish_reason,omitempty"`
+	Usage              json.RawMessage `json:"usage,omitempty"`
 }
 
 type thinResponseFacts struct {
 	assistantContent  string
 	finishReason      string
-	usage             sessionctx.Usage
+	usage             json.RawMessage
 	containsToolCalls bool
 	parseFailed       bool
 }
 
 type thinStreamCapture struct {
-	content           strings.Builder
-	buffer            string
-	finishReason      string
-	usage             sessionctx.Usage
-	containsToolCalls bool
-	parseFailed       bool
+	chunks      [][]byte
+	parseFailed bool
 }
 
 func storeThinRequestEventContext(ctx wrapper.HttpContext, body []byte, log logs.Log) {
 	ctx.SetContext(CACHE_EVENT_STARTED_AT_KEY, nowMillis())
 	ctx.SetContext(CACHE_REQUEST_ID_KEY, currentRequestID())
 
-	request, err := sessionctx.ParseOpenAIChatRequest(body)
+	userPrompt, err := thinCurrentUserPromptForPath(ctx.GetStringContext(CACHE_PATH_CONTEXT_KEY, ""), body)
 	if err != nil {
-		log.Warnf("[%s] [storeThinRequestEventContext] parse OpenAI request failed: %v", PLUGIN_NAME, err)
+		log.Warnf("[%s] [storeThinRequestEventContext] parse request intent failed: %v", PLUGIN_NAME, err)
 		return
 	}
-	ctx.SetContext(CACHE_USER_CONTENT_KEY, sessionctx.CurrentUserIntent(request.Messages))
+	ctx.SetContext(CACHE_USER_CONTENT_KEY, userPrompt)
 }
 
 func captureThinResponseHeaders(ctx wrapper.HttpContext, log logs.Log) {
@@ -82,40 +79,48 @@ func handleThinResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chun
 		return
 	}
 
+	path := ctx.GetStringContext(CACHE_PATH_CONTEXT_KEY, "")
+	kind, adapter, ok := thinProtocolAdapterForPath(path)
+	if !ok {
+		log.Warnf("[%s] [handleThinResponseBody] unsupported request path for protocol adapter: %s", PLUGIN_NAME, path)
+		return
+	}
+	statusCode := thinIntContext(ctx, CACHE_RESPONSE_STATUS_KEY, 0)
 	stream := ctx.GetContext(STREAM_CONTEXT_KEY) != nil
 	if stream {
 		capture := getThinStreamCapture(ctx)
-		if err := capture.appendSSE(unifySSEChunk(chunk)); err != nil {
-			log.Warnf("[%s] [handleThinResponseBody] parse streaming response chunk failed: %v", PLUGIN_NAME, err)
-			capture.parseFailed = true
-		}
+		capture.appendChunk(unifySSEChunk(chunk))
 		if !isLastChunk {
 			return
 		}
-		emitThinCacheEvent(ctx, c, thinResponseFacts{
-			assistantContent:  capture.content.String(),
-			finishReason:      capture.finishReason,
-			usage:             capture.usage,
-			containsToolCalls: capture.containsToolCalls,
-			parseFailed:       capture.parseFailed,
-		}, true, log)
+		exchange, err := adapter.CaptureStream(protocol.ResponseStreamInput{
+			StatusCode: statusCode,
+			Chunks:     capture.chunks,
+		})
+		if err != nil {
+			log.Warnf("[%s] [handleThinResponseBody] parse streaming response chunk failed: %v", PLUGIN_NAME, err)
+			emitThinCacheEvent(ctx, c, thinResponseFacts{parseFailed: true}, true, log)
+			return
+		}
+		facts := thinResponseFactsFromExchange(kind, exchange)
+		facts.parseFailed = facts.parseFailed || capture.parseFailed
+		emitThinCacheEvent(ctx, c, facts, true, log)
 		return
 	}
 
 	if !isLastChunk {
 		return
 	}
-	response, err := sessionctx.ParseOpenAIChatResponse(chunk)
-	facts := thinResponseFacts{}
+	exchange, err := adapter.CaptureResponse(protocol.ResponseCaptureInput{
+		StatusCode: statusCode,
+		Body:       chunk,
+	})
 	if err != nil {
 		log.Warnf("[%s] [handleThinResponseBody] parse non-streaming response failed: %v", PLUGIN_NAME, err)
-		facts.parseFailed = true
-	} else {
-		facts.assistantContent = response.AssistantContent
-		facts.finishReason = sessionctx.ResponseFinishReason(response)
-		facts.usage = sessionctx.ResponseUsage(response)
-		facts.containsToolCalls = sessionctx.ContainsToolUse(response)
+		emitThinCacheEvent(ctx, c, thinResponseFacts{parseFailed: true}, false, log)
+		return
 	}
+	facts := thinResponseFactsFromExchange(kind, exchange)
 	emitThinCacheEvent(ctx, c, facts, false, log)
 }
 
@@ -128,57 +133,8 @@ func getThinStreamCapture(ctx wrapper.HttpContext) *thinStreamCapture {
 	return capture
 }
 
-func (c *thinStreamCapture) appendSSE(chunk []byte) error {
-	c.buffer += string(chunk)
-	for {
-		index := strings.IndexAny(c.buffer, "\r\n")
-		if index < 0 {
-			return nil
-		}
-		separator := c.buffer[index]
-		line := strings.TrimSpace(c.buffer[:index])
-		c.buffer = c.buffer[index+1:]
-		if separator == '\r' && strings.HasPrefix(c.buffer, "\n") {
-			c.buffer = c.buffer[1:]
-		}
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if payload == "" || payload == "[DONE]" {
-			continue
-		}
-		var event struct {
-			Choices []struct {
-				Delta struct {
-					Content      json.RawMessage `json:"content"`
-					ToolCalls    []interface{}   `json:"tool_calls"`
-					FunctionCall interface{}     `json:"function_call"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason"`
-			} `json:"choices"`
-			Usage sessionctx.Usage `json:"usage"`
-		}
-		if err := json.Unmarshal([]byte(payload), &event); err != nil {
-			return err
-		}
-		for _, choice := range event.Choices {
-			c.content.WriteString(thinRawTextContent(choice.Delta.Content))
-			if len(choice.Delta.ToolCalls) > 0 ||
-				choice.Delta.FunctionCall != nil ||
-				thinRawContentContainsToolCalls(choice.Delta.Content) ||
-				choice.FinishReason == "tool_calls" ||
-				choice.FinishReason == "function_call" {
-				c.containsToolCalls = true
-			}
-			if choice.FinishReason != "" {
-				c.finishReason = choice.FinishReason
-			}
-		}
-		if !thinUsageEmpty(event.Usage) {
-			c.usage = event.Usage
-		}
-	}
+func (c *thinStreamCapture) appendChunk(chunk []byte) {
+	c.chunks = append(c.chunks, append([]byte(nil), chunk...))
 }
 
 func emitThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, facts thinResponseFacts, stream bool, log logs.Log) {
@@ -247,8 +203,7 @@ func buildThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, facts t
 		FinishReason:       facts.finishReason,
 	}
 	if !thinUsageEmpty(facts.usage) {
-		usage := facts.usage
-		event.Usage = &usage
+		event.Usage = facts.usage
 	}
 	if !gated {
 		event.UserContent = ctx.GetStringContext(CACHE_USER_CONTENT_KEY, "")
@@ -303,52 +258,13 @@ func thinInt64Context(ctx wrapper.HttpContext, key string, fallback int64) int64
 	}
 }
 
-func thinUsageEmpty(usage sessionctx.Usage) bool {
-	return usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0
-}
-
-func thinRawTextContent(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
+func thinUsageEmpty(usage json.RawMessage) bool {
+	if len(usage) == 0 {
+		return true
 	}
-	var value interface{}
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return ""
-	}
-	return thinTextContent(value)
-}
-
-func thinTextContent(value interface{}) string {
-	switch content := value.(type) {
-	case string:
-		return content
-	case []interface{}:
-		var parts []string
-		for _, item := range content {
-			object, ok := item.(map[string]interface{})
-			if !ok || object["type"] != "text" {
-				continue
-			}
-			text, _ := object["text"].(string)
-			if text != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.Join(parts, "")
-	default:
-		return ""
-	}
-}
-
-func thinRawContentContainsToolCalls(raw json.RawMessage) bool {
-	if len(raw) == 0 {
+	var fields map[string]interface{}
+	if err := json.Unmarshal(usage, &fields); err != nil {
 		return false
 	}
-	var content struct {
-		ToolCalls []interface{} `json:"tool_calls"`
-	}
-	if err := json.Unmarshal(raw, &content); err != nil {
-		return false
-	}
-	return len(content.ToolCalls) > 0
+	return len(fields) == 0
 }

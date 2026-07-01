@@ -51,10 +51,8 @@ func TestThinMemoryAwareCache(t *testing.T) {
 
 			requireThinMemoryAwareKeysDiffer(t, originalKey, adjustedKey, "ai-cache must compute memory-aware materialized lookup keys from the final memory-adjusted request body")
 
-			originalModel, originalDigest, err := BuildOpenAIRequestDigest(originalBody)
-			require.NoError(t, err)
-			adjustedModel, adjustedDigest, err := BuildOpenAIRequestDigest(memoryAdjustedBody)
-			require.NoError(t, err)
+			originalModel, originalDigest := thinChatRequestDigestForBody(t, originalBody)
+			adjustedModel, adjustedDigest := thinChatRequestDigestForBody(t, memoryAdjustedBody)
 			require.Equal(t, originalModel, adjustedModel)
 			requireThinMemoryAwareKeysDiffer(t, originalDigest, adjustedDigest, "memory injection must affect the digest used for materialization")
 			adjustedMaterial, err := BuildScopedCacheKeyMaterial(ScopedCacheKeyInput{

@@ -104,17 +104,25 @@ func validateMaterializedRecord(record MaterializedReplayRecord, material Scoped
 }
 
 func replayMaterializedRecord(record MaterializedReplayRecord, stream bool, ctx wrapper.HttpContext, log logs.Log) error {
+	path := ctx.GetStringContext(CACHE_PATH_CONTEXT_KEY, "")
+	kind, adapter, ok := thinProtocolAdapterForPath(path)
+	if !ok {
+		return fmt.Errorf("unsupported request path for materialized replay: %s", path)
+	}
+	serialized, err := adapter.SerializeReplay(thinReplayPayload(kind, record, stream))
+	if err != nil {
+		return err
+	}
+	statusCode := serialized.StatusCode
+	if statusCode == 0 {
+		statusCode = 200
+	}
+
 	ctx.SetUserAttribute("cache_status", "hit")
 	ctx.SetUserAttribute("upstream_invoked", false)
 	ctx.WriteUserAttributeToLogWithKey(wrapper.AILogKey)
 
-	if stream {
-		body := materializedStreamBody(record.StreamChunks)
-		proxywasm.SendHttpResponseWithDetail(200, "ai-cache.hit", [][2]string{{"content-type", "text/event-stream; charset=utf-8"}}, body, -1)
-		return nil
-	}
-
-	proxywasm.SendHttpResponseWithDetail(200, "ai-cache.hit", [][2]string{{"content-type", "application/json; charset=utf-8"}}, record.Response, -1)
+	proxywasm.SendHttpResponseWithDetail(uint32(statusCode), "ai-cache.hit", [][2]string{{"content-type", serialized.ContentType}}, serialized.Body, -1)
 	return nil
 }
 
@@ -130,15 +138,4 @@ func requireJSONObject(raw json.RawMessage, name string) error {
 		return fmt.Errorf("materialized record %s is not a JSON object", name)
 	}
 	return nil
-}
-
-func materializedStreamBody(chunks []json.RawMessage) []byte {
-	var body strings.Builder
-	for _, chunk := range chunks {
-		body.WriteString("data: ")
-		body.Write(chunk)
-		body.WriteString("\n\n")
-	}
-	body.WriteString("data: [DONE]\n\n")
-	return []byte(body.String())
 }

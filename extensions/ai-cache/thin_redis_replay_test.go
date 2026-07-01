@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
@@ -207,13 +208,24 @@ func TestThinRedisReplayValidation(t *testing.T) {
 
 func thinRedisReplayRequestDigest(t *testing.T) string {
 	t.Helper()
-	_, digest, err := BuildOpenAIRequestDigest([]byte(`{
+	_, digest := thinChatRequestDigestForBody(t, []byte(`{
 		"model": "qwen-turbo",
 		"messages": [
 			{"role": "user", "content": "weather?"}
 		],
 		"stream": false
 	}`))
-	require.NoError(t, err)
 	return digest
+}
+
+func thinChatRequestDigestForBody(t *testing.T, body []byte) (string, string) {
+	t.Helper()
+	adapter := protocol.ChatCompletionsAdapter{}
+	digest, err := adapter.BuildCacheDigest(protocol.RequestParseInput{
+		Method: "POST",
+		Path:   "/v1/chat/completions",
+		Body:   body,
+	})
+	require.NoError(t, err)
+	return digest.Input.Model, digest.Digest
 }
