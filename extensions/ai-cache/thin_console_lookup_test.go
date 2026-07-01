@@ -410,3 +410,48 @@ func TestThinConsoleLookup(t *testing.T) {
 		})
 	})
 }
+
+func TestThinConsoleLookupInternalAuthAndWrappedResponseContract(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		host := startThinConsoleLookupRequest(t, true)
+		defer host.Reset()
+
+		host.CallOnRedisCall(0, test.CreateRedisRespNull())
+		facts := requireThinConsoleLookupCall(t, host)
+		require.Equal(t, "tenant-a", facts["tenant"])
+		require.Equal(t, "consumer-a", facts["consumer"])
+		require.Equal(t, "test-route-default", facts["route"])
+		require.Equal(t, "qwen-turbo", facts["model"])
+		require.Equal(t, "non_stream", facts["stream_mode"])
+
+		materializedKey := "cache:materialized:console-contract-hit"
+		host.CallOnHttpCall([][2]string{
+			{":status", "200"},
+			{"content-type", "application/json"},
+		}, []byte(`{"data":{"decision":"hit","reason":"fresh","materialized_key":"`+materializedKey+`"},"error":null}`))
+		requireThinMaterializedRedisLookup(t, host, materializedKey)
+
+		host.CallOnRedisCall(0, test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{
+			"upstream_invoked": false,
+		})))
+
+		localResponse := host.GetLocalResponse()
+		require.NotNil(t, localResponse, "wrapped Console lookup hit should replay the validated materialized record")
+		require.Equal(t, uint32(200), localResponse.StatusCode)
+		require.JSONEq(t, `{
+			"id": "chatcmpl-cache-hit",
+			"object": "chat.completion",
+			"model": "qwen-turbo",
+			"choices": [{
+				"index": 0,
+				"message": {"role": "assistant", "content": "cached answer"},
+				"finish_reason": "stop"
+			}],
+			"usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
+		}`, string(localResponse.Data))
+
+		attrs := thinCacheReplayAILogAttributes(t, host)
+		require.Equal(t, "hit", attrs["cache_status"])
+		require.Equal(t, false, attrs["upstream_invoked"])
+	})
+}
