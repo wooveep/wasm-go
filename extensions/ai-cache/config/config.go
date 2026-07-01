@@ -56,6 +56,7 @@ type ConsoleLookupConfig struct {
 	ServiceName string
 	ServicePort int
 	Path        string
+	BearerToken string
 	Timeout     int
 }
 
@@ -120,6 +121,7 @@ func (c *PluginConfig) FromJson(json gjson.Result, _ log.Log) {
 		ServiceName: json.Get("console_lookup.service_name").String(),
 		ServicePort: int(json.Get("console_lookup.service_port").Int()),
 		Path:        json.Get("console_lookup.path").String(),
+		BearerToken: json.Get("console_lookup.bearer_token").String(),
 		Timeout:     int(json.Get("console_lookup.timeout").Int()),
 	}
 	if c.ConsoleLookup.Path == "" {
@@ -386,6 +388,9 @@ func mergeConsoleLookup(base ConsoleLookupConfig, value gjson.Result) ConsoleLoo
 	}
 	if value.Get("path").Exists() {
 		base.Path = value.Get("path").String()
+	}
+	if value.Get("bearer_token").Exists() {
+		base.BearerToken = value.Get("bearer_token").String()
 	}
 	if value.Get("timeout").Exists() {
 		base.Timeout = int(value.Get("timeout").Int())

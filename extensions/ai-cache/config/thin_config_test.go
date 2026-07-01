@@ -119,6 +119,7 @@ func TestPluginConfig_ThinPluginConfigParsing(t *testing.T) {
 			"service_name": "modelfusion-console.higress-system.svc.cluster.local",
 			"service_port": 8080,
 			"path":         "/internal/cache/lookup",
+			"bearer_token": "console-service-token",
 			"timeout":      50,
 		},
 		"redis_stream": map[string]interface{}{
@@ -157,6 +158,7 @@ func TestPluginConfig_ThinPluginConfigParsing(t *testing.T) {
 	require.Equal(t, true, mustBoolField(t, cfg, "ConsoleLookup", "Enabled"))
 	require.Equal(t, "modelfusion-console.higress-system.svc.cluster.local", mustStringField(t, cfg, "ConsoleLookup", "ServiceName"))
 	require.Equal(t, "/internal/cache/lookup", mustStringField(t, cfg, "ConsoleLookup", "Path"))
+	require.Equal(t, "console-service-token", mustStringField(t, cfg, "ConsoleLookup", "BearerToken"))
 	require.Equal(t, int64(50), mustIntField(t, cfg, "ConsoleLookup", "Timeout"))
 
 	require.Equal(t, true, mustBoolField(t, cfg, "Event", "RedisStream", "Enabled"))
@@ -351,6 +353,7 @@ func TestPluginConfig_ThinPluginRouteOverrideInheritsExternalTargets(t *testing.
 			"service_name": "modelfusion-console.higress-system.svc.cluster.local",
 			"service_port": 8080,
 			"path":         "/internal/cache/lookup",
+			"bearer_token": "global-console-token",
 			"timeout":      50,
 		},
 		"redis_stream": map[string]interface{}{
@@ -395,6 +398,7 @@ func TestPluginConfig_ThinPluginRouteOverrideInheritsExternalTargets(t *testing.
 	require.Equal(t, global.ConsoleLookup.ServiceName, route.ConsoleLookup.ServiceName)
 	require.Equal(t, global.ConsoleLookup.ServicePort, route.ConsoleLookup.ServicePort)
 	require.Equal(t, global.ConsoleLookup.Path, route.ConsoleLookup.Path)
+	require.Equal(t, global.ConsoleLookup.BearerToken, route.ConsoleLookup.BearerToken)
 	require.Equal(t, global.ConsoleLookup.Timeout, route.ConsoleLookup.Timeout)
 	require.Equal(t, global.Event.RedisStream, route.Event.RedisStream)
 	require.Equal(t, false, route.RoutePolicy.EnableConsoleLookup)
