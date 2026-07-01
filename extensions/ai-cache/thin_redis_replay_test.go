@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,6 +207,38 @@ func TestThinRedisReplayValidation(t *testing.T) {
 	})
 }
 
+func TestThinRedisReplayConsoleGeneratedCanonicalFixture(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		host := startThinRedisReplayRequest(t)
+		defer host.Reset()
+
+		require.Equal(t, expectedThinRedisReplayMaterializedKey(t), requireThinRedisReplayMaterializedGetKey(t, host))
+		record := validThinReplayRecord(t, map[string]interface{}{"upstream_invoked": false})
+		requireThinRedisReplayCanonicalRecordShape(t, record)
+
+		host.CallOnRedisCall(0, test.CreateRedisRespString(record))
+
+		localResponse := host.GetLocalResponse()
+		require.NotNil(t, localResponse, "Console-generated materialized Redis value should replay locally")
+		require.Equal(t, uint32(200), localResponse.StatusCode)
+		require.JSONEq(t, `{
+			"id": "chatcmpl-cache-hit",
+			"object": "chat.completion",
+			"model": "qwen-turbo",
+			"choices": [{
+				"index": 0,
+				"message": {"role": "assistant", "content": "cached answer"},
+				"finish_reason": "stop"
+			}],
+			"usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
+		}`, string(localResponse.Data))
+
+		attrs := thinCacheReplayAILogAttributes(t, host)
+		require.Equal(t, "hit", attrs["cache_status"])
+		require.Equal(t, false, attrs["upstream_invoked"])
+	})
+}
+
 func thinRedisReplayRequestDigest(t *testing.T) string {
 	t.Helper()
 	_, digest := thinChatRequestDigestForBody(t, []byte(`{
@@ -228,4 +261,88 @@ func thinChatRequestDigestForBody(t *testing.T, body []byte) (string, string) {
 	})
 	require.NoError(t, err)
 	return digest.Input.Model, digest.Digest
+}
+
+func expectedThinRedisReplayMaterializedKey(t *testing.T) string {
+	t.Helper()
+	material, err := BuildScopedCacheKeyMaterial(ScopedCacheKeyInput{
+		KeyPrefix:          "cache:materialized:",
+		Tenant:             "tenant-a",
+		Consumer:           "consumer-a",
+		CacheScope:         "consumer",
+		Route:              "test-route-default",
+		Model:              "qwen-turbo",
+		RequestDigest:      thinRedisReplayRequestDigest(t),
+		CachePolicyVersion: "policy-v1",
+	})
+	require.NoError(t, err)
+	return material.RedisKey
+}
+
+func requireThinRedisReplayMaterializedGetKey(t *testing.T, host test.TestHost) string {
+	t.Helper()
+	for _, call := range host.GetRedisCalloutAttributes() {
+		cmd, ok := thinResponseCaptureCommand(t, call.Query)
+		if !ok || len(cmd) != 2 || !strings.EqualFold(cmd[0], "get") {
+			continue
+		}
+		require.Truef(t, strings.HasPrefix(cmd[1], "cache:materialized:"), "Redis replay should query a materialized cache key; redis calls=%s", thinResponseCaptureCallSummary(t, host))
+		return cmd[1]
+	}
+	require.Failf(t, "missing materialized Redis lookup", "redis calls=%s", thinResponseCaptureCallSummary(t, host))
+	return ""
+}
+
+func requireThinRedisReplayCanonicalRecordShape(t *testing.T, raw string) {
+	t.Helper()
+	var record map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(raw), &record))
+
+	requiredFields := []string{
+		"schema_version",
+		"tenant",
+		"consumer",
+		"route",
+		"model",
+		"cache_scope",
+		"cache_policy_version",
+		"request_digest",
+		"soft_expires_at",
+		"hard_expires_at",
+		"response",
+		"usage",
+		"finish_reason",
+		"upstream_invoked",
+	}
+	for _, field := range requiredFields {
+		require.Contains(t, record, field)
+	}
+	require.Equal(t, materializedRecordSchemaVersion, record["schema_version"])
+	require.Equal(t, "tenant-a", record["tenant"])
+	require.Equal(t, "consumer-a", record["consumer"])
+	require.Equal(t, "test-route-default", record["route"])
+	require.Equal(t, "qwen-turbo", record["model"])
+	require.Equal(t, "consumer", record["cache_scope"])
+	require.Equal(t, "policy-v1", record["cache_policy_version"])
+	require.Equal(t, thinRedisReplayRequestDigest(t), record["request_digest"])
+	require.Equal(t, false, record["upstream_invoked"])
+
+	for _, legacyField := range []string{
+		"replay_id",
+		"source_event_id",
+		"tenant_id",
+		"consumer_id",
+		"route_id",
+		"model_asset_id",
+		"policy_id",
+		"policy_version",
+		"response_object",
+		"usage_snapshot",
+		"gateway_tenant",
+		"gateway_consumer",
+		"gateway_route",
+		"gateway_model",
+	} {
+		require.NotContains(t, record, legacyField)
+	}
 }
