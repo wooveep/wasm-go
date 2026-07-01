@@ -463,6 +463,191 @@ func thinMessagesResponseCaptureConfig(t *testing.T) json.RawMessage {
 	return data
 }
 
+func TestThinResponsesResponseCapture(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		t.Run("non-streaming upstream response emits Responses output usage and finish reason", func(t *testing.T) {
+			host := startThinResponsesResponseCaptureRequest(t, false)
+			defer host.Reset()
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{
+				"id": "resp-cache-event",
+				"object": "response",
+				"model": "gpt-4.1",
+				"output_text": "Responses cache answer",
+				"output": [{
+					"id":"msg_1",
+					"type":"message",
+					"role":"assistant",
+					"content":[{"type":"output_text","text":"Responses cache answer"}]
+				}],
+				"status": "completed",
+				"usage": {"input_tokens": 13, "output_tokens": 5, "total_tokens": 18}
+			}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			event := requireThinResponseCaptureEvent(t, host)
+			require.Equal(t, "tenant-a", event["tenant"])
+			require.Equal(t, "consumer-a", event["consumer"])
+			require.Equal(t, "session-a", event["session_id"])
+			require.Equal(t, "test-route-responses", event["route"])
+			require.Equal(t, "gpt-4.1", event["model"])
+			require.Equal(t, "request-responses-1", event["request_id"])
+			require.Equal(t, "/v1/responses", event["request_path"])
+			require.Equal(t, "consumer", event["cache_scope"])
+			require.Equal(t, "policy-v1", event["cache_policy_version"])
+			require.Equal(t, expectedThinResponsesResponseCaptureRequestDigest(t, false), event["request_digest"])
+			require.Equal(t, "Responses cache answer", event["assistant_content"])
+			require.Equal(t, "completed", event["finish_reason"])
+			require.EqualValues(t, 200, event["status_code"])
+			require.Equal(t, false, event["is_stream"])
+			require.Equal(t, false, event["contains_tool_calls"])
+			require.Equal(t, false, event["no_store"])
+			require.Equal(t, false, event["sensitive"])
+			requireThinResponsesResponseCaptureUsage(t, event, 13, 5, 18)
+			requireThinResponseNoLegacyCacheSet(t, host)
+		})
+
+		t.Run("streaming upstream response emits Responses deltas usage and finish reason", func(t *testing.T) {
+			host := startThinResponsesResponseCaptureRequest(t, true)
+			defer host.Reset()
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
+			callThinResponseStreamChunks(t, host,
+				"event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp-stream-cache-event\",\"object\":\"response\",\"model\":\"gpt-4.1\",\"status\":\"in_progress\"}}\n\n",
+				"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[]}}\n\n",
+				"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Responses \"}\n\n",
+				"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"stream answer\"}\n\n",
+				"event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,\"text\":\"Responses stream answer\"}\n\n",
+				"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-stream-cache-event\",\"status\":\"completed\",\"usage\":{\"input_tokens\":11,\"output_tokens\":4,\"total_tokens\":15}}}\n\n",
+			)
+
+			event := requireThinResponseCaptureEvent(t, host)
+			require.Equal(t, "tenant-a", event["tenant"])
+			require.Equal(t, "consumer-a", event["consumer"])
+			require.Equal(t, "session-a", event["session_id"])
+			require.Equal(t, "test-route-responses", event["route"])
+			require.Equal(t, "gpt-4.1", event["model"])
+			require.Equal(t, "request-responses-1", event["request_id"])
+			require.Equal(t, "/v1/responses", event["request_path"])
+			require.Equal(t, "consumer", event["cache_scope"])
+			require.Equal(t, "policy-v1", event["cache_policy_version"])
+			require.Equal(t, expectedThinResponsesResponseCaptureRequestDigest(t, true), event["request_digest"])
+			require.Equal(t, "Responses stream answer", event["assistant_content"])
+			require.Equal(t, "completed", event["finish_reason"])
+			require.EqualValues(t, 200, event["status_code"])
+			require.Equal(t, true, event["is_stream"])
+			require.Equal(t, false, event["contains_tool_calls"])
+			require.Equal(t, false, event["no_store"])
+			require.Equal(t, false, event["sensitive"])
+			requireThinResponsesResponseCaptureUsage(t, event, 11, 4, 15)
+			requireThinResponseNoLegacyCacheSet(t, host)
+		})
+	})
+}
+
+func startThinResponsesResponseCaptureRequest(t *testing.T, stream bool) test.TestHost {
+	t.Helper()
+	host, status := test.NewTestHost(thinResponsesResponseCaptureConfig(t))
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+	require.NoError(t, host.SetRouteName("test-route-responses"))
+	require.NoError(t, host.SetRequestId("request-responses-1"))
+
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/responses"},
+		{":method", "POST"},
+		{"content-type", "application/json"},
+		{"x-mse-tenant", "tenant-a"},
+		{"x-mse-consumer", "consumer-a"},
+		{"x-mse-session", "session-a"},
+	})
+	require.Equal(t, types.HeaderStopIteration, action)
+
+	action = host.CallOnHttpRequestBody(thinResponsesResponseCaptureRequestBody(stream))
+	require.Equal(t, types.ActionPause, action)
+	require.NotEmpty(t, host.GetRedisCalloutAttributes(), "request should issue Redis lookup before upstream capture")
+	materializedLookup := thinResponseHasMaterializedLookup(t, host)
+	lookupSummary := thinResponseCaptureCallSummary(t, host)
+	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+	return thinResponseCaptureHost{
+		TestHost:           host,
+		materializedLookup: materializedLookup,
+		lookupSummary:      lookupSummary,
+	}
+}
+
+func thinResponsesResponseCaptureRequestBody(stream bool) []byte {
+	streamLiteral := "false"
+	if stream {
+		streamLiteral = "true"
+	}
+	return []byte(fmt.Sprintf(`{
+		"model": "gpt-4.1",
+		"instructions": "Use project context.",
+		"input": [{"role":"user","content":[{"type":"input_text","text":"draft reply"}]}],
+		"temperature": 0.1,
+		"stream": %s
+	}`, streamLiteral))
+}
+
+func expectedThinResponsesResponseCaptureRequestDigest(t *testing.T, stream bool) string {
+	t.Helper()
+	adapter := protocol.ResponsesAdapter{}
+	digest, err := adapter.BuildCacheDigest(protocol.RequestParseInput{
+		Method: "POST",
+		Path:   "/v1/responses",
+		Body:   thinResponsesResponseCaptureRequestBody(stream),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, digest.Digest)
+	require.NotContains(t, digest.Digest, "draft reply")
+	return digest.Digest
+}
+
+func thinResponsesResponseCaptureConfig(t *testing.T) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(map[string]interface{}{
+		"materialized_lookup": map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled":      true,
+				"service_name": "redis.static",
+				"service_port": 6379,
+				"key_prefix":   "cache:materialized:",
+				"timeout":      80,
+			},
+		},
+		"redis_stream": map[string]interface{}{
+			"enabled":      true,
+			"service_name": "redis.static",
+			"service_port": 6379,
+			"stream":       thinResponseCaptureStreamName,
+			"field":        thinResponseCaptureStreamField,
+			"timeout":      120,
+		},
+		"route_policy": map[string]interface{}{
+			"enable_redis_lookup":   true,
+			"enable_console_lookup": false,
+			"enable_replay":         true,
+			"enabled_path_suffixes": []string{"/v1/responses"},
+		},
+		"tenant_header":        "x-mse-tenant",
+		"consumer_header":      "x-mse-consumer",
+		"session_header":       "x-mse-session",
+		"cache_scope":          "consumer",
+		"cache_policy_version": "policy-v1",
+	})
+	require.NoError(t, err)
+	return data
+}
+
 func callThinResponseStreamChunks(t *testing.T, host test.TestHost, chunks ...string) {
 	t.Helper()
 	for i, chunk := range chunks {
@@ -551,6 +736,15 @@ func requireThinResponseCaptureUsage(t *testing.T, event map[string]interface{},
 }
 
 func requireThinMessagesResponseCaptureUsage(t *testing.T, event map[string]interface{}, inputTokens, outputTokens, totalTokens int) {
+	t.Helper()
+	usage, ok := event["usage"].(map[string]interface{})
+	require.Truef(t, ok, "event usage must be an object; event=%s", thinResponseCaptureEventSnippet(t, event))
+	require.EqualValues(t, inputTokens, usage["input_tokens"])
+	require.EqualValues(t, outputTokens, usage["output_tokens"])
+	require.EqualValues(t, totalTokens, usage["total_tokens"])
+}
+
+func requireThinResponsesResponseCaptureUsage(t *testing.T, event map[string]interface{}, inputTokens, outputTokens, totalTokens int) {
 	t.Helper()
 	usage, ok := event["usage"].(map[string]interface{})
 	require.Truef(t, ok, "event usage must be an object; event=%s", thinResponseCaptureEventSnippet(t, event))
