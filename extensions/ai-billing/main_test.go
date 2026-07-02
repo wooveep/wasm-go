@@ -129,7 +129,7 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, defaultConsumerHeader, billingConfig.ConsumerHeader)
 		})
 
-		t.Run("default event kind and rule override internal cost", func(t *testing.T) {
+		t.Run("legacy customer usage event kind and rule override internal cost", func(t *testing.T) {
 			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
 				"event_kind": "customer_usage",
 				"redis_stream": map[string]interface{}{
@@ -140,6 +140,9 @@ func TestParseConfig(t *testing.T) {
 						"_match_route_": []string{"route-internal-cost"},
 						"event_kind":    "internal_cost",
 						"quota_scope":   "internal:ai-memory.digest",
+						"cost_source":   "ai-memory.embedding",
+						"worker_kind":   "embedding",
+						"bill_customer": false,
 					},
 				},
 			}))
@@ -149,7 +152,7 @@ func TestParseConfig(t *testing.T) {
 			config, err := host.GetMatchConfig()
 			require.NoError(t, err)
 			billingConfig := config.(*BillingConfig)
-			require.Equal(t, eventKindCustomerUsage, billingConfig.EventKind)
+			require.Equal(t, "usage", billingConfig.EventKind)
 
 			require.NoError(t, host.SetRouteName("route-internal-cost"))
 			config, err = host.GetMatchConfig()
@@ -157,6 +160,26 @@ func TestParseConfig(t *testing.T) {
 			billingConfig = config.(*BillingConfig)
 			require.Equal(t, eventKindInternalCost, billingConfig.EventKind)
 			require.Equal(t, "internal:ai-memory.digest", billingConfig.QuotaScope)
+			require.Equal(t, "ai-memory.embedding", billingConfig.CostSource)
+			require.Equal(t, "embedding", billingConfig.WorkerKind)
+			require.NotNil(t, billingConfig.BillCustomer)
+			require.False(t, *billingConfig.BillCustomer)
+		})
+
+		t.Run("usage event kind is accepted", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"event_kind": "usage",
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+				},
+			}))
+			defer host.Reset()
+
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+			config, err := host.GetMatchConfig()
+			require.NoError(t, err)
+			billingConfig := config.(*BillingConfig)
+			require.Equal(t, "usage", billingConfig.EventKind)
 		})
 
 		t.Run("unsupported event kind fails parsing", func(t *testing.T) {
@@ -1827,12 +1850,55 @@ func TestBuildBillingEventIncludesConfiguredEventKind(t *testing.T) {
 	ctx.SetContext(ctxOutputToken, int64(5))
 	ctx.SetContext(ctxUsageSource, usageSourceProvider)
 
+	require.Equal(t, "usage", buildBillingEvent(ctx, BillingConfig{}, false).EventKind)
+	require.Equal(t, "usage", buildBillingEvent(ctx, BillingConfig{EventKind: "customer_usage"}, false).EventKind)
+
 	body, err := json.Marshal(buildBillingEvent(ctx, BillingConfig{EventKind: eventKindInternalCost}, false))
 	require.NoError(t, err)
 
 	var event map[string]interface{}
 	require.NoError(t, json.Unmarshal(body, &event))
 	require.Equal(t, eventKindInternalCost, event["event_kind"])
+}
+
+func TestBuildBillingEventIncludesInternalCostMetadata(t *testing.T) {
+	ctx := &mockBillingHttpContext{values: map[string]interface{}{}}
+	ctx.SetContext(ctxEventID, "018f4c7c-3333-7abc-8333-333333333333")
+	ctx.SetContext(ctxIdempotencyKey, "018f4c7c-3333-7abc-8333-333333333333")
+	ctx.SetContext(ctxRequestPath, "/v1/embeddings")
+	ctx.SetContext(ctxRequestID, "req-internal-embedding")
+	ctx.SetContext(ctxTenant, "tenant-a")
+	ctx.SetContext(ctxConsumer, "consumer-a")
+	ctx.SetContext(ctxProvider, "gemini-local")
+	ctx.SetContext(ctxQuotaScope, "route:ai-memory-gemini-embedding")
+	ctx.SetContext(ctxRoute, "ai-route-ai-memory-gemini-embedding.internal")
+	ctx.SetContext(ctxCluster, "outbound|443||llm-gemini-local.internal.dns")
+	ctx.SetContext(ctxStatusCode, http.StatusOK)
+	ctx.SetContext(ctxInputToken, int64(21))
+	ctx.SetContext(ctxOutputToken, int64(0))
+	ctx.SetContext(ctxTotalToken, int64(21))
+	ctx.SetContext(ctxUsageSource, usageSourceEstimated)
+	ctx.SetContext(ctxModel, "gemini-embedding-001")
+	ctx.SetContext(ctxSourceJob, "ai-memory-chunk:4069d615-f6e0-8e8b-8250-73860818c96a")
+	ctx.SetContext(ctxUpstreamInvoked, true)
+	billCustomer := false
+
+	event := buildBillingEvent(ctx, BillingConfig{
+		EventKind:    eventKindInternalCost,
+		CostSource:   "ai-memory.embedding",
+		WorkerKind:   "embedding",
+		BillCustomer: &billCustomer,
+	}, false)
+
+	require.Equal(t, eventKindInternalCost, event.EventKind)
+	require.Equal(t, "ai-memory.embedding", event.CostSource)
+	require.Equal(t, "embedding", event.WorkerKind)
+	require.Equal(t, "ai-memory-chunk:4069d615-f6e0-8e8b-8250-73860818c96a", event.SourceJob)
+	require.NotNil(t, event.BillCustomer)
+	require.False(t, *event.BillCustomer)
+	require.Empty(t, event.Tenant)
+	require.Empty(t, event.Consumer)
+	require.True(t, event.UpstreamInvoked)
 }
 
 func TestBuildBillingEventDerivesMissingInputFromTotalAndOutput(t *testing.T) {

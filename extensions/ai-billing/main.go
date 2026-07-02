@@ -32,8 +32,9 @@ const (
 
 	FailPolicyOpen = "open"
 
-	eventKindCustomerUsage = "customer_usage"
-	eventKindInternalCost  = "internal_cost"
+	eventKindUsage               = "usage"
+	eventKindCustomerUsageLegacy = "customer_usage"
+	eventKindInternalCost        = "internal_cost"
 
 	ctxBillingEnabled   = "ai-billing-enabled"
 	ctxStartTime        = "ai-billing-start-time"
@@ -63,6 +64,8 @@ const (
 	ctxStreamOutputText = "ai-billing-stream-output-text"
 	ctxUsageSource      = "ai-billing-usage-source"
 	ctxProviderUsage    = "ai-billing-provider-usage"
+	ctxSourceJob        = "ai-billing-source-job"
+	ctxUpstreamInvoked  = "ai-billing-upstream-invoked"
 )
 
 const (
@@ -91,6 +94,9 @@ type BillingConfig struct {
 	EventKind          string      `yaml:"event_kind"`
 	QuotaScope         string      `yaml:"quota_scope"`
 	Provider           string      `yaml:"provider"`
+	CostSource         string      `yaml:"cost_source"`
+	WorkerKind         string      `yaml:"worker_kind"`
+	BillCustomer       *bool       `yaml:"bill_customer"`
 	TenantHeader       string      `yaml:"tenant_header"`
 	ConsumerHeader     string      `yaml:"consumer_header"`
 	EnablePathSuffixes []string    `yaml:"enable_path_suffixes"`
@@ -111,6 +117,10 @@ type RedisStream struct {
 type BillingEvent struct {
 	EventID         string       `json:"event_id"`
 	EventKind       string       `json:"event_kind"`
+	CostSource      string       `json:"cost_source,omitempty"`
+	WorkerKind      string       `json:"worker_kind,omitempty"`
+	SourceJob       string       `json:"source_job,omitempty"`
+	BillCustomer    *bool        `json:"bill_customer,omitempty"`
 	IdempotencyKey  string       `json:"idempotency_key"`
 	RequestID       string       `json:"request_id"`
 	Tenant          string       `json:"tenant"`
@@ -200,13 +210,24 @@ func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *Bill
 		config.QuotaScope = stringDefault(value.String(), defaultQuotaScope)
 	}
 	if value := configJson.Get("event_kind"); value.Exists() {
-		config.EventKind = stringDefault(value.String(), eventKindCustomerUsage)
-		if err := validateEventKind(config.EventKind); err != nil {
+		eventKind, err := normalizeEventKind(value.String())
+		if err != nil {
 			return err
 		}
+		config.EventKind = eventKind
 	}
 	if value := configJson.Get("provider"); value.Exists() {
 		config.Provider = stringDefault(value.String(), defaultProvider)
+	}
+	if value := configJson.Get("cost_source"); value.Exists() {
+		config.CostSource = strings.TrimSpace(value.String())
+	}
+	if value := configJson.Get("worker_kind"); value.Exists() {
+		config.WorkerKind = strings.TrimSpace(value.String())
+	}
+	if value := configJson.Get("bill_customer"); value.Exists() {
+		billCustomer := value.Bool()
+		config.BillCustomer = &billCustomer
 	}
 	if value := configJson.Get("tenant_header"); value.Exists() {
 		config.TenantHeader = stringDefault(value.String(), defaultTenantHeader)
@@ -231,12 +252,19 @@ func parseRuleConfig(configJson gjson.Result, global BillingConfig, config *Bill
 }
 
 func parseConfigFields(configJson gjson.Result, config *BillingConfig) error {
-	config.EventKind = stringDefault(configJson.Get("event_kind").String(), eventKindCustomerUsage)
-	if err := validateEventKind(config.EventKind); err != nil {
+	eventKind, err := normalizeEventKind(configJson.Get("event_kind").String())
+	if err != nil {
 		return err
 	}
+	config.EventKind = eventKind
 	config.QuotaScope = stringDefault(configJson.Get("quota_scope").String(), defaultQuotaScope)
 	config.Provider = stringDefault(configJson.Get("provider").String(), defaultProvider)
+	config.CostSource = strings.TrimSpace(configJson.Get("cost_source").String())
+	config.WorkerKind = strings.TrimSpace(configJson.Get("worker_kind").String())
+	if value := configJson.Get("bill_customer"); value.Exists() {
+		billCustomer := value.Bool()
+		config.BillCustomer = &billCustomer
+	}
 	config.TenantHeader = stringDefault(configJson.Get("tenant_header").String(), defaultTenantHeader)
 	config.ConsumerHeader = stringDefault(configJson.Get("consumer_header").String(), defaultConsumerHeader)
 	config.FailPolicy = stringDefault(configJson.Get("fail_policy").String(), FailPolicyOpen)
@@ -252,12 +280,27 @@ func parseConfigFields(configJson gjson.Result, config *BillingConfig) error {
 }
 
 func validateEventKind(value string) error {
-	switch value {
-	case eventKindCustomerUsage, eventKindInternalCost:
-		return nil
+	_, err := normalizeEventKind(value)
+	return err
+}
+
+func normalizeEventKind(value string) (string, error) {
+	switch strings.TrimSpace(value) {
+	case "", eventKindUsage, eventKindCustomerUsageLegacy:
+		return eventKindUsage, nil
+	case eventKindInternalCost:
+		return eventKindInternalCost, nil
 	default:
-		return errors.New("event_kind only supports customer_usage or internal_cost")
+		return "", errors.New("event_kind only supports usage or internal_cost")
 	}
+}
+
+func normalizedEventKindOrDefault(value string) string {
+	eventKind, err := normalizeEventKind(value)
+	if err == nil {
+		return eventKind
+	}
+	return eventKindUsage
 }
 
 func parseRedisStream(redisStream gjson.Result, config *BillingConfig) error {
@@ -311,6 +354,18 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	}
 	tenant, _ := proxywasm.GetHttpRequestHeader(config.TenantHeader)
 	consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader)
+	if config.EventKind == eventKindInternalCost {
+		tenant = ""
+		consumer = ""
+		if sourceJob, _ := proxywasm.GetHttpRequestHeader("x-ai-billing-source-job"); sourceJob != "" {
+			ctx.SetContext(ctxSourceJob, strings.TrimSpace(sourceJob))
+		}
+		if upstreamInvoked, _ := proxywasm.GetHttpRequestHeader("x-ai-billing-upstream-invoked"); upstreamInvoked != "" {
+			if parsed, ok := parseBoolHeader(upstreamInvoked); ok {
+				ctx.SetContext(ctxUpstreamInvoked, parsed)
+			}
+		}
+	}
 	priceVersion, _ := proxywasm.GetHttpRequestHeader("x-ai-price-version")
 	if _, err := initBillingRequestContext(ctx, requestPath, requestID, tenant, consumer, config.Provider, config.QuotaScope, priceVersion); err != nil {
 		log.Warnf("ai-billing event id generation failed open, request_id:%s err:%v", requestID, err)
@@ -632,7 +687,7 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	}
 	event := BillingEvent{
 		EventID:        eventID,
-		EventKind:      stringDefault(config.EventKind, eventKindCustomerUsage),
+		EventKind:      normalizedEventKindOrDefault(config.EventKind),
 		IdempotencyKey: idempotencyKey,
 		RequestID:      requestID,
 		Tenant:         ctx.GetStringContext(ctxTenant, ""),
@@ -662,14 +717,36 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 		PriceVersion:    ctx.GetStringContext(ctxPriceVersion, ""),
 		UpstreamInvoked: trustedUpstreamInvoked(ctx),
 	}
+	if event.EventKind == eventKindInternalCost {
+		event.Tenant = ""
+		event.Consumer = ""
+		event.CostSource = strings.TrimSpace(config.CostSource)
+		event.WorkerKind = strings.TrimSpace(config.WorkerKind)
+		event.SourceJob = ctx.GetStringContext(ctxSourceJob, "")
+		event.BillCustomer = config.BillCustomer
+	}
 	return event
 }
 
 func trustedUpstreamInvoked(ctx wrapper.HttpContext) bool {
+	if upstreamInvoked, ok := ctx.GetContext(ctxUpstreamInvoked).(bool); ok {
+		return upstreamInvoked
+	}
 	if upstreamInvoked, ok := ctx.GetUserAttribute("upstream_invoked").(bool); ok {
 		return upstreamInvoked
 	}
 	return true
+}
+
+func parseBoolHeader(value string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "y":
+		return true, true
+	case "false", "0", "no", "n":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func normalizeBillingUsageTotals(inputTokens, outputTokens, totalTokens int64) (int64, int64, int64) {

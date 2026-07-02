@@ -21,7 +21,7 @@ defaultConfig:
     timeout: 500
     stream: billing:events
   quota_scope: global
-  event_kind: customer_usage
+  event_kind: usage
   provider: default
   tenant_header: x-mse-tenant
   consumer_header: x-mse-consumer
@@ -61,7 +61,7 @@ Configuration fields:
 | `redis_stream.database` | integer | `0` | Redis database |
 | `redis_stream.timeout` | integer | `500` | Redis callout timeout in milliseconds |
 | `redis_stream.stream` | string | `billing:events` | Redis Stream name |
-| `event_kind` | string | `customer_usage` | Event type: `customer_usage` or `internal_cost` |
+| `event_kind` | string | `usage` | Event type: `usage` or `internal_cost` |
 | `quota_scope` | string | `global` | Quota scope for the current route or rule |
 | `provider` | string | `default` | AI provider identifier |
 | `tenant_header` | string | `x-mse-tenant` | Tenant identity request header |

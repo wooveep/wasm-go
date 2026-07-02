@@ -29,7 +29,7 @@ defaultConfig:
     timeout: 500
     stream: billing:events
   quota_scope: global
-  event_kind: customer_usage
+  event_kind: usage
   provider: default
   tenant_header: x-mse-tenant
   consumer_header: x-mse-consumer
@@ -63,7 +63,7 @@ matchRules:
 | `redis_stream.database` | integer | `0` | Redis database |
 | `redis_stream.timeout` | integer | `500` | Redis callout 超时时间，单位毫秒 |
 | `redis_stream.stream` | string | `billing:events` | Redis Stream 名称 |
-| `event_kind` | string | `customer_usage` | 事件类型，可选 `customer_usage` 或 `internal_cost` |
+| `event_kind` | string | `usage` | 事件类型，可选 `usage` 或 `internal_cost` |
 | `quota_scope` | string | `global` | 当前路由或规则的额度作用域 |
 | `provider` | string | `default` | AI provider 标识 |
 | `tenant_header` | string | `x-mse-tenant` | 租户身份请求头 |

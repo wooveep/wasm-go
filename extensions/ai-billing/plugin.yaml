@@ -12,7 +12,7 @@ spec:
       timeout: 500
       stream: billing:events
     quota_scope: global
-    event_kind: customer_usage
+    event_kind: usage
     provider: default
     tenant_header: x-mse-tenant
     consumer_header: x-mse-consumer
