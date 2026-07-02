@@ -54,10 +54,16 @@ type memoryConsoleAssembleResponse struct {
 	SchemaVersion  int                     `json:"schema_version"`
 	Decision       string                  `json:"decision"`
 	MemoryMessage  *memoryAssembleMessage  `json:"memory_message,omitempty"`
+	MemoryMessages []memoryAssembleMessage `json:"memory_messages,omitempty"`
 	RecentMessages []memoryAssembleMessage `json:"recent_messages,omitempty"`
 	Trace          map[string]interface{}  `json:"trace,omitempty"`
 	Diagnostics    map[string]interface{}  `json:"diagnostics,omitempty"`
 	Error          string                  `json:"error,omitempty"`
+}
+
+type memoryConsoleAssembleEnvelope struct {
+	Data  *memoryConsoleAssembleResponse `json:"data,omitempty"`
+	Error interface{}                    `json:"error,omitempty"`
 }
 
 type memoryAssembleMessage struct {
@@ -189,7 +195,19 @@ func parseMemoryAssembleResponse(body []byte) (memoryConsoleAssembleResponse, er
 	if err := json.Unmarshal(body, &response); err != nil {
 		return memoryConsoleAssembleResponse{}, errors.New("Console assemble response is not valid JSON")
 	}
-	if response.SchemaVersion != memoryAssembleSchemaVersion {
+	fromEnvelope := false
+	if strings.TrimSpace(response.Decision) == "" {
+		var envelope memoryConsoleAssembleEnvelope
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return memoryConsoleAssembleResponse{}, errors.New("Console assemble response is not valid JSON")
+		}
+		if envelope.Data == nil {
+			return memoryConsoleAssembleResponse{}, errors.New("unsupported Console assemble schema version")
+		}
+		response = *envelope.Data
+		fromEnvelope = true
+	}
+	if response.SchemaVersion != memoryAssembleSchemaVersion && !(fromEnvelope && response.SchemaVersion == 0) {
 		return memoryConsoleAssembleResponse{}, errors.New("unsupported Console assemble schema version")
 	}
 	if strings.TrimSpace(response.Error) != "" {
@@ -202,6 +220,14 @@ func parseMemoryAssembleResponse(body []byte) (memoryConsoleAssembleResponse, er
 		if err := validateMemoryMessage(*response.MemoryMessage, true); err != nil {
 			return memoryConsoleAssembleResponse{}, err
 		}
+	}
+	for _, message := range response.MemoryMessages {
+		if err := validateMemoryMessage(message, true); err != nil {
+			return memoryConsoleAssembleResponse{}, err
+		}
+	}
+	if response.MemoryMessage == nil && len(response.MemoryMessages) > 0 {
+		response.MemoryMessage = &response.MemoryMessages[0]
 	}
 	for _, message := range response.RecentMessages {
 		if err := validateMemoryMessage(message, false); err != nil {

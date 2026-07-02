@@ -292,6 +292,21 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 	})
 }
 
+func TestParseMemoryAssembleResponseAcceptsConsoleAPIEnvelope(t *testing.T) {
+	body := []byte(`{"data":{"decision":"inject","reason":"memory_available","memory_messages":[{"role":"system","content":"Console memory context"}],"recent_messages":[{"role":"user","content":"recent user"},{"role":"assistant","content":"recent assistant"}],"diagnostics":{"source":"console"}}}`)
+
+	response, err := parseMemoryAssembleResponse(body)
+
+	require.NoError(t, err)
+	require.Equal(t, memoryAssembleDecisionInject, response.Decision)
+	require.NotNil(t, response.MemoryMessage)
+	require.Equal(t, "system", response.MemoryMessage.Role)
+	require.Equal(t, "Console memory context", response.MemoryMessage.Content)
+	require.Len(t, response.RecentMessages, 2)
+	require.Equal(t, "recent user", response.RecentMessages[0].Content)
+	require.Equal(t, "recent assistant", response.RecentMessages[1].Content)
+}
+
 func TestMemoryConsoleAssembleBounds(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		body := []byte(`{"schema_version":1,"decision":"skip","trace":{"raw":"` + strings.Repeat("oversized-response ", 20_000) + `"}}`)
