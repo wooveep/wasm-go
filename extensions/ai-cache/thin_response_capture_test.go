@@ -148,6 +148,44 @@ func TestThinResponseCapture(t *testing.T) {
 			requireThinResponseNoLegacyCacheSet(t, host)
 		})
 
+		t.Run("chunked non-streaming upstream response is accumulated before parsing", func(t *testing.T) {
+			host := startThinResponseCaptureRequest(t, false)
+			defer host.Reset()
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			responseBody := []byte(`{
+				"id": "chatcmpl-response-capture-chunked",
+				"object": "chat.completion",
+				"model": "qwen-turbo",
+				"choices": [{
+					"index": 0,
+					"message": {"role": "assistant", "content": "captured chunked answer"},
+					"finish_reason": "stop"
+				}],
+				"usage": {"prompt_tokens": 11, "completion_tokens": 3, "total_tokens": 14}
+			}`)
+			splitAt := bytes.Index(responseBody, []byte(`"captured chunked answer"`))
+			require.Greater(t, splitAt, 0)
+
+			action := host.CallOnHttpStreamingResponseBody(responseBody[:splitAt], false)
+			require.Equal(t, types.ActionContinue, action)
+			_, emitted := thinResponseCaptureEvent(t, host)
+			require.False(t, emitted)
+
+			action = host.CallOnHttpStreamingResponseBody(responseBody[splitAt:], true)
+			require.Equal(t, types.ActionContinue, action)
+
+			event := requireThinResponseCaptureEvent(t, host)
+			require.Equal(t, "captured chunked answer", event["assistant_content"])
+			require.Equal(t, "stop", event["finish_reason"])
+			require.Equal(t, false, event["is_stream"])
+			requireThinResponseCaptureUsage(t, event, 11, 3, 14)
+			requireThinResponseNoLegacyCacheSet(t, host)
+		})
+
 		t.Run("streaming upstream response emits concatenated text usage and finish reason", func(t *testing.T) {
 			host := startThinResponseCaptureRequest(t, true)
 			defer host.Reset()

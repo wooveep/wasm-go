@@ -32,6 +32,7 @@ const (
 	CACHE_RESPONSE_NOSTORE_KEY = "cacheResponseNoStore"
 	CACHE_SENSITIVE_KEY        = "cacheSensitive"
 	CACHE_STREAM_CAPTURE_KEY   = "cacheStreamCapture"
+	CACHE_RESPONSE_CAPTURE_KEY = "cacheResponseCapture"
 
 	DEFAULT_MAX_BODY_BYTES uint32 = 100 * 1024 * 1024
 )

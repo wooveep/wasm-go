@@ -64,6 +64,42 @@ func TestBuildBillingEvent_TrustedCacheReplayFacts(t *testing.T) {
 	require.Equal(t, true, event[trustedUpstreamInvokedFact])
 }
 
+func TestBuildBillingEvent_UsesLocalResponseCodeDetailsForCacheReplay(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		host, status := test.NewTestHost(billingConfig)
+		defer host.Reset()
+		require.Equal(t, types.OnPluginStartStatusOK, status)
+		require.NoError(t, host.SetProperty([]string{"response", "code_details"}, []byte("ai-cache.hit")))
+
+		ctx := &cacheReplayBillingContext{
+			mockBillingHttpContext: mockBillingHttpContext{values: map[string]interface{}{
+				ctxEventID:        "event-cache-hit",
+				ctxIdempotencyKey: "event-cache-hit",
+				ctxRequestID:      "req-cache-hit",
+				ctxRequestPath:    "/v1/chat/completions",
+				ctxTenant:         "tenant-a",
+				ctxConsumer:       "consumer-a",
+				ctxRoute:          "route-a",
+				ctxCluster:        "llm-openai.dns",
+				ctxModel:          "qwen-turbo",
+				ctxStatusCode:     200,
+				ctxInputToken:     int64(7),
+				ctxOutputToken:    int64(3),
+				ctxTotalToken:     int64(10),
+				ctxUsageSource:    usageSourceProvider,
+			}},
+			userAttributes: map[string]interface{}{},
+		}
+
+		body, err := json.Marshal(buildBillingEvent(ctx, BillingConfig{QuotaScope: "global"}, false))
+		require.NoError(t, err)
+
+		var event map[string]interface{}
+		require.NoError(t, json.Unmarshal(body, &event))
+		require.Equal(t, false, event[trustedUpstreamInvokedFact])
+	})
+}
+
 func TestBillingEventIgnoresUserSuppliedUpstreamInvokedFields(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
 		host, status := test.NewTestHost(billingConfig)

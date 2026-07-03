@@ -118,6 +118,7 @@ func requireThinConsoleLookupCall(t *testing.T, host test.TestHost) map[string]i
 	require.Equal(t, "consumer", facts["cache_scope"])
 	require.Equal(t, "policy-v1", facts["cache_policy_version"])
 	require.Equal(t, "non_stream", facts["stream_mode"])
+	require.Equal(t, "weather?", facts["semantic_query_text"])
 	requestDigest, ok := facts["request_digest"].(string)
 	require.True(t, ok, "Console lookup facts should include string request_digest")
 	require.NotEmpty(t, requestDigest)

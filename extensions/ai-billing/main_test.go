@@ -1470,7 +1470,7 @@ func requireRedisBillingEventBody(t *testing.T, host test.TestHost) []byte {
 	t.Helper()
 	attrs := host.GetRedisCalloutAttributes()
 	require.Len(t, attrs, 1)
-	require.Equal(t, "outbound|6379||redis.static", attrs[0].Upstream)
+	require.Regexp(t, `^outbound\|6379\|\|redis\.static(\?.*)?$`, attrs[0].Upstream)
 	command := redisCommand(t, attrs[0].Query)
 	require.Equal(t, []string{"xadd", "billing:events", "*", "event"}, command[:4])
 	return []byte(command[4])

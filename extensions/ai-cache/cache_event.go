@@ -108,12 +108,13 @@ func handleThinResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chun
 		return
 	}
 
+	body := appendThinResponseBodyChunk(ctx, chunk)
 	if !isLastChunk {
 		return
 	}
 	exchange, err := adapter.CaptureResponse(protocol.ResponseCaptureInput{
 		StatusCode: statusCode,
-		Body:       chunk,
+		Body:       body,
 	})
 	if err != nil {
 		log.Warnf("[%s] [handleThinResponseBody] parse non-streaming response failed: %v", PLUGIN_NAME, err)
@@ -122,6 +123,13 @@ func handleThinResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chun
 	}
 	facts := thinResponseFactsFromExchange(kind, exchange)
 	emitThinCacheEvent(ctx, c, facts, false, log)
+}
+
+func appendThinResponseBodyChunk(ctx wrapper.HttpContext, chunk []byte) []byte {
+	body, _ := ctx.GetContext(CACHE_RESPONSE_CAPTURE_KEY).([]byte)
+	body = append(body, chunk...)
+	ctx.SetContext(CACHE_RESPONSE_CAPTURE_KEY, body)
+	return body
 }
 
 func getThinStreamCapture(ctx wrapper.HttpContext) *thinStreamCapture {

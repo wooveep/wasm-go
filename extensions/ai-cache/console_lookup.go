@@ -25,6 +25,7 @@ type consoleLookupRequest struct {
 	CachePolicyVersion string `json:"cache_policy_version"`
 	RequestDigest      string `json:"request_digest"`
 	StreamMode         string `json:"stream_mode"`
+	SemanticQueryText  string `json:"semantic_query_text,omitempty"`
 }
 
 type consoleLookupResponseEnvelope struct {
@@ -94,6 +95,7 @@ func buildConsoleLookupRequestBody(material ScopedCacheKeyMaterial, ctx wrapper.
 		CachePolicyVersion: material.CachePolicyVersion,
 		RequestDigest:      material.RequestDigest,
 		StreamMode:         consoleLookupStreamMode(stream),
+		SemanticQueryText:  strings.TrimSpace(ctx.GetStringContext(CACHE_USER_CONTENT_KEY, "")),
 	})
 }
 

@@ -127,6 +127,7 @@ func TestThinMaterializedLookupUsesDedicatedRedisConfig(t *testing.T) {
 		calls := host.GetRedisCalloutAttributes()
 		require.Len(t, calls, 1)
 		require.Contains(t, calls[0].Upstream, "redis-materialized.static")
+		require.NotContains(t, calls[0].Upstream, "?")
 		cmd, ok := thinResponseCaptureCommand(t, calls[0].Query)
 		require.True(t, ok)
 		require.Len(t, cmd, 2)

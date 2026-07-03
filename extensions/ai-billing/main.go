@@ -735,7 +735,24 @@ func trustedUpstreamInvoked(ctx wrapper.HttpContext) bool {
 	if upstreamInvoked, ok := ctx.GetUserAttribute("upstream_invoked").(bool); ok {
 		return upstreamInvoked
 	}
+	if codeDetails, ok := responseCodeDetails(); ok {
+		return codeDetails == "via_upstream"
+	}
 	return true
+}
+
+func responseCodeDetails() (details string, ok bool) {
+	defer func() {
+		if recover() != nil {
+			details = ""
+			ok = false
+		}
+	}()
+	raw, err := proxywasm.GetProperty([]string{"response", "code_details"})
+	if err != nil || len(raw) == 0 {
+		return "", false
+	}
+	return string(raw), true
 }
 
 func parseBoolHeader(value string) (bool, bool) {
