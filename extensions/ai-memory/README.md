@@ -112,7 +112,7 @@ matchRules:
         - choices.0.message.function_call
         - choices.0.delta.tool_calls
         - choices.0.delta.function_call
-      policy_version: memory-policy-v1
+      policy_version: "7"
 ```
 
 `memory_mode` accepts:
@@ -133,10 +133,10 @@ matchRules:
    continue unchanged.
 2. Body phase parses OpenAI-compatible messages, extracts the latest user
    content, stores request facts, and builds a stable request digest.
-3. Recent-memory phase reads Redis key
-   `memory:recent:<tenant>:<consumer>:<session>` using the configured
-   `recent_cache.key_prefix`. Invalid, expired, mismatched, oversized, or
-   unsupported recent records are treated as misses.
+3. Recent-memory phase reads Console-materialized Redis sorted set key
+   `memory:recent:<tenant>:<consumer>` using `ZREVRANGE 0 <recent_window_turns-1>`.
+   Invalid JSON, unsupported roles, oversized records, or Redis failures are
+   treated as misses.
 4. Console assemble phase runs only for `digest` and `semantic` modes. The
    plugin sends safe request facts to `POST /internal/memory/assemble` and
    applies valid `inject`, `recent_only`, `skip`, or `bypass` decisions.

@@ -82,6 +82,12 @@ func TestParseConfigValidation(t *testing.T) {
 					},
 				}),
 			},
+			{
+				name: "symbolic policy version",
+				config: withRouteConfig(validExternalTargets, map[string]interface{}{
+					"policy_version": "memory-policy-v1",
+				}),
+			},
 		}
 
 		for _, tt := range tests {

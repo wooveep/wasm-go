@@ -38,7 +38,7 @@ func TestMemoryRequestInjection(t *testing.T) {
 			require.Equal(t, "latest memory intent", firstFacts["current_question"])
 			require.Equal(t, "latest memory intent", secondFacts["current_question"])
 			require.Equal(t, "semantic", firstFacts["memory_mode"])
-			require.Equal(t, "memory-policy-v1", firstFacts["policy_version"])
+			require.Equal(t, "7", firstFacts["policy_version"])
 			require.Equal(t, "tenant-a", firstFacts["tenant"])
 			require.Equal(t, "consumer-a", firstFacts["consumer"])
 			require.Equal(t, "session-a", firstFacts["session_id"])
@@ -149,7 +149,7 @@ func memoryInjectionConfig(t *testing.T) json.RawMessage {
 				"inject_role":         "system",
 				"semantic_top_k":      3,
 				"capture_response":    true,
-				"policy_version":      "memory-policy-v1",
+				"policy_version":      "7",
 			},
 		},
 	})
@@ -219,7 +219,7 @@ func memoryAssembleResponse(t *testing.T, decision string, memoryMessage map[str
 		"memory_message":  memoryMessage,
 		"recent_messages": recentMessages,
 		"trace": map[string]interface{}{
-			"policy_version": "memory-policy-v1",
+			"policy_version": "7",
 			"recent_source":  "redis",
 			"raw_trace":      "Console trace raw value",
 		},

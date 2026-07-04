@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/tidwall/gjson"
@@ -123,6 +125,9 @@ func (c PluginConfig) Validate() error {
 	}
 	if c.Route.InjectRole == InjectRoleDeveloper && !c.Route.DeveloperCompatible {
 		return fmt.Errorf("inject_role %q requires developer_compatible true", c.Route.InjectRole)
+	}
+	if err := validatePolicyVersion(c.Route.PolicyVersion); err != nil {
+		return err
 	}
 	return nil
 }
@@ -274,4 +279,16 @@ func validMemoryMode(value string) bool {
 	default:
 		return false
 	}
+}
+
+func validatePolicyVersion(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	policyVersion, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || policyVersion <= 0 {
+		return fmt.Errorf("policy_version must be a positive integer string")
+	}
+	return nil
 }

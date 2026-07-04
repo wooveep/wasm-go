@@ -17,9 +17,9 @@ const memoryRecentRedisUpstream = "outbound|6379||redis.recent.svc.cluster.local
 
 func TestMemoryRecentRedis(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
-		t.Run("hit inserts safe recent messages after memory message", func(t *testing.T) {
+		t.Run("zset hit inserts safe recent messages after memory message", func(t *testing.T) {
 			host := startMemoryRecentRedisRequest(t)
-			callMemoryRecentRedisResponse(t, host, 0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			callMemoryRecentRedisResponse(t, host, 0, validMemoryRecentZSetResponse(t))
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
 				"role":    "system",
@@ -48,47 +48,27 @@ func TestMemoryRecentRedis(t *testing.T) {
 		}{
 			{
 				name:      "invalid JSON",
-				redisResp: test.CreateRedisRespString(`{not-json`),
-			},
-			{
-				name:      "unsupported schema version",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"schema_version": 2})),
-			},
-			{
-				name:      "tenant mismatch",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"tenant": "tenant-b"})),
-			},
-			{
-				name:      "consumer mismatch",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"consumer": "consumer-b"})),
-			},
-			{
-				name:      "policy mismatch",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"policy_version": "memory-policy-v2"})),
-			},
-			{
-				name:      "expiration",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{"expires_at_ms": int64(1)})),
+				redisResp: test.CreateRedisRespArray([]interface{}{`{not-json`}),
 			},
 			{
 				name: "unsupported roles",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{
+				redisResp: test.CreateRedisRespArray([]interface{}{validMemoryRecentMember(t, map[string]interface{}{
 					"messages": []map[string]interface{}{
 						{"role": "user", "content": "valid recent user should be rejected with the whole record"},
 						{"role": "tool", "content": "tool output must not be injected as chat memory"},
 						{"role": "assistant", "content": "valid recent assistant should be rejected with the whole record"},
 					},
-				})),
+				})}),
 			},
 			{
 				name: "oversized values",
-				redisResp: test.CreateRedisRespString(validMemoryRecentRecord(t, map[string]interface{}{
+				redisResp: test.CreateRedisRespArray([]interface{}{validMemoryRecentMember(t, map[string]interface{}{
 					"messages": []map[string]interface{}{
 						{"role": "user", "content": "valid recent user should be rejected with the whole record"},
 						{"role": "user", "content": strings.Repeat("x", 70_000)},
 						{"role": "assistant", "content": "valid recent assistant should be rejected with the whole record"},
 					},
-				})),
+				})}),
 			},
 			{
 				name:      "RESP error failure",
@@ -148,13 +128,15 @@ func requireMemoryRecentRedisLookup(t *testing.T, host test.TestHost) {
 	require.Equal(t, memoryRecentRedisUpstream, calls[0].Upstream)
 
 	cmd := requireMemoryRecentRedisCommand(t, calls[0].Query)
-	require.Len(t, cmd, 2, "recent memory Redis lookup should issue GET with one key")
-	require.Equal(t, "GET", strings.ToUpper(cmd[0]))
+	require.Len(t, cmd, 4, "recent memory Redis lookup should issue ZREVRANGE with key and bounded range")
+	require.Equal(t, "ZREVRANGE", strings.ToUpper(cmd[0]))
 	key := cmd[1]
 	require.Truef(t, strings.HasPrefix(key, "memory:recent"), "recent memory key should use configured prefix, got %q", key)
 	require.Contains(t, key, "tenant-a")
 	require.Contains(t, key, "consumer-a")
-	require.Contains(t, key, "session-a")
+	require.NotContains(t, key, "session-a")
+	require.Equal(t, "0", cmd[2])
+	require.Equal(t, "5", cmd[3])
 }
 
 func requireMemoryRecentRedisCommand(t *testing.T, query []byte) []string {
@@ -191,18 +173,27 @@ func requireMemoryRecentAssembleOnly(t *testing.T, host test.TestHost) {
 	requireMemoryMessage(t, messages[1], "user", "current question")
 }
 
-func validMemoryRecentRecord(t *testing.T, overrides map[string]interface{}) string {
+func validMemoryRecentZSetResponse(t *testing.T, members ...map[string]interface{}) []byte {
+	t.Helper()
+	values := make([]interface{}, 0, len(members))
+	if len(members) == 0 {
+		values = append(values, validMemoryRecentMember(t, nil))
+	}
+	for _, member := range members {
+		values = append(values, validMemoryRecentMember(t, member))
+	}
+	return test.CreateRedisRespArray(values)
+}
+
+func validMemoryRecentMember(t *testing.T, overrides map[string]interface{}) string {
 	t.Helper()
 	record := map[string]interface{}{
 		"schema_version": 1,
-		"tenant":         "tenant-a",
-		"consumer":       "consumer-a",
-		"policy_version": "memory-policy-v1",
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": "recent safe user"},
 			{"role": "assistant", "content": "recent safe assistant"},
 		},
-		"expires_at_ms": time.Now().Add(time.Hour).UnixMilli(),
+		"captured_at_ms": time.Now().Add(-time.Minute).UnixMilli(),
 	}
 	for key, value := range overrides {
 		record[key] = value

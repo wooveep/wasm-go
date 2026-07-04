@@ -134,7 +134,7 @@ func TestMemoryPrivacyAndIsolation(t *testing.T) {
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					host := startMemoryPrivacyAssembleRequest(t, memoryEventRequestBody(t, "privacy assemble prompt", nil))
-					host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+					host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 					requireMemoryAssembleCall(t, host)
 					host.CallOnHttpCall(memoryAssembleHeaders(), tt.response)
 

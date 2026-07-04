@@ -24,11 +24,7 @@ var memoryLoadRecentMemory = loadRecentMemory
 
 type memoryRecentRecord struct {
 	SchemaVersion int                   `json:"schema_version"`
-	Tenant        string                `json:"tenant"`
-	Consumer      string                `json:"consumer"`
-	PolicyVersion string                `json:"policy_version"`
 	Messages      []memoryRecentMessage `json:"messages"`
-	ExpiresAtMS   int64                 `json:"expires_at_ms"`
 }
 
 type memoryRecentMessage struct {
@@ -36,19 +32,15 @@ type memoryRecentMessage struct {
 	Content string `json:"content"`
 }
 
-type memoryRecentValidationInput struct {
-	Tenant        string
-	Consumer      string
-	PolicyVersion string
-	NowMS         int64
-}
-
 func loadRecentMemory(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) error {
+	stop := c.Route.RecentWindowTurns - 1
+	if stop < 0 {
+		stop = 0
+	}
 	key := buildRecentMemoryKey(
 		c.RecentCache.KeyPrefix,
 		ctx.GetStringContext(memoryTenantContextKey, ""),
 		ctx.GetStringContext(memoryConsumerContextKey, ""),
-		ctx.GetStringContext(memorySessionContextKey, ""),
 	)
 	client := wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
 		FQDN: c.RecentCache.ServiceName,
@@ -63,7 +55,7 @@ func loadRecentMemory(ctx wrapper.HttpContext, c config.PluginConfig, log log.Lo
 	); err != nil {
 		return err
 	}
-	return client.Get(key, func(response resp.Value) {
+	return client.ZRevRange(key, 0, stop, func(response resp.Value) {
 		handleRecentMemoryResponse(key, response, ctx, c, log)
 	})
 }
@@ -78,18 +70,13 @@ func handleRecentMemoryResponse(key string, response resp.Value, ctx wrapper.Htt
 		continueAfterRecentMemory(ctx, c, log)
 		return
 	}
-	record, err := loadAndValidateRecentMemory(response.String(), memoryRecentValidationInput{
-		Tenant:        ctx.GetStringContext(memoryTenantContextKey, ""),
-		Consumer:      ctx.GetStringContext(memoryConsumerContextKey, ""),
-		PolicyVersion: c.Route.PolicyVersion,
-		NowMS:         nowMillis(),
-	})
+	messages, err := loadAndValidateRecentMemory(response.Array())
 	if err != nil {
 		log.Warnf("[ai-memory] recent memory record rejected for key %s: %v", key, err)
 		continueAfterRecentMemory(ctx, c, log)
 		return
 	}
-	ctx.SetContext(memoryRecentMessagesContextKey, record.toOpenAIMessages())
+	ctx.SetContext(memoryRecentMessagesContextKey, messages)
 	continueAfterRecentMemory(ctx, c, log)
 }
 
@@ -106,7 +93,7 @@ func continueAfterRecentMemory(ctx wrapper.HttpContext, c config.PluginConfig, l
 	proxywasm.ResumeHttpRequest()
 }
 
-func buildRecentMemoryKey(prefix, tenant, consumer, session string) string {
+func buildRecentMemoryKey(prefix, tenant, consumer string) string {
 	prefix = strings.TrimRight(prefix, ":")
 	if prefix == "" {
 		prefix = "memory:recent"
@@ -115,7 +102,6 @@ func buildRecentMemoryKey(prefix, tenant, consumer, session string) string {
 		prefix,
 		defaultKeyPart(tenant),
 		defaultKeyPart(consumer),
-		defaultKeyPart(session),
 	}, ":")
 }
 
@@ -127,44 +113,44 @@ func defaultKeyPart(value string) string {
 	return value
 }
 
-func loadAndValidateRecentMemory(raw string, input memoryRecentValidationInput) (memoryRecentRecord, error) {
+func loadAndValidateRecentMemory(members []resp.Value) ([]sessionctx.OpenAIMessage, error) {
+	messages := make([]sessionctx.OpenAIMessage, 0, len(members)*2)
+	for i := len(members) - 1; i >= 0; i-- {
+		memberMessages, err := loadAndValidateRecentMember(members[i].String())
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, memberMessages...)
+	}
+	return messages, nil
+}
+
+func loadAndValidateRecentMember(raw string) ([]sessionctx.OpenAIMessage, error) {
 	if strings.TrimSpace(raw) == "" {
-		return memoryRecentRecord{}, errors.New("empty recent memory record")
+		return nil, errors.New("empty recent memory record")
 	}
 	if len(raw) > maxRecentRecordBytes {
-		return memoryRecentRecord{}, errors.New("recent memory record too large")
+		return nil, errors.New("recent memory record too large")
 	}
 	var record memoryRecentRecord
 	if err := json.Unmarshal([]byte(raw), &record); err != nil {
-		return memoryRecentRecord{}, errors.New("recent memory record is not valid JSON")
+		return nil, errors.New("recent memory record is not valid JSON")
 	}
-	if err := validateRecentMemory(record, input); err != nil {
-		return memoryRecentRecord{}, err
+	if err := validateRecentMemory(record); err != nil {
+		return nil, err
 	}
-	return record, nil
+	return record.toOpenAIMessages(), nil
 }
 
-func validateRecentMemory(record memoryRecentRecord, input memoryRecentValidationInput) error {
+func validateRecentMemory(record memoryRecentRecord) error {
 	if record.SchemaVersion != memoryRecentSchemaVersion {
 		return errors.New("unsupported recent memory schema version")
-	}
-	if record.Tenant != input.Tenant {
-		return errors.New("recent memory tenant mismatch")
-	}
-	if record.Consumer != input.Consumer {
-		return errors.New("recent memory consumer mismatch")
-	}
-	if record.PolicyVersion != input.PolicyVersion {
-		return errors.New("recent memory policy mismatch")
-	}
-	if record.ExpiresAtMS <= 0 || record.ExpiresAtMS <= input.NowMS {
-		return errors.New("recent memory record expired")
 	}
 	for _, message := range record.Messages {
 		if message.Role != "user" && message.Role != "assistant" {
 			return fmt.Errorf("unsupported recent memory role %q", message.Role)
 		}
-		if len(message.Content) > maxRecentMessageBytes {
+		if len(strings.TrimSpace(message.Content)) > maxRecentMessageBytes {
 			return errors.New("recent memory message too large")
 		}
 	}
@@ -174,9 +160,13 @@ func validateRecentMemory(record memoryRecentRecord, input memoryRecentValidatio
 func (r memoryRecentRecord) toOpenAIMessages() []sessionctx.OpenAIMessage {
 	messages := make([]sessionctx.OpenAIMessage, 0, len(r.Messages))
 	for _, message := range r.Messages {
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
 		messages = append(messages, sessionctx.OpenAIMessage{
 			Role:    message.Role,
-			Content: message.Content,
+			Content: content,
 		})
 	}
 	return messages

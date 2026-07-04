@@ -141,7 +141,7 @@ func TestParseConfig(t *testing.T) {
 							"choices.0.delta.tool_calls",
 							"choices.0.delta.content.tool_calls",
 						},
-						"policy_version": "memory-policy-v1",
+						"policy_version": "7",
 					},
 				},
 			}))
@@ -189,7 +189,7 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, "choices.0.message.content", mustStringField(t, config, "Route", "ResponseValueFrom"))
 			require.Equal(t, "choices.0.delta.content", mustStringField(t, config, "Route", "StreamValueFrom"))
 			require.Equal(t, []string{"choices.0.delta.tool_calls", "choices.0.delta.content.tool_calls"}, mustSliceField(t, config, "Route", "ToolCallsFrom"))
-			require.Equal(t, "memory-policy-v1", mustStringField(t, config, "Route", "PolicyVersion"))
+			require.Equal(t, "7", mustStringField(t, config, "Route", "PolicyVersion"))
 		})
 
 		t.Run("global defaults are inherited when route only configures memory behavior", func(t *testing.T) {

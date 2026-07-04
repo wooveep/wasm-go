@@ -217,7 +217,7 @@ func memoryBuildEventTestConfig(captureResponse bool) config.PluginConfig {
 		Route: config.RouteConfig{
 			MemoryMode:      config.MemoryModeSemantic,
 			CaptureResponse: captureResponse,
-			PolicyVersion:   "memory-policy-v1",
+			PolicyVersion:   "7",
 		},
 	}
 }
@@ -231,7 +231,7 @@ func memoryBuildEventTestContext(noStore bool) *memoryCaptureTestContext {
 	ctx.SetContext(memoryRequestPathContextKey, "/v1/chat/completions")
 	ctx.SetContext(memoryRequestDigestContextKey, "sha256:request")
 	ctx.SetContext(memoryModeContextKey, config.MemoryModeSemantic)
-	ctx.SetContext(memoryPolicyVersionContextKey, "memory-policy-v1")
+	ctx.SetContext(memoryPolicyVersionContextKey, "7")
 	ctx.SetContext(memoryRouteContextKey, "memory-route")
 	ctx.SetContext(memoryModelContextKey, "qwen-turbo")
 	ctx.SetContext(memoryStartedAtContextKey, int64(1782420000000))
@@ -264,7 +264,7 @@ func requireMemoryBuildEventSafeFacts(t *testing.T, event MemoryEvent, statusCod
 	require.Equal(t, "sha256:request", event.RequestDigest)
 	require.Equal(t, "memory-route", event.Route.Name)
 	require.Equal(t, "qwen-turbo", event.Model.Name)
-	require.Equal(t, "memory-policy-v1", event.PolicyVersion)
+	require.Equal(t, "7", event.PolicyVersion)
 	require.Equal(t, config.MemoryModeSemantic, event.MemoryMode)
 	require.Equal(t, statusCode, event.StatusCode)
 	require.Equal(t, int64(1782420000000), event.StartedAtMS)

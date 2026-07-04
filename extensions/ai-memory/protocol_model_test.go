@@ -22,7 +22,7 @@ func TestSharedProtocolModelRepresentsAIMemoryEventFacts(t *testing.T) {
 		},
 		Route:             &MemoryEventRoute{Name: "route-a"},
 		Model:             &MemoryEventModel{Name: "qwen-turbo"},
-		MemoryEventPolicy: MemoryEventPolicy{PolicyVersion: "memory-policy-v1", MemoryMode: "semantic"},
+		MemoryEventPolicy: MemoryEventPolicy{PolicyVersion: "7", MemoryMode: "semantic"},
 		MemoryEventStatus: MemoryEventStatus{StatusCode: 200},
 		MemoryEventStream: MemoryEventStream{IsStream: true},
 		MemoryEventToolCall: MemoryEventToolCall{
@@ -73,7 +73,7 @@ func TestSharedProtocolModelRepresentsAIMemoryEventFacts(t *testing.T) {
 	}
 
 	require.Equal(t, protocol.ProtocolChatCompletions, normalized.Request.Protocol)
-	require.Equal(t, "memory-policy-v1", normalized.CacheDigest.ContextPolicyVersion)
+	require.Equal(t, "7", normalized.CacheDigest.ContextPolicyVersion)
 	require.Equal(t, "assembled-memory-digest-a", normalized.CacheDigest.InjectedContextDigest)
 	require.Equal(t, "we decided to ship", normalized.Response.Text)
 	require.Equal(t, 17, normalized.Usage.TotalTokens)

@@ -286,7 +286,7 @@ func memoryResponseCaptureConfig(t *testing.T, captureResponse bool) json.RawMes
 				"no_store_header":     memoryNoStoreHeader,
 				"response_value_from": "choices.0.message.content",
 				"tool_calls_from":     []string{"choices.0.message.custom_tool_calls"},
-				"policy_version":      "memory-policy-v1",
+				"policy_version":      "7",
 			},
 		},
 	})
@@ -352,7 +352,7 @@ func requireMemoryResponseSafeFacts(t *testing.T, event map[string]interface{}, 
 	require.Equal(t, map[string]interface{}{"name": "memory-route"}, event["route"])
 	require.Equal(t, map[string]interface{}{"name": memoryResponseCaptureModel}, event["model"])
 	require.Equal(t, "recent-only", event["memory_mode"])
-	require.Equal(t, "memory-policy-v1", event["policy_version"])
+	require.Equal(t, "7", event["policy_version"])
 	require.EqualValues(t, statusCode, event["status_code"])
 	require.NotEmpty(t, event["event_id"])
 	require.NotEmpty(t, event["idempotency_key"])

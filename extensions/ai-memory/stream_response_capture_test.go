@@ -190,7 +190,7 @@ func memoryStreamingResponseCaptureConfig(t *testing.T) json.RawMessage {
 					"choices.0.delta.tool_calls",
 					"choices.0.delta.content.tool_calls",
 				},
-				"policy_version": "memory-policy-v1",
+				"policy_version": "7",
 			},
 		},
 	})

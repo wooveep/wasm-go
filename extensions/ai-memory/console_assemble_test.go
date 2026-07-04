@@ -29,7 +29,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 
 		t.Run("recent-only mode skips Console assemble and injects Redis recent messages", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "recent-only")
-			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 
 			require.Empty(t, host.GetHttpCalloutAttributes(), "recent-only mode must not call Console assemble")
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
@@ -170,7 +170,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				host := startMemoryConsoleAssembleRequest(t, "semantic")
-				host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+				host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 				requireMemoryAssembleCall(t, host)
 
 				host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, tt.decision, tt.memoryMessage, tt.responseRecent))
@@ -191,7 +191,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		t.Run("skip decision preserves original request body without empty rewrite", func(t *testing.T) {
 			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
 			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)
-			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "skip", nil, nil))
@@ -202,7 +202,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 
 		t.Run("timeout falls back to Redis recent memory", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "semantic")
-			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(nil, nil)
@@ -217,7 +217,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 
 		t.Run("invalid response falls back to Redis recent memory and does not leak raw memory into logs", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "semantic")
-			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"system","content":"raw Console memory must not be logged"}`))
@@ -234,7 +234,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		t.Run("invalid response with multi-user request preserves original body", func(t *testing.T) {
 			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
 			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)
-			host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"system","content":"raw Console memory must not be logged"}`))
@@ -264,7 +264,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					host := startMemoryConsoleAssembleRequest(t, "semantic")
-					host.CallOnRedisCall(0, test.CreateRedisRespString(validMemoryRecentRecord(t, nil)))
+					host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
 					requireMemoryAssembleCall(t, host)
 
 					host.CallOnHttpCall(memoryAssembleHeaders(), tt.response)
@@ -354,7 +354,7 @@ func memoryConsoleAssembleConfig(t *testing.T, memoryMode string) json.RawMessag
 				"inject_role":         "system",
 				"semantic_top_k":      3,
 				"capture_response":    true,
-				"policy_version":      "memory-policy-v1",
+				"policy_version":      "7",
 			},
 		},
 	})
@@ -473,7 +473,7 @@ func memoryConsoleAssembleCustomConfig(t *testing.T, memoryMode string, routeOve
 		"inject_role":         "system",
 		"semantic_top_k":      3,
 		"capture_response":    true,
-		"policy_version":      "memory-policy-v1",
+		"policy_version":      "7",
 	}
 	for key, value := range routeOverrides {
 		route[key] = value

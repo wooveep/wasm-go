@@ -213,7 +213,7 @@ Request body:
   "recent_window_turns": 6,
   "memory_token_budget": 1500,
   "semantic_top_k": 3,
-  "policy_version": "memory-policy-version"
+  "policy_version": "7"
 }
 ```
 
@@ -232,7 +232,7 @@ Response body:
     { "role": "assistant", "content": "..." }
   ],
   "trace": {
-    "policy_version": "memory-policy-version",
+    "policy_version": "7",
     "recent_source": "redis",
     "digest_count": 1,
     "semantic_count": 3
@@ -288,7 +288,7 @@ The event JSON fields are:
   "request_id": "gateway-request-id",
   "request_path": "/v1/chat/completions",
   "request_digest": "sha256:...",
-  "policy_version": "memory-policy-version",
+  "policy_version": "7",
   "memory_mode": "semantic",
   "user_content": "latest user input when capture is allowed",
   "assistant_content": "assistant output when capture is allowed",
@@ -319,26 +319,25 @@ plugin does not trim the producer stream and does not write DLQ entries.
 ## Redis Recent Read
 
 Recent memory in Redis is Console-derived runtime state. The plugin can read it
-for low-latency fallback, but it must treat Redis as optional.
+for low-latency fallback, but it must treat Redis as optional. Console stores
+recent windows as a Redis sorted set at `<recent_cache.key_prefix>:<tenant>:<consumer>`;
+the plugin reads the latest window with `ZREVRANGE 0 <recent_window_turns-1>`.
 
-Recommended value shape:
+Recommended sorted-set member shape:
 
 ```json
 {
   "schema_version": 1,
-  "tenant": "tenant-slug",
-  "consumer": "consumer-name",
-  "policy_version": "memory-policy-version",
   "messages": [
     { "role": "user", "content": "..." },
     { "role": "assistant", "content": "..." }
   ],
-  "expires_at_ms": 1782423600000
+  "captured_at_ms": 1782420000000
 }
 ```
 
-The plugin must miss on invalid JSON, tenant mismatch, consumer mismatch,
-expired data, policy mismatch, unsupported roles, or oversized values.
+The plugin must miss on Redis errors, invalid JSON, unsupported roles, or
+oversized values. Tenant and consumer isolation come from the Redis key parts.
 
 ## Failure and Latency Policy
 
@@ -420,7 +419,7 @@ Plugin tests should cover:
 - Missing tenant or consumer fail-open.
 - Request body parsing and latest user extraction.
 - Multi-user-turn request avoids duplicate recent injection.
-- Redis recent hit, miss, invalid JSON, mismatch, and timeout.
+- Redis recent hit, miss, invalid JSON, unsupported role, and timeout.
 - Console assemble inject, recent-only, skip, timeout, and failure.
 - Request body replacement ordering.
 - Non-streaming response extraction.
