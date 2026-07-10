@@ -142,6 +142,62 @@ func TestParseConfigOptionalBackends(t *testing.T) {
 	})
 }
 
+func TestParseConfigSharedRedisConnectionValidation(t *testing.T) {
+	test.RunGoTest(t, func(t *testing.T) {
+		base := map[string]interface{}{
+			"redis_stream": map[string]interface{}{
+				"service_name": "redis.shared",
+				"database":     2,
+				"username":     "memory-worker",
+				"password":     "shared-secret",
+			},
+			"recent_cache": map[string]interface{}{
+				"service_name": "redis.shared",
+				"database":     2,
+				"username":     "memory-worker",
+				"password":     "shared-secret",
+			},
+			"fail_policy": "open",
+			"_rules_": []map[string]interface{}{
+				{
+					"_match_route_": []string{"memory-route"},
+					"memory_mode":   "recent-only",
+				},
+			},
+		}
+
+		t.Run("matching database and credentials are accepted", func(t *testing.T) {
+			host, status := newMemoryConfigTestHost(mustMemoryConfig(t, base))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+		})
+
+		for _, field := range []string{"database", "username", "password"} {
+			t.Run("mismatched "+field+" is rejected", func(t *testing.T) {
+				config := withGlobalConfig(base, map[string]interface{}{
+					"recent_cache": map[string]interface{}{
+						"service_name": "redis.shared",
+						"database":     2,
+						"username":     "memory-worker",
+						"password":     "shared-secret",
+					},
+				})
+				recent := config["recent_cache"].(map[string]interface{})
+				switch field {
+				case "database":
+					recent[field] = 3
+				default:
+					recent[field] = "different"
+				}
+
+				host, status := newMemoryConfigTestHost(mustMemoryConfig(t, config))
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusFailed, status)
+			})
+		}
+	})
+}
+
 func TestParseConfigInjectRoleValidation(t *testing.T) {
 	test.RunGoTest(t, func(t *testing.T) {
 		validExternalTargets := map[string]interface{}{

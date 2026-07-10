@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/higress-group/wasm-go/pkg/log"
+	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/gjson"
 )
 
@@ -68,6 +69,9 @@ type RouteConfig struct {
 
 // PluginConfig is the ai-memory plugin configuration root.
 type PluginConfig struct {
+	recentRedis wrapper.RedisClient
+	eventRedis  EventRedisClient
+
 	RedisStream        RedisStreamConfig     `yaml:"redis_stream" json:"redis_stream"`
 	RecentCache        RecentCacheConfig     `yaml:"recent_cache" json:"recent_cache"`
 	ConsoleInternal    ConsoleInternalConfig `yaml:"console_internal" json:"console_internal"`
@@ -117,6 +121,12 @@ func (c PluginConfig) Validate() error {
 	if c.RedisStream.ServiceName == "" {
 		return fmt.Errorf("redis_stream.service_name is required")
 	}
+	if sharedRedisEndpoint(c.RedisStream, c.RecentCache) &&
+		(c.RedisStream.Username != c.RecentCache.Username ||
+			c.RedisStream.Password != c.RecentCache.Password ||
+			c.RedisStream.Database != c.RecentCache.Database) {
+		return fmt.Errorf("redis_stream and recent_cache sharing an endpoint must use the same credentials and database")
+	}
 	if !validMemoryMode(c.Route.MemoryMode) {
 		return fmt.Errorf("unsupported memory_mode %q", c.Route.MemoryMode)
 	}
@@ -132,8 +142,62 @@ func (c PluginConfig) Validate() error {
 	return nil
 }
 
+func sharedRedisEndpoint(stream RedisStreamConfig, recent RecentCacheConfig) bool {
+	return strings.TrimSpace(recent.ServiceName) != "" &&
+		strings.TrimSpace(stream.ServiceName) == strings.TrimSpace(recent.ServiceName) &&
+		stream.ServicePort == recent.ServicePort
+}
+
+func sharedRedisOperationTimeout(streamTimeout, recentTimeout int) int {
+	if streamTimeout <= 0 {
+		return recentTimeout
+	}
+	if recentTimeout <= 0 || streamTimeout < recentTimeout {
+		return streamTimeout
+	}
+	return recentTimeout
+}
+
 func (c *PluginConfig) Complete(log log.Log) error {
+	recentTimeout := c.RecentCache.Timeout
+	eventConfig := c.RedisStream
+	if sharedRedisEndpoint(c.RedisStream, c.RecentCache) {
+		effectiveTimeout := sharedRedisOperationTimeout(c.RedisStream.Timeout, c.RecentCache.Timeout)
+		recentTimeout = effectiveTimeout
+		eventConfig.Timeout = effectiveTimeout
+	}
+	if c.recentRedis == nil && c.RecentCache.ServiceName != "" {
+		client := wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
+			FQDN: c.RecentCache.ServiceName,
+			Port: int64(c.RecentCache.ServicePort),
+		})
+		if err := client.Init(
+			c.RecentCache.Username,
+			c.RecentCache.Password,
+			int64(recentTimeout),
+			wrapper.WithDataBase(c.RecentCache.Database),
+			wrapper.WithDisableBuffer(),
+		); err != nil {
+			return err
+		}
+		c.recentRedis = client
+	}
+	if c.eventRedis == nil {
+		client := newEventRedisClient(eventConfig)
+		if err := client.Init(); err != nil {
+			return err
+		}
+		c.eventRedis = client
+	}
 	return nil
+}
+
+func (c PluginConfig) GetRecentRedisClient() wrapper.RedisClient {
+	return c.recentRedis
+}
+
+func (c PluginConfig) GetEventRedisClient() EventRedisClient {
+	return c.eventRedis
 }
 
 func defaultPluginConfig() PluginConfig {

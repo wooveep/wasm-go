@@ -123,6 +123,10 @@ Rules:
 - `redis_stream.stream` defaults to `memory:events`.
 - Rule-level `redis_stream`, `recent_cache`, and `console_internal` overrides
   are not supported in the first version.
+- A shared `redis_stream` and `recent_cache` service/port uses one raw Redis
+  client. Database and credentials must match, and both startup initializations
+  use immediate dispatch plus the smaller positive configured timeout.
+- Distinct Redis endpoints retain their independently configured timeouts.
 - `fail_policy` currently only supports `open`.
 - Credential fields are sensitive and must be redacted in logs and Console UI.
 

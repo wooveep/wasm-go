@@ -42,18 +42,9 @@ func loadRecentMemory(ctx wrapper.HttpContext, c config.PluginConfig, log log.Lo
 		ctx.GetStringContext(memoryTenantContextKey, ""),
 		ctx.GetStringContext(memoryConsumerContextKey, ""),
 	)
-	client := wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
-		FQDN: c.RecentCache.ServiceName,
-		Port: int64(c.RecentCache.ServicePort),
-	})
-	if err := client.Init(
-		c.RecentCache.Username,
-		c.RecentCache.Password,
-		int64(c.RecentCache.Timeout),
-		wrapper.WithDataBase(c.RecentCache.Database),
-		wrapper.WithDisableBuffer(),
-	); err != nil {
-		return err
+	client := c.GetRecentRedisClient()
+	if client == nil {
+		return errors.New("recent memory Redis client is not configured")
 	}
 	return client.ZRevRange(key, 0, stop, func(response resp.Value) {
 		handleRecentMemoryResponse(key, response, ctx, c, log)

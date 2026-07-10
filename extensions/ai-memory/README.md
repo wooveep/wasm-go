@@ -115,6 +115,13 @@ matchRules:
       policy_version: "7"
 ```
 
+When `redis_stream` and `recent_cache` share the same service and port, Higress
+uses one raw Redis client for both. They must use the same database and
+credentials. The plugin initializes both roles with immediate dispatch and the
+smaller positive configured timeout, so the recent-memory latency bound also
+applies to event writes on that shared endpoint. Distinct endpoints retain
+their independently configured timeouts.
+
 `memory_mode` accepts:
 
 | Value | Behavior |
