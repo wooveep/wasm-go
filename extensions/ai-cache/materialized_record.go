@@ -9,6 +9,7 @@ import (
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
+	"github.com/higress-group/wasm-go/pkg/ai/memorycache"
 	logs "github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 )
@@ -122,7 +123,7 @@ func replayMaterializedRecord(record MaterializedReplayRecord, stream bool, ctx 
 	ctx.SetUserAttribute("upstream_invoked", false)
 	ctx.WriteUserAttributeToLogWithKey(wrapper.AILogKey)
 
-	proxywasm.SendHttpResponseWithDetail(uint32(statusCode), "ai-cache.hit", [][2]string{{"content-type", serialized.ContentType}}, serialized.Body, -1)
+	proxywasm.SendHttpResponseWithDetail(uint32(statusCode), memorycache.CacheHitResponseDetail, [][2]string{{"content-type", serialized.ContentType}}, serialized.Body, -1)
 	return nil
 }
 

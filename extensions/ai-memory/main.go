@@ -203,6 +203,11 @@ func memoryConsoleAssembleConfigured(c config.PluginConfig) bool {
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
+	if memoryResponseIsCacheReplay() {
+		markMemoryGate(ctx, "cache-replay")
+		ctx.DontReadResponseBody()
+		return types.ActionContinue
+	}
 	if memoryGateReason(ctx) != "" {
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
