@@ -6,6 +6,7 @@ import (
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/memorycache"
 	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
@@ -33,6 +34,7 @@ const (
 	CACHE_SENSITIVE_KEY        = "cacheSensitive"
 	CACHE_STREAM_CAPTURE_KEY   = "cacheStreamCapture"
 	CACHE_RESPONSE_CAPTURE_KEY = "cacheResponseCapture"
+	CACHE_MEMORY_DIGEST_KEY    = "cacheMemoryDigest"
 
 	DEFAULT_MAX_BODY_BYTES uint32 = 100 * 1024 * 1024
 )
@@ -78,6 +80,7 @@ func parseOverrideConfig(json gjson.Result, global config.PluginConfig, c *confi
 
 func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
 	ctx.DisableReroute()
+	_ = proxywasm.RemoveHttpRequestHeader(memorycache.DeprecatedDigestHeader)
 	skipCache, _ := proxywasm.GetHttpRequestHeader(SKIP_CACHE_HEADER)
 	if isTruthyHeaderValue(skipCache) {
 		ctx.SetContext(SKIP_CACHE_HEADER, struct{}{})
@@ -141,6 +144,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log lo
 }
 
 func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []byte, log log.Log) types.Action {
+	consumeThinMemoryDigest(ctx, c)
 	if cacheGateReason(ctx) != "" {
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
@@ -191,7 +195,7 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
-	cachePolicyVersion, ok := thinEffectiveCachePolicyVersion(c, log)
+	cachePolicyVersion, ok := thinEffectiveCachePolicyVersion(ctx, c, log)
 	if !ok {
 		markCacheGate(ctx, "memory-missing-digest")
 		ctx.DontReadResponseBody()
@@ -234,14 +238,13 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 	return types.ActionPause
 }
 
-func thinEffectiveCachePolicyVersion(c config.PluginConfig, log log.Log) (string, bool) {
+func thinEffectiveCachePolicyVersion(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) (string, bool) {
 	if !c.RoutePolicy.Memory.Enabled || c.RoutePolicy.Memory.CacheMode != config.MEMORY_CACHE_MODE_POLICY_DIGEST {
 		return c.CachePolicyVersion, true
 	}
-	digest, _ := proxywasm.GetHttpRequestHeader(c.RoutePolicy.Memory.DigestHeader)
-	digest = strings.TrimSpace(digest)
+	digest := ctx.GetStringContext(CACHE_MEMORY_DIGEST_KEY, "")
 	if digest == "" {
-		log.Warnf("[thinEffectiveCachePolicyVersion] memory digest header %s is missing, fail open", c.RoutePolicy.Memory.DigestHeader)
+		log.Warnf("[thinEffectiveCachePolicyVersion] trusted memory digest property is missing, fail open")
 		return "", false
 	}
 	return strings.Join([]string{
@@ -250,6 +253,14 @@ func thinEffectiveCachePolicyVersion(c config.PluginConfig, log log.Log) (string
 		c.RoutePolicy.Memory.PolicyVersion,
 		digest,
 	}, "|"), true
+}
+
+func consumeThinMemoryDigest(ctx wrapper.HttpContext, c config.PluginConfig) {
+	if !c.RoutePolicy.Memory.Enabled {
+		return
+	}
+	digest, _ := proxywasm.GetProperty([]string{memorycache.TrustedDigestProperty})
+	ctx.SetContext(CACHE_MEMORY_DIGEST_KEY, strings.TrimSpace(string(digest)))
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {

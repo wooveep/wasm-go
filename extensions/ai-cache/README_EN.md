@@ -90,7 +90,6 @@ route_policy:
     enabled: true
     cache_mode: policy_digest
     policy_version: memory-policy-v1
-    digest_header: x-mse-memory-digest
 tenant_header: x-mse-tenant
 consumer_header: x-mse-consumer
 session_header: x-openclaw-session-key
@@ -127,13 +126,16 @@ fail_policy: open
 | route_policy.memory.enabled | bool | false | Enables memory-aware cache policy |
 | route_policy.memory.cache_mode | string | `policy_digest` | `policy_digest` includes memory policy and digest in the cache key; `bypass` skips cache |
 | route_policy.memory.policy_version | string | - | Memory policy version used in memory-aware cache keys |
-| route_policy.memory.digest_header | string | `x-mse-memory-digest` | Header produced by `ai-memory` for assembled memory digest |
 | tenant_header | string | `x-mse-tenant` | Tenant identity header |
 | consumer_header | string | `x-mse-consumer` | Consumer identity header |
 | session_header | string | `x-openclaw-session-key` | Session identity header |
 | cache_scope | string | `tenant` | `tenant` or `consumer`; memory-aware routes should use `consumer` |
 | cache_policy_version | string | - | Required when thin cache lookup, replay, or event emission is enabled |
 | fail_policy | string | `open` | Current production behavior is fail-open |
+
+`policy_digest` receives the digest produced by `ai-memory` through the private
+Proxy-Wasm filter-state property `mse_ai_memory_context_digest`, not an HTTP
+header. Both plugins remove the deprecated `x-mse-memory-digest` request header.
 
 ## Materialized Replay Records
 

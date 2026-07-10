@@ -6,11 +6,10 @@ import (
 	"testing"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/memorycache"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
-
-const thinMemoryDigestHeader = "x-mse-memory-digest"
 
 func TestThinMemoryAwareCache(t *testing.T) {
 	test.RunTest(t, func(t *testing.T) {
@@ -170,7 +169,6 @@ func thinMemoryAwareConfig(t *testing.T, mode, memoryPolicyVersion string) json.
 				"enabled":        true,
 				"cache_mode":     mode,
 				"policy_version": memoryPolicyVersion,
-				"digest_header":  thinMemoryDigestHeader,
 			},
 		},
 		"tenant_header":        "x-mse-tenant",
@@ -194,8 +192,11 @@ func startThinMemoryAwareRequestWithBody(t *testing.T, mode, memoryPolicyVersion
 	require.Equal(t, types.OnPluginStartStatusOK, status)
 	require.NoError(t, host.SetRouteName("test-route-default"))
 	require.NoError(t, host.SetRequestId("request-memory-aware-1"))
+	if memoryDigest != "" {
+		require.NoError(t, host.SetProperty([]string{memorycache.TrustedDigestProperty}, []byte(memoryDigest)))
+	}
 
-	action := host.CallOnHttpRequestHeaders([][2]string{
+	headers := [][2]string{
 		{":authority", "example.com"},
 		{":path", "/v1/chat/completions"},
 		{":method", "POST"},
@@ -203,9 +204,11 @@ func startThinMemoryAwareRequestWithBody(t *testing.T, mode, memoryPolicyVersion
 		{"x-mse-tenant", "tenant-a"},
 		{"x-mse-consumer", consumer},
 		{"x-mse-session", "session-a"},
-		{thinMemoryDigestHeader, memoryDigest},
-	})
+		{memorycache.DeprecatedDigestHeader, "caller-supplied-memory-digest"},
+	}
+	action := host.CallOnHttpRequestHeaders(headers)
 	require.Equal(t, types.HeaderStopIteration, action)
+	require.False(t, test.HasHeader(host.GetRequestHeaders(), memorycache.DeprecatedDigestHeader), "ai-cache must strip the caller-visible legacy digest header")
 
 	action = host.CallOnHttpRequestBody(body)
 	return host, action

@@ -89,7 +89,6 @@ route_policy:
     enabled: true
     cache_mode: policy_digest
     policy_version: memory-policy-v1
-    digest_header: x-mse-memory-digest
 tenant_header: x-mse-tenant
 consumer_header: x-mse-consumer
 session_header: x-openclaw-session-key
@@ -126,13 +125,16 @@ fail_policy: open
 | route_policy.memory.enabled | bool | false | 启用 memory-aware 缓存策略 |
 | route_policy.memory.cache_mode | string | `policy_digest` | `policy_digest` 将 memory policy 和 digest 纳入缓存 key；`bypass` 跳过缓存 |
 | route_policy.memory.policy_version | string | - | memory-aware 缓存 key 使用的 memory policy 版本 |
-| route_policy.memory.digest_header | string | `x-mse-memory-digest` | `ai-memory` 输出的组装 memory digest 请求头 |
 | tenant_header | string | `x-mse-tenant` | 租户身份请求头 |
 | consumer_header | string | `x-mse-consumer` | 消费者身份请求头 |
 | session_header | string | `x-openclaw-session-key` | 会话身份请求头 |
 | cache_scope | string | `tenant` | `tenant` 或 `consumer`；memory-aware 路由建议使用 `consumer` |
 | cache_policy_version | string | - | 启用薄缓存查询、回放或事件投递时必填 |
 | fail_policy | string | `open` | 当前生产行为为 fail-open |
+
+`policy_digest` 通过私有 Proxy-Wasm filter-state 属性
+`mse_ai_memory_context_digest` 接收 `ai-memory` 生成的摘要，不使用 HTTP
+请求头。两个插件都会移除已废弃的 `x-mse-memory-digest` 请求头。
 
 ## 物化回放记录
 

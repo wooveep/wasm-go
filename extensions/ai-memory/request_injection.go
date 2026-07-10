@@ -32,6 +32,9 @@ func replaceMemoryRequestBody(ctx wrapper.HttpContext, input memoryMessageAssemb
 		log.Warnf("[ai-memory] request body replacement failed open: %v", err)
 		return false
 	}
+	if err := writeMemoryCacheDigest(input); err != nil {
+		log.Warnf("[ai-memory] trusted cache digest unavailable after injection: %v", err)
+	}
 	return true
 }
 

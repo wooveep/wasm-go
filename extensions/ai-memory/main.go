@@ -70,6 +70,7 @@ func parseOverrideConfig(json gjson.Result, global config.PluginConfig, c *confi
 
 func onHttpRequestHeaders(ctx wrapper.HttpContext, c config.PluginConfig, log log.Log) types.Action {
 	ctx.DisableReroute()
+	removeCallerMemoryCacheDigest()
 	if c.Route.MemoryMode == config.MemoryModeOff {
 		markMemoryGate(ctx, "memory-off")
 		ctx.DontReadRequestBody()

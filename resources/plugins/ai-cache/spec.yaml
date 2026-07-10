@@ -243,12 +243,6 @@ spec:
                   title: 记忆策略版本
                   x-title-i18n:
                     en-US: Memory Policy Version
-                digest_header:
-                  type: string
-                  title: 记忆摘要请求头
-                  x-title-i18n:
-                    en-US: Memory Digest Header
-                  default: x-mse-memory-digest
         tenant_header:
           type: string
           title: 租户 Header
@@ -326,7 +320,6 @@ spec:
             enabled: true
             cache_mode: policy_digest
             policy_version: memory-policy-v1
-            digest_header: x-mse-memory-digest
         tenant_header: x-mse-tenant
         consumer_header: x-mse-consumer
         session_header: x-openclaw-session-key

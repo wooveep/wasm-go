@@ -14,7 +14,6 @@ const (
 
 	MEMORY_CACHE_MODE_POLICY_DIGEST = "policy_digest"
 	MEMORY_CACHE_MODE_BYPASS        = "bypass"
-	DEFAULT_MEMORY_DIGEST_HEADER    = "x-mse-memory-digest"
 
 	FAIL_POLICY_OPEN = "open"
 )
@@ -86,7 +85,6 @@ type MemoryPolicyConfig struct {
 	Enabled       bool
 	CacheMode     string
 	PolicyVersion string
-	DigestHeader  string
 }
 
 type PluginConfig struct {
@@ -257,9 +255,6 @@ func (c *PluginConfig) Validate() error {
 			if c.RoutePolicy.Memory.PolicyVersion == "" {
 				return fmt.Errorf("route_policy.memory.policy_version is required when memory policy digest mode is enabled")
 			}
-			if c.RoutePolicy.Memory.DigestHeader == "" {
-				return fmt.Errorf("route_policy.memory.digest_header is required when memory policy digest mode is enabled")
-			}
 		case MEMORY_CACHE_MODE_BYPASS:
 		default:
 			return fmt.Errorf("invalid route_policy.memory.cache_mode: %s", c.RoutePolicy.Memory.CacheMode)
@@ -358,13 +353,9 @@ func parseMemoryPolicy(value gjson.Result) MemoryPolicyConfig {
 		Enabled:       value.Get("enabled").Bool(),
 		CacheMode:     value.Get("cache_mode").String(),
 		PolicyVersion: value.Get("policy_version").String(),
-		DigestHeader:  value.Get("digest_header").String(),
 	}
 	if cfg.CacheMode == "" {
 		cfg.CacheMode = MEMORY_CACHE_MODE_POLICY_DIGEST
-	}
-	if cfg.DigestHeader == "" {
-		cfg.DigestHeader = DEFAULT_MEMORY_DIGEST_HEADER
 	}
 	return cfg
 }
@@ -477,14 +468,8 @@ func mergeMemoryPolicy(base MemoryPolicyConfig, value gjson.Result) MemoryPolicy
 	if value.Get("policy_version").Exists() {
 		base.PolicyVersion = value.Get("policy_version").String()
 	}
-	if value.Get("digest_header").Exists() {
-		base.DigestHeader = value.Get("digest_header").String()
-	}
 	if base.CacheMode == "" {
 		base.CacheMode = MEMORY_CACHE_MODE_POLICY_DIGEST
-	}
-	if base.DigestHeader == "" {
-		base.DigestHeader = DEFAULT_MEMORY_DIGEST_HEADER
 	}
 	return base
 }
