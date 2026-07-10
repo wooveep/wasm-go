@@ -275,6 +275,19 @@ func (c *PluginConfig) HasThinConfig() bool {
 }
 
 func (c *PluginConfig) Complete(_ log.Log) error {
+	if c.MaterializedLookup.Redis.Enabled && c.Event.RedisStream.Enabled &&
+		sameRedisEndpoint(c.MaterializedLookup.Redis, c.Event.RedisStream) {
+		client := wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
+			FQDN: c.Event.RedisStream.ServiceName,
+			Port: int64(c.Event.RedisStream.ServicePort),
+		})
+		if err := client.Init("", "", int64(c.Event.RedisStream.Timeout), wrapper.WithDisableBuffer()); err != nil {
+			return err
+		}
+		c.materializedRedis = client
+		c.eventRedis = client
+		return nil
+	}
 	if c.MaterializedLookup.Redis.Enabled {
 		c.materializedRedis = wrapper.NewRedisClusterClient(wrapper.FQDNCluster{
 			FQDN: c.MaterializedLookup.Redis.ServiceName,
@@ -291,13 +304,18 @@ func (c *PluginConfig) Complete(_ log.Log) error {
 			FQDN: c.Event.RedisStream.ServiceName,
 			Port: int64(c.Event.RedisStream.ServicePort),
 		})
-		if err := c.eventRedis.Init("", "", int64(c.Event.RedisStream.Timeout)); err != nil {
+		if err := c.eventRedis.Init("", "", int64(c.Event.RedisStream.Timeout), wrapper.WithDisableBuffer()); err != nil {
 			return err
 		}
 	} else {
 		c.eventRedis = nil
 	}
 	return nil
+}
+
+func sameRedisEndpoint(materialized RedisEndpointConfig, event RedisStreamConfig) bool {
+	return materialized.ServiceName == event.ServiceName &&
+		materialized.ServicePort == event.ServicePort
 }
 
 func (c *PluginConfig) GetMaterializedRedisClient() wrapper.RedisClient {
