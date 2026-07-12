@@ -53,7 +53,7 @@ Isolated state:
 The plugin SHALL:
 
 - Run only for configured AI path suffixes, defaulting to
-  `/v1/chat/completions` and `/v1/messages`.
+  `/v1/chat/completions`, `/v1/messages`, and `/v1/responses`.
 - Process only JSON requests.
 - Read identity from `x-mse-tenant` and `x-mse-consumer` by default.
 - Skip memory behavior when tenant or consumer is missing.
@@ -114,6 +114,7 @@ request_id_header: x-request-id
 enable_path_suffixes:
   - /v1/chat/completions
   - /v1/messages
+  - /v1/responses
 fail_policy: open
 ```
 
@@ -308,7 +309,7 @@ The event JSON fields are:
   "finish_reason": "stop",
   "started_at_ms": 1782420000000,
   "ended_at_ms": 1782420000500,
-  "plugin_version": "0.1.0"
+  "plugin_version": "0.1.1"
 }
 ```
 

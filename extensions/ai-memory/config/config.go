@@ -221,7 +221,7 @@ func defaultPluginConfig() PluginConfig {
 		ConsumerHeader:     "x-mse-consumer",
 		SessionHeader:      "x-mse-session",
 		RequestIDHeader:    "x-request-id",
-		EnablePathSuffixes: []string{"/v1/chat/completions", "/v1/messages"},
+		EnablePathSuffixes: []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"},
 		FailPolicy:         FailPolicyOpen,
 		Route:              defaultRouteConfig(),
 	}

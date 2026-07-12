@@ -15,7 +15,7 @@ info:
   readmeUrl: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/extensions/ai-memory/README.md
   x-readmeUrl-i18n:
     en-US: https://github.com/alibaba/higress/blob/main/plugins/wasm-go/resources/plugins/ai-memory/README_EN.md
-  version: 0.1.0
+  version: 0.1.1
 spec:
   phase: default
   priority: 260
@@ -139,6 +139,7 @@ spec:
           default:
           - /v1/chat/completions
           - /v1/messages
+          - /v1/responses
         fail_policy:
           type: string
           enum: [open]
@@ -175,6 +176,7 @@ spec:
         enable_path_suffixes:
         - /v1/chat/completions
         - /v1/messages
+        - /v1/responses
         fail_policy: open
   routeConfigSchema:
     openAPIV3Schema:

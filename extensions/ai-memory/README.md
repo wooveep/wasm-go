@@ -90,6 +90,7 @@ defaultConfig:
   enable_path_suffixes:
     - /v1/chat/completions
     - /v1/messages
+    - /v1/responses
   fail_policy: open
 matchRules:
   - ingress:

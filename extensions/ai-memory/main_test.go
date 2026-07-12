@@ -240,7 +240,7 @@ func TestParseConfig(t *testing.T) {
 			require.Equal(t, "x-mse-consumer", mustStringField(t, config, "ConsumerHeader"))
 			require.Equal(t, "x-mse-session", mustStringField(t, config, "SessionHeader"))
 			require.Equal(t, "x-request-id", mustStringField(t, config, "RequestIDHeader"))
-			require.Equal(t, []string{"/v1/chat/completions", "/v1/messages"}, mustSliceField(t, config, "EnablePathSuffixes"))
+			require.Equal(t, []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"}, mustSliceField(t, config, "EnablePathSuffixes"))
 			require.Equal(t, "open", mustStringField(t, config, "FailPolicy"))
 			require.Equal(t, "digest", mustStringField(t, config, "Route", "MemoryMode"))
 			require.Equal(t, int64(4), mustIntField(t, config, "Route", "RecentWindowTurns"))

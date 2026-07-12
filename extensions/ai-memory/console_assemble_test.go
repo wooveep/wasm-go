@@ -188,6 +188,28 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			})
 		}
 
+		t.Run("request no-store still allows Console memory injection", func(t *testing.T) {
+			host := startMemoryConsoleAssembleRequestWithConfig(
+				t,
+				memoryConsoleAssembleConfig(t, "semantic"),
+				memoryConsoleAssembleRequestBody(),
+				memoryConsoleAssembleHeadersWith([2]string{memoryNoStoreHeader, "true"}),
+			)
+			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			requireMemoryAssembleCall(t, host)
+
+			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
+				"role":    "system",
+				"content": "no-store still injects safe memory",
+			}, nil))
+
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			requireMemoryExpectedMessages(t, requireMemoryRequestMessages(t, host), []memoryExpectedMessage{
+				{role: "system", content: "no-store still injects safe memory"},
+				{role: "user", content: "current question"},
+			})
+		})
+
 		t.Run("skip decision preserves original request body without empty rewrite", func(t *testing.T) {
 			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
 			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)

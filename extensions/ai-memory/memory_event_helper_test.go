@@ -2,12 +2,20 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMemoryEventPluginVersionMatchesVersionFile(t *testing.T) {
+	version, err := os.ReadFile("VERSION")
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(string(version)), memoryEventPluginVersion)
+}
 
 func TestMemoryEventStructJSONShape(t *testing.T) {
 	t.Run("marshals flat required facts with nested route model and normalized usage", func(t *testing.T) {
@@ -72,7 +80,7 @@ func TestMemoryEventStructJSONShape(t *testing.T) {
 			"output": float64(5),
 			"total":  float64(17),
 		}, payload["usage"])
-		require.Equal(t, "0.1.0", payload["plugin_version"])
+		require.Equal(t, "0.1.1", payload["plugin_version"])
 	})
 
 	t.Run("omits optional empty fields", func(t *testing.T) {
