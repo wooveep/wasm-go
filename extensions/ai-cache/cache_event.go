@@ -20,22 +20,23 @@ const thinCachePluginVersion = "ai-cache-thin-v1"
 
 type ThinCacheEvent struct {
 	sessionctx.EventEnvelope
-	SessionID          string          `json:"session_id,omitempty"`
-	Route              string          `json:"route"`
-	Model              string          `json:"model"`
-	RequestPath        string          `json:"request_path"`
-	CacheScope         string          `json:"cache_scope"`
-	CachePolicyVersion string          `json:"cache_policy_version"`
-	StatusCode         int             `json:"status_code"`
-	IsStream           bool            `json:"is_stream"`
-	ContainsToolCalls  bool            `json:"contains_tool_calls"`
-	NoStore            bool            `json:"no_store"`
-	Sensitive          bool            `json:"sensitive"`
-	PluginVersion      string          `json:"plugin_version"`
-	UserContent        string          `json:"user_content,omitempty"`
-	AssistantContent   string          `json:"assistant_content,omitempty"`
-	FinishReason       string          `json:"finish_reason,omitempty"`
-	Usage              json.RawMessage `json:"usage,omitempty"`
+	SessionID          string                `json:"session_id,omitempty"`
+	Route              string                `json:"route"`
+	Model              string                `json:"model"`
+	RequestPath        string                `json:"request_path"`
+	Protocol           protocol.ProtocolKind `json:"protocol"`
+	CacheScope         string                `json:"cache_scope"`
+	CachePolicyVersion string                `json:"cache_policy_version"`
+	StatusCode         int                   `json:"status_code"`
+	IsStream           bool                  `json:"is_stream"`
+	ContainsToolCalls  bool                  `json:"contains_tool_calls"`
+	NoStore            bool                  `json:"no_store"`
+	Sensitive          bool                  `json:"sensitive"`
+	PluginVersion      string                `json:"plugin_version"`
+	UserContent        string                `json:"user_content,omitempty"`
+	AssistantContent   string                `json:"assistant_content,omitempty"`
+	FinishReason       string                `json:"finish_reason,omitempty"`
+	Usage              json.RawMessage       `json:"usage,omitempty"`
 }
 
 type thinResponseFacts struct {
@@ -99,12 +100,12 @@ func handleThinResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chun
 		})
 		if err != nil {
 			log.Warnf("[%s] [handleThinResponseBody] parse streaming response chunk failed: %v", PLUGIN_NAME, err)
-			emitThinCacheEvent(ctx, c, thinResponseFacts{parseFailed: true}, true, log)
+			emitThinCacheEvent(ctx, c, kind, thinResponseFacts{parseFailed: true}, true, log)
 			return
 		}
 		facts := thinResponseFactsFromExchange(kind, exchange)
 		facts.parseFailed = facts.parseFailed || capture.parseFailed
-		emitThinCacheEvent(ctx, c, facts, true, log)
+		emitThinCacheEvent(ctx, c, kind, facts, true, log)
 		return
 	}
 
@@ -118,11 +119,11 @@ func handleThinResponseBody(ctx wrapper.HttpContext, c config.PluginConfig, chun
 	})
 	if err != nil {
 		log.Warnf("[%s] [handleThinResponseBody] parse non-streaming response failed: %v", PLUGIN_NAME, err)
-		emitThinCacheEvent(ctx, c, thinResponseFacts{parseFailed: true}, false, log)
+		emitThinCacheEvent(ctx, c, kind, thinResponseFacts{parseFailed: true}, false, log)
 		return
 	}
 	facts := thinResponseFactsFromExchange(kind, exchange)
-	emitThinCacheEvent(ctx, c, facts, false, log)
+	emitThinCacheEvent(ctx, c, kind, facts, false, log)
 }
 
 func appendThinResponseBodyChunk(ctx wrapper.HttpContext, chunk []byte) []byte {
@@ -145,8 +146,8 @@ func (c *thinStreamCapture) appendChunk(chunk []byte) {
 	c.chunks = append(c.chunks, append([]byte(nil), chunk...))
 }
 
-func emitThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, facts thinResponseFacts, stream bool, log logs.Log) {
-	event := buildThinCacheEvent(ctx, c, facts, stream)
+func emitThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, kind protocol.ProtocolKind, facts thinResponseFacts, stream bool, log logs.Log) {
+	event := buildThinCacheEvent(ctx, c, kind, facts, stream)
 	redisClient := c.GetEventRedisClient()
 	if redisClient == nil {
 		log.Warnf("[%s] [emitThinCacheEvent] Redis Stream client is not configured", PLUGIN_NAME)
@@ -175,7 +176,7 @@ func emitThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, facts th
 	}
 }
 
-func buildThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, facts thinResponseFacts, stream bool) ThinCacheEvent {
+func buildThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, kind protocol.ProtocolKind, facts thinResponseFacts, stream bool) ThinCacheEvent {
 	startedAt := thinInt64Context(ctx, CACHE_EVENT_STARTED_AT_KEY, 0)
 	endedAt := nowMillis()
 	if startedAt <= 0 {
@@ -200,6 +201,7 @@ func buildThinCacheEvent(ctx wrapper.HttpContext, c config.PluginConfig, facts t
 		Route:              ctx.GetStringContext(CACHE_ROUTE_CONTEXT_KEY, ""),
 		Model:              ctx.GetStringContext(CACHE_MODEL_CONTEXT_KEY, ""),
 		RequestPath:        ctx.GetStringContext(CACHE_PATH_CONTEXT_KEY, ""),
+		Protocol:           kind,
 		CacheScope:         c.CacheScope,
 		CachePolicyVersion: c.CachePolicyVersion,
 		StatusCode:         statusCode,

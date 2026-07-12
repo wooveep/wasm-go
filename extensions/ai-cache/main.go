@@ -177,7 +177,7 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 		path = requestPath(ctx)
 		ctx.SetContext(CACHE_PATH_CONTEXT_KEY, path)
 	}
-	_, adapter, ok := thinProtocolAdapterForPath(path)
+	kind, adapter, ok := thinProtocolAdapterForPath(path)
 	if !ok {
 		markCacheGate(ctx, "unsupported-path")
 		log.Warnf("[onThinHttpRequestBody] unsupported request path for protocol adapter: %s", path)
@@ -209,6 +209,7 @@ func onThinHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body 
 		CacheScope:         c.CacheScope,
 		Route:              requestRoute(),
 		Model:              digest.Input.Model,
+		Protocol:           kind,
 		RequestDigest:      digest.Digest,
 		CachePolicyVersion: cachePolicyVersion,
 	})

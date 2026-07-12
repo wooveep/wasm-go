@@ -48,6 +48,7 @@ func validThinReplayRecord(t *testing.T, overrides map[string]interface{}) strin
 		"consumer":             "consumer-a",
 		"route":                "test-route-default",
 		"model":                "qwen-turbo",
+		"protocol":             "chat_completions",
 		"cache_scope":          "consumer",
 		"cache_policy_version": "policy-v1",
 		"request_digest":       thinRedisReplayRequestDigest(t),
@@ -163,6 +164,14 @@ func TestThinRedisReplayValidation(t *testing.T) {
 				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"schema_version": "ai-cache.materialized.v0"})),
 			},
 			{
+				name:      "missing protocol",
+				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"protocol": ""})),
+			},
+			{
+				name:      "protocol mismatch",
+				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"protocol": "responses"})),
+			},
+			{
 				name:      "expired hard expiration",
 				redisResp: test.CreateRedisRespString(validThinReplayRecord(t, map[string]interface{}{"hard_expires_at": int64(1)})),
 			},
@@ -272,6 +281,7 @@ func expectedThinRedisReplayMaterializedKey(t *testing.T) string {
 		CacheScope:         "consumer",
 		Route:              "test-route-default",
 		Model:              "qwen-turbo",
+		Protocol:           protocol.ProtocolChatCompletions,
 		RequestDigest:      thinRedisReplayRequestDigest(t),
 		CachePolicyVersion: "policy-v1",
 	})
@@ -304,6 +314,7 @@ func requireThinRedisReplayCanonicalRecordShape(t *testing.T, raw string) {
 		"consumer",
 		"route",
 		"model",
+		"protocol",
 		"cache_scope",
 		"cache_policy_version",
 		"request_digest",
@@ -322,6 +333,7 @@ func requireThinRedisReplayCanonicalRecordShape(t *testing.T, raw string) {
 	require.Equal(t, "consumer-a", record["consumer"])
 	require.Equal(t, "test-route-default", record["route"])
 	require.Equal(t, "qwen-turbo", record["model"])
+	require.Equal(t, "chat_completions", record["protocol"])
 	require.Equal(t, "consumer", record["cache_scope"])
 	require.Equal(t, "policy-v1", record["cache_policy_version"])
 	require.Equal(t, thinRedisReplayRequestDigest(t), record["request_digest"])

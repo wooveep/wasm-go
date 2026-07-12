@@ -7,6 +7,7 @@ import (
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	logs "github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
@@ -19,6 +20,7 @@ const (
 	memoryResponseCaptureContextKey    = "memoryResponseCapture"
 	memoryResponseOverflowContextKey   = "memoryResponseOverflow"
 	memoryStreamCaptureContextKey      = "memoryStreamCapture"
+	memoryStreamChunksContextKey       = "memoryStreamChunks"
 	memoryStreamParseFailedContextKey  = "memoryStreamParseFailed"
 )
 
@@ -57,6 +59,18 @@ func memoryCaptureNonStreamingResponse(body []byte, statusCode int, responseValu
 	capture.Usage = sessionctx.ResponseUsage(response)
 	capture.ContainsToolCalls = sessionctx.ContainsToolUse(response)
 	return capture
+}
+
+func memoryCaptureNonStreamingResponseForPath(body []byte, statusCode int, path string, responseValueFrom string, toolCallPaths []string) memoryResponseCapture {
+	kind, adapter, ok := memoryProtocolAdapterForPath(path)
+	if !ok || kind == protocol.ProtocolChatCompletions {
+		return memoryCaptureNonStreamingResponse(body, statusCode, responseValueFrom, toolCallPaths)
+	}
+	exchange, err := adapter.CaptureResponse(protocolResponseCaptureInput(statusCode, body))
+	if err != nil {
+		return memoryResponseCapture{StatusCode: statusCode, ParseFailed: true}
+	}
+	return memoryResponseCaptureFromProtocolExchange(statusCode, false, exchange)
 }
 
 func memoryCaptureNonStreamingResponseChunk(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log logs.Log) {
@@ -98,7 +112,7 @@ func memoryCaptureNonStreamingResponseChunkWithLimit(ctx wrapper.HttpContext, c 
 	if value, ok := ctx.GetContext(memoryResponseStatusContextKey).(int); ok {
 		statusCode = value
 	}
-	capture := memoryCaptureNonStreamingResponse(body, statusCode, c.Route.ResponseValueFrom, c.Route.ToolCallsFrom)
+	capture := memoryCaptureNonStreamingResponseForPath(body, statusCode, ctx.GetStringContext(memoryRequestPathContextKey, ""), c.Route.ResponseValueFrom, c.Route.ToolCallsFrom)
 	if capture.ParseFailed {
 		log.Warnf("[ai-memory] parse non-streaming response failed open")
 	}
@@ -108,6 +122,10 @@ func memoryCaptureNonStreamingResponseChunkWithLimit(ctx wrapper.HttpContext, c 
 
 func memoryCaptureStreamingResponseChunk(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log logs.Log) {
 	if memoryGateReason(ctx) != "" || !ctx.GetBoolContext(memoryStreamContextKey, false) {
+		return
+	}
+	if memoryStreamingCaptureUsesProtocolAdapter(ctx) {
+		memoryCaptureProtocolStreamingResponseChunk(ctx, c, chunk, isLastChunk, log)
 		return
 	}
 	capture := memoryStreamCapture(ctx, c)
@@ -138,6 +156,74 @@ func memoryCaptureStreamingResponseChunk(ctx wrapper.HttpContext, c config.Plugi
 		IsStream:          true,
 	}
 	ctx.SetContext(memoryResponseCaptureContextKey, memoryApplyRawContentGate(ctx, c, responseCapture))
+}
+
+func memoryStreamingCaptureUsesProtocolAdapter(ctx wrapper.HttpContext) bool {
+	kind, _, ok := memoryProtocolAdapterForPath(ctx.GetStringContext(memoryRequestPathContextKey, ""))
+	return ok && kind != protocol.ProtocolChatCompletions
+}
+
+func memoryCaptureProtocolStreamingResponseChunk(ctx wrapper.HttpContext, c config.PluginConfig, chunk []byte, isLastChunk bool, log logs.Log) {
+	if !ctx.GetBoolContext(memoryStreamParseFailedContextKey, false) && len(chunk) > 0 {
+		chunks, _ := ctx.GetContext(memoryStreamChunksContextKey).([][]byte)
+		chunks = append(chunks, memoryFinalStreamingChunk(chunk, isLastChunk))
+		ctx.SetContext(memoryStreamChunksContextKey, chunks)
+	}
+	if !isLastChunk {
+		return
+	}
+	statusCode := memoryStoredResponseStatus(ctx)
+	if ctx.GetBoolContext(memoryStreamParseFailedContextKey, false) {
+		ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
+			StatusCode:  statusCode,
+			ParseFailed: true,
+			IsStream:    true,
+		})
+		return
+	}
+	_, adapter, ok := memoryProtocolAdapterForPath(ctx.GetStringContext(memoryRequestPathContextKey, ""))
+	if !ok {
+		ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
+			StatusCode:  statusCode,
+			ParseFailed: true,
+			IsStream:    true,
+		})
+		return
+	}
+	chunks, _ := ctx.GetContext(memoryStreamChunksContextKey).([][]byte)
+	exchange, err := adapter.CaptureStream(protocolResponseStreamInput(statusCode, chunks))
+	if err != nil {
+		log.Warn("[ai-memory] parse streaming response failed open")
+		ctx.SetContext(memoryResponseCaptureContextKey, memoryResponseCapture{
+			StatusCode:  statusCode,
+			ParseFailed: true,
+			IsStream:    true,
+		})
+		return
+	}
+	responseCapture := memoryResponseCaptureFromProtocolExchange(statusCode, true, exchange)
+	ctx.SetContext(memoryResponseCaptureContextKey, memoryApplyRawContentGate(ctx, c, responseCapture))
+}
+
+func protocolResponseCaptureInput(statusCode int, body []byte) protocol.ResponseCaptureInput {
+	return protocol.ResponseCaptureInput{StatusCode: statusCode, Body: body}
+}
+
+func protocolResponseStreamInput(statusCode int, chunks [][]byte) protocol.ResponseStreamInput {
+	return protocol.ResponseStreamInput{StatusCode: statusCode, Chunks: chunks}
+}
+
+func memoryResponseCaptureFromProtocolExchange(statusCode int, isStream bool, exchange protocol.NormalizedExchange) memoryResponseCapture {
+	return memoryResponseCapture{
+		AssistantContent:  exchange.Response.Text,
+		FinishReason:      exchange.Response.FinishReason,
+		Usage:             memorySessionUsageFromProtocol(exchange.Usage),
+		StatusCode:        statusCode,
+		ContainsToolCalls: exchange.Response.ContainsToolCalls,
+		ParseFailed:       exchange.Response.ParseFailed,
+		UnsafeContent:     exchange.Response.UnsafeContent,
+		IsStream:          isStream,
+	}
 }
 
 func memoryApplyRawContentGate(ctx wrapper.HttpContext, c config.PluginConfig, capture memoryResponseCapture) memoryResponseCapture {

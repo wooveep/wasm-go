@@ -151,6 +151,59 @@ func TestMemoryStreamingResponseCapture(t *testing.T) {
 				})
 			}
 		})
+
+		t.Run("messages protocol stream emits normalized memory event", func(t *testing.T) {
+			host := startMemoryProtocolResponseCaptureRequest(t, "/v1/messages", []byte(`{
+				"model": "deepseek-v4-flash",
+				"messages": [{"role": "user", "content": [{"type":"text","text":"messages stream question"}]}],
+				"stream": true
+			}`))
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
+			callMemoryStreamingResponseChunks(t, host,
+				memoryStreamingSSEEventFrame("\n", "message_start", `{"type":"message_start","message":{"usage":{"input_tokens":11}}}`),
+				memoryStreamingSSEEventFrame("\n", "content_block_delta", `{"type":"content_block_delta","delta":{"type":"text_delta","text":"Messages stream answer"}}`),
+				memoryStreamingSSEEventFrame("\n", "message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":6}}`),
+			)
+
+			event := requireMemoryResponseCaptureEvent(t, host)
+			requireMemoryProtocolResponseSafeFacts(t, event, "/v1/messages", "deepseek-v4-flash")
+			require.Equal(t, "messages stream question", event["user_content"])
+			require.Equal(t, "Messages stream answer", event["assistant_content"])
+			require.Equal(t, "end_turn", event["finish_reason"])
+			require.Equal(t, true, event["is_stream"])
+			require.Equal(t, false, event["contains_tool_calls"])
+			requireMemoryResponseCaptureUsage(t, event, 11, 6, 17)
+		})
+
+		t.Run("responses protocol stream emits normalized memory event", func(t *testing.T) {
+			host := startMemoryProtocolResponseCaptureRequest(t, "/v1/responses", []byte(`{
+				"model": "deepseek-v4-flash",
+				"input": [{"role":"user","content":[{"type":"input_text","text":"responses stream question"}]}],
+				"stream": true
+			}`))
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "text/event-stream"},
+			})
+			callMemoryStreamingResponseChunks(t, host,
+				memoryStreamingSSEEventFrame("\n", "response.output_text.delta", `{"type":"response.output_text.delta","delta":"Responses stream answer"}`),
+				memoryStreamingSSEEventFrame("\n", "response.completed", `{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}`),
+			)
+
+			event := requireMemoryResponseCaptureEvent(t, host)
+			requireMemoryProtocolResponseSafeFacts(t, event, "/v1/responses", "deepseek-v4-flash")
+			require.Equal(t, "responses stream question", event["user_content"])
+			require.Equal(t, "Responses stream answer", event["assistant_content"])
+			require.Equal(t, "completed", event["finish_reason"])
+			require.Equal(t, true, event["is_stream"])
+			require.Equal(t, false, event["contains_tool_calls"])
+			requireMemoryResponseCaptureUsage(t, event, 10, 4, 14)
+		})
 	})
 }
 
@@ -240,4 +293,8 @@ func callMemoryStreamingResponseChunks(t *testing.T, host test.TestHost, chunks 
 
 func memoryStreamingSSEFrame(lineEnding, payload string) string {
 	return "data: " + payload + lineEnding + lineEnding
+}
+
+func memoryStreamingSSEEventFrame(lineEnding, event string, payload string) string {
+	return "event: " + event + lineEnding + "data: " + payload + lineEnding + lineEnding
 }

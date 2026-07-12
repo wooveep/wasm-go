@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
@@ -200,6 +201,133 @@ func TestThinResponsesReplayPayload(t *testing.T) {
 	})
 }
 
+func TestThinMessagesReplayPayload(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		t.Run("non-streaming replay preserves Messages response object", func(t *testing.T) {
+			host := startThinMessagesReplayPayloadRequest(t, false)
+			defer host.Reset()
+
+			response := thinMessagesReplayPayloadResponse()
+			host.CallOnRedisCall(0, test.CreateRedisRespString(validThinMessagesReplayRecord(t, false, map[string]interface{}{
+				"response": response,
+			})))
+
+			localResponse := host.GetLocalResponse()
+			require.NotNil(t, localResponse, "valid Messages materialized record should be replayed")
+			require.Equal(t, uint32(200), localResponse.StatusCode)
+			require.Equal(t, "application/json; charset=utf-8", thinReplayPayloadHeader(localResponse.Headers, "content-type"))
+			thinReplayPayloadRequireJSONEqual(t, thinReplayPayloadMustJSON(t, response), localResponse.Data)
+			require.NotContains(t, string(localResponse.Data), "choices")
+		})
+
+		t.Run("streaming replay emits Messages event frames", func(t *testing.T) {
+			host := startThinMessagesReplayPayloadRequest(t, true)
+			defer host.Reset()
+
+			chunks := []interface{}{
+				map[string]interface{}{"type": "message_start", "message": map[string]interface{}{"id": "msg-cache", "type": "message", "role": "assistant", "content": []interface{}{}}},
+				map[string]interface{}{"type": "content_block_delta", "index": float64(0), "delta": map[string]interface{}{"type": "text_delta", "text": "cached Messages answer"}},
+				map[string]interface{}{"type": "message_stop"},
+			}
+			host.CallOnRedisCall(0, test.CreateRedisRespString(validThinMessagesReplayRecord(t, true, map[string]interface{}{
+				"stream_chunks": chunks,
+			})))
+
+			localResponse := host.GetLocalResponse()
+			require.NotNil(t, localResponse, "stream-replayable Messages record should be replayed")
+			require.Equal(t, uint32(200), localResponse.StatusCode)
+			require.Equal(t, "text/event-stream; charset=utf-8", thinReplayPayloadHeader(localResponse.Headers, "content-type"))
+			require.Contains(t, string(localResponse.Data), "event: message_start")
+			require.Contains(t, string(localResponse.Data), "event: content_block_delta")
+			require.Contains(t, string(localResponse.Data), "event: message_stop")
+			require.NotContains(t, string(localResponse.Data), "[DONE]")
+			require.NotContains(t, string(localResponse.Data), "choices")
+		})
+	})
+}
+
+func startThinMessagesReplayPayloadRequest(t *testing.T, stream bool) test.TestHost {
+	t.Helper()
+	host, status := test.NewTestHost(thinMessagesResponseCaptureConfig(t))
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+	require.NoError(t, host.SetRouteName("test-route-messages"))
+	action := host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/messages"},
+		{":method", "POST"},
+		{"content-type", "application/json"},
+		{"x-mse-tenant", "tenant-a"},
+		{"x-mse-consumer", "consumer-a"},
+	})
+	require.Equal(t, types.HeaderStopIteration, action)
+	action = host.CallOnHttpRequestBody(thinMessagesReplayPayloadRequestBody(t, stream))
+	require.Equal(t, types.ActionPause, action)
+	require.NotEmpty(t, host.GetRedisCalloutAttributes(), "request should issue Redis lookup before Messages replay")
+	return host
+}
+
+func thinMessagesReplayPayloadRequestBody(t *testing.T, stream bool) []byte {
+	t.Helper()
+	body, err := json.Marshal(map[string]interface{}{
+		"model": "claude-sonnet",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "summarize launch plan"},
+		},
+		"stream": stream,
+	})
+	require.NoError(t, err)
+	return body
+}
+
+func validThinMessagesReplayRecord(t *testing.T, stream bool, overrides map[string]interface{}) string {
+	t.Helper()
+	adapter := protocol.MessagesAdapter{}
+	digest, err := adapter.BuildCacheDigest(protocol.RequestParseInput{
+		Method: "POST",
+		Path:   "/v1/messages",
+		Body:   thinMessagesReplayPayloadRequestBody(t, stream),
+	})
+	require.NoError(t, err)
+	now := time.Now().Unix()
+	record := map[string]interface{}{
+		"schema_version":       "ai-cache.materialized.v1",
+		"tenant":               "tenant-a",
+		"consumer":             "consumer-a",
+		"route":                "test-route-messages",
+		"model":                "claude-sonnet",
+		"protocol":             "messages",
+		"cache_scope":          "consumer",
+		"cache_policy_version": "policy-v1",
+		"request_digest":       digest.Digest,
+		"soft_expires_at":      now + 60,
+		"hard_expires_at":      now + 3600,
+		"response":             thinMessagesReplayPayloadResponse(),
+		"usage":                map[string]interface{}{"input_tokens": float64(8), "output_tokens": float64(3)},
+		"finish_reason":        "end_turn",
+	}
+	if stream {
+		record["stream_replayable"] = true
+	}
+	for key, value := range overrides {
+		record[key] = value
+	}
+	body, err := json.Marshal(record)
+	require.NoError(t, err)
+	return string(body)
+}
+
+func thinMessagesReplayPayloadResponse() map[string]interface{} {
+	return map[string]interface{}{
+		"id":          "msg-cache",
+		"type":        "message",
+		"role":        "assistant",
+		"model":       "claude-sonnet",
+		"content":     []interface{}{map[string]interface{}{"type": "text", "text": "cached Messages answer"}},
+		"stop_reason": "end_turn",
+		"usage":       map[string]interface{}{"input_tokens": float64(8), "output_tokens": float64(3)},
+	}
+}
+
 func startThinResponsesReplayPayloadRequest(t *testing.T, stream bool) test.TestHost {
 	t.Helper()
 	host, status := test.NewTestHost(thinResponsesResponseCaptureConfig(t))
@@ -243,6 +371,7 @@ func validThinResponsesReplayRecord(t *testing.T, stream bool, overrides map[str
 		"consumer":             "consumer-a",
 		"route":                "test-route-responses",
 		"model":                "gpt-4.1",
+		"protocol":             "responses",
 		"cache_scope":          "consumer",
 		"cache_policy_version": "policy-v1",
 		"request_digest":       expectedThinResponsesResponseCaptureRequestDigest(t, stream),

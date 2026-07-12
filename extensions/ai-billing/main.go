@@ -356,7 +356,6 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config BillingConfig) types.A
 	consumer, _ := proxywasm.GetHttpRequestHeader(config.ConsumerHeader)
 	if config.EventKind == eventKindInternalCost {
 		tenant = ""
-		consumer = ""
 		if sourceJob, _ := proxywasm.GetHttpRequestHeader("x-ai-billing-source-job"); sourceJob != "" {
 			ctx.SetContext(ctxSourceJob, strings.TrimSpace(sourceJob))
 		}
@@ -719,7 +718,6 @@ func buildBillingEvent(ctx wrapper.HttpContext, config BillingConfig, isStream b
 	}
 	if event.EventKind == eventKindInternalCost {
 		event.Tenant = ""
-		event.Consumer = ""
 		event.CostSource = strings.TrimSpace(config.CostSource)
 		event.WorkerKind = strings.TrimSpace(config.WorkerKind)
 		event.SourceJob = ctx.GetStringContext(ctxSourceJob, "")

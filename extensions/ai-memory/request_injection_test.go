@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
@@ -115,10 +116,61 @@ func TestMemoryRequestInjection(t *testing.T) {
 			requireMemoryMessage(t, messages[3], "assistant", "already present assistant")
 			requireMemoryMessage(t, messages[4], "user", "latest follow up")
 		})
+
+		t.Run("messages protocol injects memory context into system blocks", func(t *testing.T) {
+			host, _ := startMemoryProtocolInjectionAndRequireAssemble(t, "/v1/messages", []byte(`{
+				"model": "deepseek-v4-flash",
+				"messages": [{"role": "user", "content": [{"type":"text","text":"messages current question"}]}]
+			}`))
+
+			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
+				"role":    "system",
+				"content": "Console memory context",
+			}, []map[string]interface{}{
+				{"role": "user", "content": "recent user"},
+				{"role": "assistant", "content": "recent assistant"},
+			}))
+
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			systemText := requireMemoryMessagesSystemText(t, host)
+			require.Contains(t, systemText, "system: Console memory context")
+			require.Contains(t, systemText, "user: recent user")
+			require.Contains(t, systemText, "assistant: recent assistant")
+			require.JSONEq(t, `[{"role":"user","content":[{"type":"text","text":"messages current question"}]}]`, string(requireMemoryRequestField(t, host.GetRequestBody(), "messages")))
+		})
+
+		t.Run("responses protocol injects memory context into instructions", func(t *testing.T) {
+			host, _ := startMemoryProtocolInjectionAndRequireAssemble(t, "/v1/responses", []byte(`{
+				"model": "deepseek-v4-flash",
+				"instructions": "client instructions",
+				"input": [{"role":"user","content":[{"type":"input_text","text":"responses current question"}]}]
+			}`))
+
+			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
+				"role":    "system",
+				"content": "Console memory context",
+			}, []map[string]interface{}{
+				{"role": "user", "content": "recent user"},
+				{"role": "assistant", "content": "recent assistant"},
+			}))
+
+			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+			instructions := requireMemoryRequestStringField(t, host.GetRequestBody(), "instructions")
+			require.Contains(t, instructions, "client instructions")
+			require.Contains(t, instructions, "system: Console memory context")
+			require.Contains(t, instructions, "user: recent user")
+			require.Contains(t, instructions, "assistant: recent assistant")
+			require.JSONEq(t, `[{"role":"user","content":[{"type":"input_text","text":"responses current question"}]}]`, string(requireMemoryRequestField(t, host.GetRequestBody(), "input")))
+		})
 	})
 }
 
 func memoryInjectionConfig(t *testing.T) json.RawMessage {
+	t.Helper()
+	return memoryInjectionConfigForPath(t, "/v1/chat/completions")
+}
+
+func memoryInjectionConfigForPath(t *testing.T, path string) json.RawMessage {
 	t.Helper()
 	return mustMemoryConfig(t, map[string]interface{}{
 		"redis_stream": map[string]interface{}{
@@ -137,7 +189,7 @@ func memoryInjectionConfig(t *testing.T) json.RawMessage {
 		"consumer_header":      "x-mse-consumer",
 		"session_header":       "x-mse-session",
 		"request_id_header":    "x-request-id",
-		"enable_path_suffixes": []string{"/v1/chat/completions"},
+		"enable_path_suffixes": []string{path},
 		"fail_policy":          "open",
 		"_rules_": []map[string]interface{}{
 			{
@@ -164,14 +216,26 @@ func startMemoryInjectionAndRequireAssemble(t *testing.T, body []byte) (test.Tes
 
 func startMemoryInjectionAndRequireAssembleWithoutCleanup(t *testing.T, body []byte) (test.TestHost, map[string]interface{}) {
 	t.Helper()
-	host, status := newMemoryConfigTestHost(memoryInjectionConfig(t))
+	return startMemoryProtocolInjectionAndRequireAssembleWithoutCleanup(t, "/v1/chat/completions", body)
+}
+
+func startMemoryProtocolInjectionAndRequireAssemble(t *testing.T, path string, body []byte) (test.TestHost, map[string]interface{}) {
+	t.Helper()
+	host, facts := startMemoryProtocolInjectionAndRequireAssembleWithoutCleanup(t, path, body)
+	t.Cleanup(host.Reset)
+	return host, facts
+}
+
+func startMemoryProtocolInjectionAndRequireAssembleWithoutCleanup(t *testing.T, path string, body []byte) (test.TestHost, map[string]interface{}) {
+	t.Helper()
+	host, status := newMemoryConfigTestHost(memoryInjectionConfigForPath(t, path))
 	require.Equal(t, types.OnPluginStartStatusOK, status)
 	require.NoError(t, host.SetRouteName("memory-route"))
 	require.NoError(t, host.SetRequestId("property-request-id"))
 
 	headerAction := host.CallOnHttpRequestHeaders([][2]string{
 		{":authority", "example.com"},
-		{":path", "/v1/chat/completions"},
+		{":path", path},
 		{":method", "POST"},
 		{"content-type", "application/json"},
 		{"x-mse-tenant", "tenant-a"},
@@ -253,4 +317,28 @@ func requireMemoryRequestField(t *testing.T, body []byte, field string) json.Raw
 	value, ok := request[field]
 	require.Truef(t, ok, "request body should preserve field %q", field)
 	return value
+}
+
+func requireMemoryRequestStringField(t *testing.T, body []byte, field string) string {
+	t.Helper()
+	raw := requireMemoryRequestField(t, body, field)
+	var value string
+	require.NoError(t, json.Unmarshal(raw, &value))
+	return value
+}
+
+func requireMemoryMessagesSystemText(t *testing.T, host test.TestHost) string {
+	t.Helper()
+	var request struct {
+		System []map[string]interface{} `json:"system"`
+	}
+	require.NoErrorf(t, json.Unmarshal(host.GetRequestBody(), &request), "request body must be JSON after memory injection; body=%s", string(host.GetRequestBody()))
+	var parts []string
+	for _, block := range request.System {
+		if text, _ := block["text"].(string); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	require.NotEmptyf(t, parts, "messages request should contain injected system text blocks; body=%s", string(host.GetRequestBody()))
+	return strings.Join(parts, "\n")
 }

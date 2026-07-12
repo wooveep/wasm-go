@@ -10,6 +10,7 @@ import (
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/wasm-go/pkg/ai/memorycache"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	logs "github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 )
@@ -17,22 +18,23 @@ import (
 const materializedRecordSchemaVersion = "ai-cache.materialized.v1"
 
 type MaterializedReplayRecord struct {
-	SchemaVersion       string            `json:"schema_version"`
-	Tenant              string            `json:"tenant"`
-	Consumer            string            `json:"consumer,omitempty"`
-	Route               string            `json:"route"`
-	Model               string            `json:"model"`
-	CacheScope          string            `json:"cache_scope"`
-	CachePolicyVersion  string            `json:"cache_policy_version"`
-	RequestDigest       string            `json:"request_digest"`
-	SoftExpiresAt       int64             `json:"soft_expires_at"`
-	HardExpiresAt       int64             `json:"hard_expires_at"`
-	Response            json.RawMessage   `json:"response"`
-	Usage               json.RawMessage   `json:"usage,omitempty"`
-	FinishReason        string            `json:"finish_reason,omitempty"`
-	StreamReplayable    bool              `json:"stream_replayable,omitempty"`
-	StreamChunks        []json.RawMessage `json:"stream_chunks,omitempty"`
-	TrustedUpstreamFact *bool             `json:"upstream_invoked,omitempty"`
+	SchemaVersion       string                `json:"schema_version"`
+	Tenant              string                `json:"tenant"`
+	Consumer            string                `json:"consumer,omitempty"`
+	Route               string                `json:"route"`
+	Model               string                `json:"model"`
+	Protocol            protocol.ProtocolKind `json:"protocol"`
+	CacheScope          string                `json:"cache_scope"`
+	CachePolicyVersion  string                `json:"cache_policy_version"`
+	RequestDigest       string                `json:"request_digest"`
+	SoftExpiresAt       int64                 `json:"soft_expires_at"`
+	HardExpiresAt       int64                 `json:"hard_expires_at"`
+	Response            json.RawMessage       `json:"response"`
+	Usage               json.RawMessage       `json:"usage,omitempty"`
+	FinishReason        string                `json:"finish_reason,omitempty"`
+	StreamReplayable    bool                  `json:"stream_replayable,omitempty"`
+	StreamChunks        []json.RawMessage     `json:"stream_chunks,omitempty"`
+	TrustedUpstreamFact *bool                 `json:"upstream_invoked,omitempty"`
 }
 
 func LoadAndValidateMaterializedRecord(raw string, material ScopedCacheKeyMaterial, stream bool) (MaterializedReplayRecord, error) {
@@ -53,6 +55,12 @@ func LoadAndValidateMaterializedRecord(raw string, material ScopedCacheKeyMateri
 func validateMaterializedRecord(record MaterializedReplayRecord, material ScopedCacheKeyMaterial, stream bool, now int64) error {
 	if record.SchemaVersion != materializedRecordSchemaVersion {
 		return errors.New("unsupported materialized record schema version")
+	}
+	if !isSupportedThinProtocol(record.Protocol) {
+		return errors.New("materialized record protocol is invalid")
+	}
+	if record.Protocol != material.Protocol {
+		return errors.New("materialized record protocol mismatch")
 	}
 	if record.CacheScope != material.CacheScope {
 		return errors.New("materialized record cache scope mismatch")
@@ -110,7 +118,10 @@ func replayMaterializedRecord(record MaterializedReplayRecord, stream bool, ctx 
 	if !ok {
 		return fmt.Errorf("unsupported request path for materialized replay: %s", path)
 	}
-	serialized, err := adapter.SerializeReplay(thinReplayPayload(kind, record, stream))
+	if record.Protocol != kind {
+		return errors.New("materialized record protocol mismatch")
+	}
+	serialized, err := adapter.SerializeReplay(thinReplayPayload(record.Protocol, record, stream))
 	if err != nil {
 		return err
 	}
@@ -125,6 +136,15 @@ func replayMaterializedRecord(record MaterializedReplayRecord, stream bool, ctx 
 
 	proxywasm.SendHttpResponseWithDetail(uint32(statusCode), memorycache.CacheHitResponseDetail, [][2]string{{"content-type", serialized.ContentType}}, serialized.Body, -1)
 	return nil
+}
+
+func isSupportedThinProtocol(kind protocol.ProtocolKind) bool {
+	switch kind {
+	case protocol.ProtocolChatCompletions, protocol.ProtocolMessages, protocol.ProtocolResponses:
+		return true
+	default:
+		return false
+	}
 }
 
 func requireJSONObject(raw json.RawMessage, name string) error {

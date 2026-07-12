@@ -7,6 +7,7 @@ import (
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +20,7 @@ func TestBuildScopedCacheKeyMaterial(t *testing.T) {
 		CacheScope:         config.CACHE_SCOPE_CONSUMER,
 		Route:              "route-a",
 		Model:              "qwen-turbo",
+		Protocol:           protocol.ProtocolChatCompletions,
 		RequestDigest:      "digest-a",
 		CachePolicyVersion: "policy-v1",
 	}
@@ -28,6 +30,7 @@ func TestBuildScopedCacheKeyMaterial(t *testing.T) {
 	require.Equal(t, "digest-a", material.RequestDigest)
 	require.Equal(t, "qwen-turbo", material.Model)
 	require.Equal(t, "route-a", material.Route)
+	require.Equal(t, protocol.ProtocolChatCompletions, material.Protocol)
 	require.Equal(t, "policy-v1", material.CachePolicyVersion)
 	require.True(t, strings.HasPrefix(material.RedisKey, "cache:materialized:"))
 	for _, raw := range []string{"tenant-a", "consumer-a", "route-a", "qwen-turbo", "digest-a", "policy-v1", "weather?"} {
@@ -54,6 +57,7 @@ func TestBuildScopedCacheKeyMaterial(t *testing.T) {
 		func(in *ScopedCacheKeyInput) { in.Tenant = "tenant-b" },
 		func(in *ScopedCacheKeyInput) { in.Route = "route-b" },
 		func(in *ScopedCacheKeyInput) { in.Model = "qwen-plus" },
+		func(in *ScopedCacheKeyInput) { in.Protocol = protocol.ProtocolResponses },
 		func(in *ScopedCacheKeyInput) { in.RequestDigest = "digest-b" },
 		func(in *ScopedCacheKeyInput) { in.CachePolicyVersion = "policy-v2" },
 	} {

@@ -46,6 +46,7 @@ func TestThinCacheEvent(t *testing.T) {
 			require.Equal(t, "qwen-turbo", requireThinCacheEventString(t, event, "model"))
 			require.Equal(t, "request-capture-1", requireThinCacheEventString(t, event, "request_id"))
 			require.Equal(t, "/v1/chat/completions", requireThinCacheEventString(t, event, "request_path"))
+			require.Equal(t, "chat_completions", requireThinCacheEventString(t, event, "protocol"))
 			require.Equal(t, "consumer", requireThinCacheEventString(t, event, "cache_scope"))
 			require.Equal(t, "policy-v1", requireThinCacheEventString(t, event, "cache_policy_version"))
 			require.Equal(t, "weather?", requireThinCacheEventString(t, event, "user_content"))
@@ -250,6 +251,7 @@ func requireThinCacheEventRequiredFields(t *testing.T, event map[string]interfac
 		"model",
 		"request_id",
 		"request_path",
+		"protocol",
 		"request_digest",
 		"cache_scope",
 		"cache_policy_version",

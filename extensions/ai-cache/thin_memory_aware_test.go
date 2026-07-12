@@ -7,6 +7,7 @@ import (
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/higress-group/wasm-go/pkg/ai/memorycache"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/test"
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +62,7 @@ func TestThinMemoryAwareCache(t *testing.T) {
 				CacheScope:         "consumer",
 				Route:              "test-route-default",
 				Model:              adjustedModel,
+				Protocol:           protocol.ProtocolChatCompletions,
 				RequestDigest:      adjustedDigest,
 				CachePolicyVersion: strings.Join([]string{"policy-v1", "memory", "memory-policy-v1", "memory-digest-a"}, "|"),
 			})

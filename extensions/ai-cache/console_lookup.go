@@ -10,22 +10,24 @@ import (
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	logs "github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/tidwall/resp"
 )
 
 type consoleLookupRequest struct {
-	Tenant             string `json:"tenant"`
-	Consumer           string `json:"consumer,omitempty"`
-	Session            string `json:"session,omitempty"`
-	Route              string `json:"route"`
-	Model              string `json:"model"`
-	CacheScope         string `json:"cache_scope"`
-	CachePolicyVersion string `json:"cache_policy_version"`
-	RequestDigest      string `json:"request_digest"`
-	StreamMode         string `json:"stream_mode"`
-	SemanticQueryText  string `json:"semantic_query_text,omitempty"`
+	Tenant             string                `json:"tenant"`
+	Consumer           string                `json:"consumer,omitempty"`
+	Session            string                `json:"session,omitempty"`
+	Route              string                `json:"route"`
+	Model              string                `json:"model"`
+	Protocol           protocol.ProtocolKind `json:"protocol"`
+	CacheScope         string                `json:"cache_scope"`
+	CachePolicyVersion string                `json:"cache_policy_version"`
+	RequestDigest      string                `json:"request_digest"`
+	StreamMode         string                `json:"stream_mode"`
+	SemanticQueryText  string                `json:"semantic_query_text,omitempty"`
 }
 
 type consoleLookupResponseEnvelope struct {
@@ -41,21 +43,22 @@ type consoleLookupResponse struct {
 }
 
 type consoleReplayRecord struct {
-	GatewayTenant      string          `json:"gateway_tenant"`
-	GatewayConsumer    string          `json:"gateway_consumer,omitempty"`
-	GatewayRoute       string          `json:"gateway_route"`
-	GatewayModel       string          `json:"gateway_model"`
-	CacheScope         string          `json:"cache_scope"`
-	CachePolicyVersion string          `json:"cache_policy_version"`
-	RequestDigest      string          `json:"request_digest"`
-	ReplayStatus       string          `json:"replay_status"`
-	ResponseObject     json.RawMessage `json:"response_object"`
-	UsageSnapshot      json.RawMessage `json:"usage_snapshot"`
-	FinishReason       string          `json:"finish_reason,omitempty"`
-	StreamMode         string          `json:"stream_mode"`
-	SoftExpiresAt      string          `json:"soft_expires_at,omitempty"`
-	HardExpiresAt      string          `json:"hard_expires_at"`
-	SafeToReplay       bool            `json:"safe_to_replay"`
+	GatewayTenant      string                `json:"gateway_tenant"`
+	GatewayConsumer    string                `json:"gateway_consumer,omitempty"`
+	GatewayRoute       string                `json:"gateway_route"`
+	GatewayModel       string                `json:"gateway_model"`
+	Protocol           protocol.ProtocolKind `json:"protocol"`
+	CacheScope         string                `json:"cache_scope"`
+	CachePolicyVersion string                `json:"cache_policy_version"`
+	RequestDigest      string                `json:"request_digest"`
+	ReplayStatus       string                `json:"replay_status"`
+	ResponseObject     json.RawMessage       `json:"response_object"`
+	UsageSnapshot      json.RawMessage       `json:"usage_snapshot"`
+	FinishReason       string                `json:"finish_reason,omitempty"`
+	StreamMode         string                `json:"stream_mode"`
+	SoftExpiresAt      string                `json:"soft_expires_at,omitempty"`
+	HardExpiresAt      string                `json:"hard_expires_at"`
+	SafeToReplay       bool                  `json:"safe_to_replay"`
 }
 
 func shouldUseConsoleLookup(c config.PluginConfig) bool {
@@ -85,12 +88,20 @@ func lookupMaterializedRecordFromConsole(material ScopedCacheKeyMaterial, ctx wr
 }
 
 func buildConsoleLookupRequestBody(material ScopedCacheKeyMaterial, ctx wrapper.HttpContext, stream bool) ([]byte, error) {
+	protocolKind, _, ok := thinProtocolAdapterForPath(ctx.GetStringContext(CACHE_PATH_CONTEXT_KEY, ""))
+	if !ok {
+		return nil, errors.New("unsupported request path for Console lookup")
+	}
+	if material.Protocol != protocolKind {
+		return nil, errors.New("cache key protocol does not match request path")
+	}
 	return json.Marshal(consoleLookupRequest{
 		Tenant:             material.Tenant,
 		Consumer:           material.Consumer,
 		Session:            ctx.GetStringContext(CACHE_SESSION_CONTEXT_KEY, ""),
 		Route:              material.Route,
 		Model:              material.Model,
+		Protocol:           material.Protocol,
 		CacheScope:         material.CacheScope,
 		CachePolicyVersion: material.CachePolicyVersion,
 		RequestDigest:      material.RequestDigest,
@@ -218,6 +229,7 @@ func materializedReplayRecordFromConsoleReplay(replay consoleReplayRecord) (Mate
 		Consumer:           replay.GatewayConsumer,
 		Route:              replay.GatewayRoute,
 		Model:              replay.GatewayModel,
+		Protocol:           replay.Protocol,
 		CacheScope:         replay.CacheScope,
 		CachePolicyVersion: replay.CachePolicyVersion,
 		RequestDigest:      replay.RequestDigest,

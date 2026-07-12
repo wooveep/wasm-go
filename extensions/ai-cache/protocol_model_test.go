@@ -18,6 +18,7 @@ func TestSharedProtocolModelRepresentsAICacheReplayRecord(t *testing.T) {
 		Consumer:           "consumer-a",
 		Route:              "route-a",
 		Model:              "gpt-4.1",
+		Protocol:           protocol.ProtocolResponses,
 		CacheScope:         config.CACHE_SCOPE_CONSUMER,
 		CachePolicyVersion: "cache-policy-v1|context|context-policy-v1|context-digest-a",
 		RequestDigest:      "request-digest-a",

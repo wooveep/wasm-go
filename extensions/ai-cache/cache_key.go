@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-cache/config"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 )
 
 type ScopedCacheKeyInput struct {
@@ -21,6 +22,7 @@ type ScopedCacheKeyInput struct {
 	CacheScope         string
 	Route              string
 	Model              string
+	Protocol           protocol.ProtocolKind
 	RequestDigest      string
 	CachePolicyVersion string
 }
@@ -32,6 +34,7 @@ type ScopedCacheKeyMaterial struct {
 	CacheScope         string
 	Route              string
 	Model              string
+	Protocol           protocol.ProtocolKind
 	RequestDigest      string
 	CachePolicyVersion string
 }
@@ -48,6 +51,7 @@ func BuildScopedCacheKeyMaterial(input ScopedCacheKeyInput) (ScopedCacheKeyMater
 		"t=" + shortDigest(normalized.Tenant),
 		"r=" + shortDigest(normalized.Route),
 		"m=" + shortDigest(normalized.Model),
+		"x=" + shortDigest(string(normalized.Protocol)),
 		"d=" + shortDigest(normalized.RequestDigest),
 		"p=" + shortDigest(normalized.CachePolicyVersion),
 	}
@@ -63,6 +67,7 @@ func BuildScopedCacheKeyMaterial(input ScopedCacheKeyInput) (ScopedCacheKeyMater
 		CacheScope:         normalized.CacheScope,
 		Route:              normalized.Route,
 		Model:              normalized.Model,
+		Protocol:           normalized.Protocol,
 		RequestDigest:      normalized.RequestDigest,
 		CachePolicyVersion: normalized.CachePolicyVersion,
 	}, nil
@@ -130,6 +135,9 @@ func validateScopedCacheKeyInput(input ScopedCacheKeyInput) error {
 	}
 	if input.Model == "" {
 		return errors.New("model is required")
+	}
+	if !isSupportedThinProtocol(input.Protocol) {
+		return errors.New("supported protocol is required")
 	}
 	if input.RequestDigest == "" {
 		return errors.New("request digest is required")

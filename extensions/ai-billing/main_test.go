@@ -418,6 +418,53 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Empty(t, host.GetRedisCalloutAttributes())
 		})
 
+		t.Run("internal cost preserves task consumer without tenant billing identity", func(t *testing.T) {
+			host, status := test.NewTestHost(mustBillingConfig(t, map[string]interface{}{
+				"event_kind":      eventKindInternalCost,
+				"cost_source":     "internal",
+				"worker_kind":     "internal",
+				"bill_customer":   false,
+				"consumer_header": defaultConsumerHeader,
+				"redis_stream": map[string]interface{}{
+					"service_name": "redis.static",
+					"service_port": 6379,
+					"timeout":      750,
+				},
+				"enable_path_suffixes": []string{"/v1/chat/completions"},
+			}))
+			defer host.Reset()
+			require.Equal(t, types.OnPluginStartStatusOK, status)
+
+			action := host.CallOnHttpRequestHeaders([][2]string{
+				{":authority", "internal.example.com"},
+				{":path", "/v1/chat/completions"},
+				{":method", "POST"},
+				{"x-mse-tenant", "must-not-be-billed"},
+				{"x-mse-consumer", "ai-memory-digest"},
+				{"x-ai-billing-source-job", "ai-memory-digest:job-1"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+			action = host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			require.Equal(t, types.ActionContinue, action)
+			action = host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-flash","usage":{"prompt_tokens":5,"completion_tokens":8,"total_tokens":13}}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			event := requireRedisBillingEvent(t, host)
+			require.Equal(t, eventKindInternalCost, event["event_kind"])
+			require.Equal(t, "ai-memory-digest", event["consumer"])
+			require.Equal(t, "", event["tenant"])
+			require.Equal(t, "internal", event["cost_source"])
+			require.Equal(t, "internal", event["worker_kind"])
+			require.Equal(t, "ai-memory-digest:job-1", event["source_job"])
+			require.Equal(t, false, event["bill_customer"])
+
+			ackRedisBillingEvent(t, host)
+			host.CompleteHttp()
+		})
+
 		t.Run("successful event includes request facts", func(t *testing.T) {
 			host, status := test.NewTestHost(billingConfig)
 			defer host.Reset()
@@ -1868,7 +1915,7 @@ func TestBuildBillingEventIncludesInternalCostMetadata(t *testing.T) {
 	ctx.SetContext(ctxRequestPath, "/v1/embeddings")
 	ctx.SetContext(ctxRequestID, "req-internal-embedding")
 	ctx.SetContext(ctxTenant, "tenant-a")
-	ctx.SetContext(ctxConsumer, "consumer-a")
+	ctx.SetContext(ctxConsumer, "ai-memory-embedding")
 	ctx.SetContext(ctxProvider, "gemini-local")
 	ctx.SetContext(ctxQuotaScope, "route:ai-memory-gemini-embedding")
 	ctx.SetContext(ctxRoute, "ai-route-ai-memory-gemini-embedding.internal")
@@ -1897,8 +1944,18 @@ func TestBuildBillingEventIncludesInternalCostMetadata(t *testing.T) {
 	require.NotNil(t, event.BillCustomer)
 	require.False(t, *event.BillCustomer)
 	require.Empty(t, event.Tenant)
-	require.Empty(t, event.Consumer)
+	require.Equal(t, "ai-memory-embedding", event.Consumer)
 	require.True(t, event.UpstreamInvoked)
+
+	streamEvent := buildBillingEvent(ctx, BillingConfig{
+		EventKind:    eventKindInternalCost,
+		CostSource:   "ai-memory.embedding",
+		WorkerKind:   "embedding",
+		BillCustomer: &billCustomer,
+	}, true)
+	require.Equal(t, "ai-memory-embedding", streamEvent.Consumer)
+	require.Empty(t, streamEvent.Tenant)
+	require.True(t, streamEvent.IsStream)
 }
 
 func TestBuildBillingEventDerivesMissingInputFromTotalAndOutput(t *testing.T) {

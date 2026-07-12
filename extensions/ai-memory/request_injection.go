@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
@@ -13,6 +14,9 @@ func replaceMemoryRequestBody(ctx wrapper.HttpContext, input memoryMessageAssemb
 	if len(original) == 0 {
 		log.Warnf("[ai-memory] original request body unavailable, fail open")
 		return false
+	}
+	if memoryRequestInjectionUsesProtocolAdapter(ctx) {
+		return replaceProtocolMemoryRequestBody(ctx, original, input, log)
 	}
 	current, err := currentMemoryMessages(ctx)
 	if err != nil {
@@ -36,6 +40,38 @@ func replaceMemoryRequestBody(ctx wrapper.HttpContext, input memoryMessageAssemb
 		log.Warnf("[ai-memory] trusted cache digest unavailable after injection: %v", err)
 	}
 	return true
+}
+
+func memoryRequestInjectionUsesProtocolAdapter(ctx wrapper.HttpContext) bool {
+	kind, _, ok := memoryProtocolAdapterForPath(ctx.GetStringContext(memoryRequestPathContextKey, ""))
+	return ok && kind != protocol.ProtocolChatCompletions
+}
+
+func replaceProtocolMemoryRequestBody(ctx wrapper.HttpContext, original []byte, input memoryMessageAssemblyInput, log log.Log) bool {
+	if !hasEffectiveProtocolMemoryInjection(input) {
+		return false
+	}
+	_, adapter, ok := memoryProtocolAdapterForPath(ctx.GetStringContext(memoryRequestPathContextKey, ""))
+	if !ok {
+		return false
+	}
+	replaced, err := adapter.InjectContext(original, memoryProtocolInjectableContext(input))
+	if err != nil {
+		log.Warnf("[ai-memory] request body protocol assembly failed open: %v", err)
+		return false
+	}
+	if err := memoryReplaceHTTPRequestBody(replaced); err != nil {
+		log.Warnf("[ai-memory] request body replacement failed open: %v", err)
+		return false
+	}
+	if err := writeMemoryCacheDigest(input); err != nil {
+		log.Warnf("[ai-memory] trusted cache digest unavailable after protocol injection: %v", err)
+	}
+	return true
+}
+
+func hasEffectiveProtocolMemoryInjection(input memoryMessageAssemblyInput) bool {
+	return input.MemoryMessage != nil || len(input.Recent) > 0
 }
 
 func replaceMemoryRequestBodyWithRecentFallback(ctx wrapper.HttpContext, log log.Log) bool {

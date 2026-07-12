@@ -251,6 +251,66 @@ func TestMemoryNonStreamingResponseCapture(t *testing.T) {
 			requireMemoryEventOmitsField(t, event, "assistant_content")
 			requireMemoryEventJSONExcludes(t, event, "current question")
 		})
+
+		t.Run("messages response emits memory event", func(t *testing.T) {
+			host := startMemoryProtocolResponseCaptureRequest(t, "/v1/messages", []byte(`{
+				"model": "deepseek-v4-flash",
+				"messages": [{"role": "user", "content": [{"type":"text","text":"messages memory question"}]}],
+				"stream": false
+			}`))
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{
+				"id": "msg-memory-response-capture",
+				"type": "message",
+				"role": "assistant",
+				"content": [{"type":"text","text":"Messages memory answer"}],
+				"stop_reason": "end_turn",
+				"usage": {"input_tokens": 14, "output_tokens": 7}
+			}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			event := requireMemoryResponseCaptureEvent(t, host)
+			requireMemoryProtocolResponseSafeFacts(t, event, "/v1/messages", "deepseek-v4-flash")
+			require.Equal(t, "messages memory question", event["user_content"])
+			require.Equal(t, "Messages memory answer", event["assistant_content"])
+			require.Equal(t, "end_turn", event["finish_reason"])
+			require.Equal(t, false, event["is_stream"])
+			requireMemoryResponseCaptureUsage(t, event, 14, 7, 21)
+		})
+
+		t.Run("responses response emits memory event", func(t *testing.T) {
+			host := startMemoryProtocolResponseCaptureRequest(t, "/v1/responses", []byte(`{
+				"model": "deepseek-v4-flash",
+				"input": [{"role":"user","content":[{"type":"input_text","text":"responses memory question"}]}],
+				"stream": false
+			}`))
+
+			host.CallOnHttpResponseHeaders([][2]string{
+				{":status", "200"},
+				{"content-type", "application/json"},
+			})
+			action := host.CallOnHttpResponseBody([]byte(`{
+				"id": "resp_memory_response_capture",
+				"object": "response",
+				"model": "deepseek-v4-flash",
+				"output_text": "Responses memory answer",
+				"status": "completed",
+				"usage": {"input_tokens": 13, "output_tokens": 5, "total_tokens": 18}
+			}`))
+			require.Equal(t, types.ActionContinue, action)
+
+			event := requireMemoryResponseCaptureEvent(t, host)
+			requireMemoryProtocolResponseSafeFacts(t, event, "/v1/responses", "deepseek-v4-flash")
+			require.Equal(t, "responses memory question", event["user_content"])
+			require.Equal(t, "Responses memory answer", event["assistant_content"])
+			require.Equal(t, "completed", event["finish_reason"])
+			require.Equal(t, false, event["is_stream"])
+			requireMemoryResponseCaptureUsage(t, event, 13, 5, 18)
+		})
 	})
 }
 
@@ -316,6 +376,66 @@ func startMemoryResponseCaptureRequest(t *testing.T, captureResponse bool, extra
 	return host
 }
 
+func startMemoryProtocolResponseCaptureRequest(t *testing.T, path string, body []byte) test.TestHost {
+	t.Helper()
+	host, status := newMemoryConfigTestHost(memoryProtocolResponseCaptureConfig(t, path))
+	t.Cleanup(host.Reset)
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+	require.NoError(t, host.SetRouteName("memory-route"))
+	require.NoError(t, host.SetRequestId("property-request-id"))
+
+	headers := applyMemoryRequestGatingHeaderOverrides(memoryConsoleAssembleHeaders(), [][2]string{
+		{":path", path},
+		{"x-request-id", "request-response-capture-1"},
+	})
+	action := host.CallOnHttpRequestHeaders(headers)
+	require.Equal(t, types.HeaderStopIteration, action)
+
+	action = host.CallOnHttpRequestBody(body)
+	require.Equal(t, types.ActionPause, action)
+	requireMemoryRecentRedisLookup(t, host)
+
+	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
+	return host
+}
+
+func memoryProtocolResponseCaptureConfig(t *testing.T, path string) json.RawMessage {
+	t.Helper()
+	return mustMemoryConfig(t, map[string]interface{}{
+		"redis_stream": map[string]interface{}{
+			"service_name": "redis.memory.svc.cluster.local",
+			"stream":       memoryEventStreamName,
+			"field":        memoryEventStreamField,
+		},
+		"recent_cache": map[string]interface{}{
+			"service_name": "redis.recent.svc.cluster.local",
+		},
+		"console_internal": map[string]interface{}{
+			"service_name":  memoryConsoleService,
+			"service_port":  8080,
+			"assemble_path": memoryConsolePath,
+			"timeout_ms":    120,
+		},
+		"tenant_header":        "x-mse-tenant",
+		"consumer_header":      "x-mse-consumer",
+		"session_header":       "x-mse-session",
+		"request_id_header":    "x-request-id",
+		"enable_path_suffixes": []string{path},
+		"fail_policy":          "open",
+		"_rules_": []map[string]interface{}{
+			{
+				"_match_route_":       []string{"memory-route"},
+				"memory_mode":         "recent-only",
+				"recent_window_turns": 6,
+				"capture_response":    true,
+				"no_store_header":     memoryNoStoreHeader,
+				"policy_version":      "7",
+			},
+		},
+	})
+}
+
 func requireMemoryResponseCaptureEvent(t *testing.T, host test.TestHost) map[string]interface{} {
 	t.Helper()
 	var events []map[string]interface{}
@@ -343,14 +463,19 @@ func requireMemoryResponseCaptureEvent(t *testing.T, host test.TestHost) map[str
 
 func requireMemoryResponseSafeFacts(t *testing.T, event map[string]interface{}, statusCode int) {
 	t.Helper()
+	requireMemoryResponseSafeFactsFor(t, event, statusCode, "/v1/chat/completions", memoryResponseCaptureModel)
+}
+
+func requireMemoryResponseSafeFactsFor(t *testing.T, event map[string]interface{}, statusCode int, path string, model string) {
+	t.Helper()
 	require.EqualValues(t, 1, event["schema_version"])
 	require.Equal(t, "tenant-a", event["tenant"])
 	require.Equal(t, "consumer-a", event["consumer"])
 	require.Equal(t, "session-a", event["session_id"])
 	require.Equal(t, "request-response-capture-1", event["request_id"])
-	require.Equal(t, "/v1/chat/completions", event["request_path"])
+	require.Equal(t, path, event["request_path"])
 	require.Equal(t, map[string]interface{}{"name": "memory-route"}, event["route"])
-	require.Equal(t, map[string]interface{}{"name": memoryResponseCaptureModel}, event["model"])
+	require.Equal(t, map[string]interface{}{"name": model}, event["model"])
 	require.Equal(t, "recent-only", event["memory_mode"])
 	require.Equal(t, "7", event["policy_version"])
 	require.EqualValues(t, statusCode, event["status_code"])
@@ -360,6 +485,11 @@ func requireMemoryResponseSafeFacts(t *testing.T, event map[string]interface{}, 
 	require.NotEmpty(t, event["started_at_ms"])
 	require.NotEmpty(t, event["ended_at_ms"])
 	require.NotEmpty(t, event["plugin_version"])
+}
+
+func requireMemoryProtocolResponseSafeFacts(t *testing.T, event map[string]interface{}, path string, model string) {
+	t.Helper()
+	requireMemoryResponseSafeFactsFor(t, event, 200, path, model)
 }
 
 func requireMemoryResponseCaptureUsage(t *testing.T, event map[string]interface{}, input, output, total int) {

@@ -7,6 +7,7 @@ import (
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
+	"github.com/higress-group/wasm-go/pkg/ai/protocol"
 	"github.com/higress-group/wasm-go/pkg/ai/sessionctx"
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
@@ -124,12 +125,19 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	if memoryGateReason(ctx) != "" {
 		return types.ActionContinue
 	}
-	request, err := sessionctx.ParseOpenAIChatRequest(body)
-	if err != nil {
-		markMemoryGate(ctx, "request-parse-failed")
+	path := ctx.GetStringContext(memoryRequestPathContextKey, "")
+	kind, adapter, ok := memoryProtocolAdapterForPath(path)
+	if !ok {
+		markMemoryGate(ctx, "unsupported-protocol")
 		return types.ActionContinue
 	}
-	bodyDigest, err := sessionctx.BuildOpenAIChatRequestDigest(request)
+	method, _ := proxywasm.GetHttpRequestHeader(":method")
+	bodyDigest, err := adapter.BuildCacheDigest(protocol.RequestParseInput{
+		Method:               method,
+		Path:                 path,
+		Body:                 body,
+		ContextPolicyVersion: c.Route.PolicyVersion,
+	})
 	if err != nil {
 		markMemoryGate(ctx, "request-digest-failed")
 		return types.ActionContinue
@@ -139,20 +147,34 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 		Consumer:    ctx.GetStringContext(memoryConsumerContextKey, ""),
 		SessionID:   ctx.GetStringContext(memorySessionContextKey, ""),
 		Route:       ctx.GetStringContext(memoryRouteContextKey, ""),
-		RequestPath: ctx.GetStringContext(memoryRequestPathContextKey, ""),
-		Model:       request.Model,
-		BodyDigest:  bodyDigest,
+		RequestPath: path,
+		Model:       bodyDigest.Input.Model,
+		BodyDigest:  bodyDigest.Digest,
 	})
 	if err != nil {
 		markMemoryGate(ctx, "request-digest-failed")
 		return types.ActionContinue
 	}
-	ctx.SetContext(memoryModelContextKey, request.Model)
-	ctx.SetContext(memoryStreamContextKey, request.Stream)
+	currentQuestion, err := memoryCurrentQuestion(body, path, c.Route.QuestionFrom)
+	if err != nil {
+		markMemoryGate(ctx, "request-parse-failed")
+		return types.ActionContinue
+	}
+	ctx.SetContext(memoryModelContextKey, bodyDigest.Input.Model)
+	ctx.SetContext(memoryStreamContextKey, gjson.GetBytes(body, "stream").Bool())
 	ctx.SetContext(memoryRequestDigestContextKey, digest)
-	ctx.SetContext(memoryUserContentContextKey, memoryCurrentQuestion(body, request, c.Route.QuestionFrom))
+	ctx.SetContext(memoryUserContentContextKey, currentQuestion)
 	ctx.SetContext(memoryOriginalBodyContextKey, append([]byte(nil), body...))
-	ctx.SetContext(memoryCurrentMessagesContextKey, append([]sessionctx.OpenAIMessage(nil), request.Messages...))
+	if kind == protocol.ProtocolChatCompletions {
+		request, err := sessionctx.ParseOpenAIChatRequest(body)
+		if err != nil {
+			markMemoryGate(ctx, "request-parse-failed")
+			return types.ActionContinue
+		}
+		ctx.SetContext(memoryCurrentMessagesContextKey, append([]sessionctx.OpenAIMessage(nil), request.Messages...))
+	} else {
+		ctx.SetContext(memoryCurrentMessagesContextKey, nil)
+	}
 	ctx.SetContext(memoryRecentMessagesContextKey, nil)
 	if memoryRecentCacheConfigured(c) {
 		if err := memoryLoadRecentMemory(ctx, c, log); err != nil {
@@ -178,16 +200,16 @@ func onHttpRequestBody(ctx wrapper.HttpContext, c config.PluginConfig, body []by
 	return types.ActionContinue
 }
 
-func memoryCurrentQuestion(body []byte, request sessionctx.OpenAIChatRequest, path string) string {
-	if path = strings.TrimSpace(path); path != "" {
-		result := gjson.GetBytes(body, path)
+func memoryCurrentQuestion(body []byte, requestPath string, questionFrom string) (string, error) {
+	if questionFrom = strings.TrimSpace(questionFrom); questionFrom != "" {
+		result := gjson.GetBytes(body, questionFrom)
 		if result.Exists() {
-			if question := strings.TrimSpace(result.String()); question != "" {
-				return question
+			if question := strings.TrimSpace(memoryTextFromGJSON(result)); question != "" {
+				return question, nil
 			}
 		}
 	}
-	return sessionctx.CurrentUserIntent(request.Messages)
+	return memoryProtocolCurrentUserPromptForPath(requestPath, body)
 }
 
 func memoryRecentCacheConfigured(c config.PluginConfig) bool {

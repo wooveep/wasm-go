@@ -115,6 +115,7 @@ func requireThinConsoleLookupCall(t *testing.T, host test.TestHost) map[string]i
 	require.Equal(t, "session-a", facts["session"])
 	require.Equal(t, "test-route-default", facts["route"])
 	require.Equal(t, "qwen-turbo", facts["model"])
+	require.Equal(t, "chat_completions", facts["protocol"])
 	require.Equal(t, "consumer", facts["cache_scope"])
 	require.Equal(t, "policy-v1", facts["cache_policy_version"])
 	require.Equal(t, "non_stream", facts["stream_mode"])
@@ -149,6 +150,7 @@ func validThinConsoleReplayRecord(t *testing.T, overrides map[string]interface{}
 		"gateway_route":        "test-route-default",
 		"model_asset_id":       "66666666-6666-4666-8666-666666666666",
 		"gateway_model":        "qwen-turbo",
+		"protocol":             "chat_completions",
 		"policy_id":            "77777777-7777-4777-8777-777777777777",
 		"policy_version":       1,
 		"cache_policy_version": "policy-v1",
