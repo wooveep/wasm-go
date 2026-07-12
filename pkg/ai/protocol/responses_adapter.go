@@ -273,9 +273,11 @@ func responsesOutputContainsToolCall(output []responsesOutputItem) bool {
 }
 
 type responsesUsage struct {
-	InputTokens  int `json:"input_tokens,omitempty"`
-	OutputTokens int `json:"output_tokens,omitempty"`
-	TotalTokens  int `json:"total_tokens,omitempty"`
+	InputTokens          int `json:"input_tokens,omitempty"`
+	InputCacheHitTokens  int `json:"input_cache_hit_tokens,omitempty"`
+	InputCacheMissTokens int `json:"input_cache_miss_tokens,omitempty"`
+	OutputTokens         int `json:"output_tokens,omitempty"`
+	TotalTokens          int `json:"total_tokens,omitempty"`
 }
 
 func (usage responsesUsage) normalized() Usage {
@@ -283,10 +285,22 @@ func (usage responsesUsage) normalized() Usage {
 	if total == 0 && (usage.InputTokens != 0 || usage.OutputTokens != 0) {
 		total = usage.InputTokens + usage.OutputTokens
 	}
+	cacheHitTokens := 0
+	cacheMissTokens := 0
+	if usage.InputTokens >= 0 &&
+		usage.InputCacheHitTokens >= 0 &&
+		usage.InputCacheMissTokens >= 0 &&
+		usage.InputCacheHitTokens <= usage.InputTokens &&
+		usage.InputCacheMissTokens == usage.InputTokens-usage.InputCacheHitTokens {
+		cacheHitTokens = usage.InputCacheHitTokens
+		cacheMissTokens = usage.InputCacheMissTokens
+	}
 	return Usage{
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
-		TotalTokens:  total,
+		InputTokens:          usage.InputTokens,
+		InputCacheHitTokens:  cacheHitTokens,
+		InputCacheMissTokens: cacheMissTokens,
+		OutputTokens:         usage.OutputTokens,
+		TotalTokens:          total,
 	}
 }
 

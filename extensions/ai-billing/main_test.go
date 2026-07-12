@@ -1618,6 +1618,129 @@ func TestQwenCacheAwareUsagePreservesCacheCreationDetails(t *testing.T) {
 	}, usage["details"])
 }
 
+func TestResponsesCacheReplayPreservesCanonicalCacheAwareUsage(t *testing.T) {
+	config := mustBillingConfig(t, map[string]interface{}{
+		"quota_scope":     "global",
+		"provider":        "openai",
+		"tenant_header":   "x-tenant-id",
+		"consumer_header": "x-consumer-id",
+		"redis_stream": map[string]interface{}{
+			"service_name": "redis.static",
+			"service_port": 6379,
+			"database":     2,
+			"timeout":      750,
+			"stream":       "billing:events",
+		},
+		"enable_path_suffixes": []string{"/v1/responses"},
+	})
+	host, status := test.NewTestHost(config)
+	defer host.Reset()
+	require.Equal(t, types.OnPluginStartStatusOK, status)
+
+	host.CallOnHttpRequestHeaders([][2]string{
+		{":authority", "example.com"},
+		{":path", "/v1/responses"},
+		{":method", "POST"},
+		{"x-tenant-id", "tenant-a"},
+		{"x-consumer-id", "consumer-a"},
+	})
+	host.CallOnHttpResponseHeaders([][2]string{
+		{":status", "200"},
+		{"content-type", "application/json"},
+	})
+	action := host.CallOnHttpResponseBody([]byte(`{
+		"id":"resp_cache_replay_fixture",
+		"model":"deepseek-v4-flash",
+		"object":"response",
+		"output_text":"cached answer",
+		"status":"completed",
+		"usage":{
+			"input_tokens":683,
+			"input_cache_hit_tokens":683,
+			"input_cache_miss_tokens":0,
+			"output_tokens":146,
+			"total_tokens":829
+		}
+	}`))
+	require.Equal(t, types.ActionContinue, action)
+	event := requireRedisBillingEvent(t, host)
+	requireObjectFactName(t, event, "model", "deepseek-v4-flash")
+	require.Equal(t, usageSourceProvider, event["usage_source"])
+
+	usage, ok := event["usage"].(map[string]interface{})
+	require.True(t, ok)
+	require.EqualValues(t, 683, usage["input"])
+	require.EqualValues(t, 146, usage["output"])
+	require.EqualValues(t, 829, usage["total"])
+	require.EqualValues(t, 683, usage["input_cache_hit_tokens"])
+	require.EqualValues(t, 0, usage["input_cache_miss_tokens"])
+	require.EqualValues(t, 146, usage["output_tokens"])
+	require.Equal(t, map[string]interface{}{
+		"provider_usage": map[string]interface{}{
+			"input_tokens":            float64(683),
+			"input_cache_hit_tokens":  float64(683),
+			"input_cache_miss_tokens": float64(0),
+			"output_tokens":           float64(146),
+			"total_tokens":            float64(829),
+		},
+	}, usage["details"])
+}
+
+func TestCacheAwareProviderUsageSplitValidatesCanonicalTotals(t *testing.T) {
+	tests := []struct {
+		name         string
+		inputTokens  int64
+		provider     map[string]any
+		wantHit      int64
+		wantMiss     int64
+		wantAccepted bool
+	}{
+		{
+			name:        "valid split",
+			inputTokens: 21,
+			provider: map[string]any{
+				"input_cache_hit_tokens":  float64(13),
+				"input_cache_miss_tokens": float64(8),
+			},
+			wantHit:      13,
+			wantMiss:     8,
+			wantAccepted: true,
+		},
+		{
+			name:        "missing miss field",
+			inputTokens: 21,
+			provider: map[string]any{
+				"input_cache_hit_tokens": float64(13),
+			},
+		},
+		{
+			name:        "negative hit field",
+			inputTokens: 21,
+			provider: map[string]any{
+				"input_cache_hit_tokens":  float64(-1),
+				"input_cache_miss_tokens": float64(22),
+			},
+		},
+		{
+			name:        "split does not equal input",
+			inputTokens: 21,
+			provider: map[string]any{
+				"input_cache_hit_tokens":  float64(13),
+				"input_cache_miss_tokens": float64(7),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hit, miss, accepted := cacheAwareProviderUsageSplit(tc.inputTokens, tc.provider)
+			require.Equal(t, tc.wantAccepted, accepted)
+			require.Equal(t, tc.wantHit, hit)
+			require.Equal(t, tc.wantMiss, miss)
+		})
+	}
+}
+
 func TestGeminiCacheAwareUsageMapsCachedContentTokens(t *testing.T) {
 	host, status := test.NewTestHost(billingConfig)
 	defer host.Reset()

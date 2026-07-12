@@ -157,6 +157,36 @@ func TestResponsesAdapterCapturesNonStreamOutputTextAndItems(t *testing.T) {
 	require.Equal(t, Usage{InputTokens: 9, OutputTokens: 3, TotalTokens: 12}, itemOnlyExchange.Usage)
 }
 
+func TestResponsesAdapterCapturesCacheAwareUsageFromReplayBody(t *testing.T) {
+	adapter := ResponsesAdapter{}
+	exchange, err := adapter.CaptureResponse(ResponseCaptureInput{
+		StatusCode: 200,
+		Body: []byte(`{
+			"id": "resp_cache_replay_fixture",
+			"object": "response",
+			"model": "deepseek-v4-flash",
+			"output_text": "cached answer",
+			"status": "completed",
+			"usage": {
+				"input_tokens": 683,
+				"input_cache_hit_tokens": 683,
+				"input_cache_miss_tokens": 0,
+				"output_tokens": 146,
+				"total_tokens": 829
+			}
+		}`),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, Usage{
+		InputTokens:          683,
+		InputCacheHitTokens:  683,
+		InputCacheMissTokens: 0,
+		OutputTokens:         146,
+		TotalTokens:          829,
+	}, exchange.Usage)
+}
+
 func TestResponsesAdapterCapturesResponsesStreamEvents(t *testing.T) {
 	adapter := ResponsesAdapter{}
 	exchange, err := adapter.CaptureStream(ResponseStreamInput{
@@ -189,6 +219,60 @@ func TestResponsesAdapterCapturesResponsesStreamEvents(t *testing.T) {
 	require.JSONEq(t, `{"type":"response.function_call_arguments.delta","item_id":"call_1","output_index":1,"delta":"{\"topic\":"}`, string(functionCallDelta.Data))
 	requireResponsesStreamEvent(t, exchange.StreamChunks, "response.function_call_arguments.done")
 	requireResponsesStreamEvent(t, exchange.StreamChunks, "response.completed")
+}
+
+func TestResponsesAdapterCapturesCacheAwareUsageFromCompletedStream(t *testing.T) {
+	adapter := ResponsesAdapter{}
+	exchange, err := adapter.CaptureStream(ResponseStreamInput{
+		StatusCode: 200,
+		Chunks: [][]byte{
+			[]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream_cache_fixture\",\"status\":\"completed\",\"usage\":{\"input_tokens\":21,\"input_cache_hit_tokens\":13,\"input_cache_miss_tokens\":8,\"output_tokens\":5,\"total_tokens\":26}}}\n\n"),
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, Usage{
+		InputTokens:          21,
+		InputCacheHitTokens:  13,
+		InputCacheMissTokens: 8,
+		OutputTokens:         5,
+		TotalTokens:          26,
+	}, exchange.Usage)
+	completed := requireResponsesStreamChunk(t, exchange.StreamChunks, "response.completed", "")
+	require.NotNil(t, completed.Usage)
+	require.Equal(t, exchange.Usage, *completed.Usage)
+}
+
+func TestResponsesUsageRejectsInvalidCacheAwareSplits(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage responsesUsage
+	}{
+		{
+			name: "negative cache tokens",
+			usage: responsesUsage{
+				InputTokens:          21,
+				InputCacheHitTokens:  -1,
+				InputCacheMissTokens: 22,
+			},
+		},
+		{
+			name: "cache split differs from input",
+			usage: responsesUsage{
+				InputTokens:          21,
+				InputCacheHitTokens:  13,
+				InputCacheMissTokens: 7,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			normalized := tc.usage.normalized()
+			require.Zero(t, normalized.InputCacheHitTokens)
+			require.Zero(t, normalized.InputCacheMissTokens)
+		})
+	}
 }
 
 func TestResponsesAdapterCapturesCompletedStreamOutputFallback(t *testing.T) {

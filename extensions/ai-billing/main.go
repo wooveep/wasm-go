@@ -495,7 +495,12 @@ func recordUsage(ctx wrapper.HttpContext, body []byte) {
 	}
 	inputTokens := usage.InputToken
 	hasCacheAwareUsage := false
-	if hitTokens, missTokens, ok := cacheAwareInputTokenSplit(usage.InputToken, usage.InputTokenDetails); ok {
+	if hitTokens, missTokens, ok := cacheAwareProviderUsageSplit(usage.InputToken, usage.ProviderUsage); ok {
+		hasCacheAwareUsage = true
+		inputTokens = hitTokens + missTokens
+		ctx.SetContext(ctxInputCacheHit, hitTokens)
+		ctx.SetContext(ctxInputCacheMiss, missTokens)
+	} else if hitTokens, missTokens, ok := cacheAwareInputTokenSplit(usage.InputToken, usage.InputTokenDetails); ok {
 		hasCacheAwareUsage = true
 		inputTokens = hitTokens + missTokens
 		ctx.SetContext(ctxInputCacheHit, hitTokens)
@@ -901,6 +906,19 @@ func providerUsageFromContext(value any) map[string]any {
 		return usage
 	}
 	return nil
+}
+
+func cacheAwareProviderUsageSplit(inputTokens int64, providerUsage map[string]any) (int64, int64, bool) {
+	hitTokens, hasHit := providerUsageInt64(providerUsage, "input_cache_hit_tokens")
+	missTokens, hasMiss := providerUsageInt64(providerUsage, "input_cache_miss_tokens")
+	if !hasHit || !hasMiss {
+		return 0, 0, false
+	}
+	inputTokens = nonNegativeInt64(inputTokens)
+	if hitTokens > inputTokens || missTokens != inputTokens-hitTokens {
+		return 0, 0, false
+	}
+	return hitTokens, missTokens, true
 }
 
 func cacheAwareInputTokenSplit(inputTokens int64, inputDetails map[string]int64) (int64, int64, bool) {
