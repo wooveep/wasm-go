@@ -22,13 +22,14 @@ import (
 const (
 	pluginName = "ai-billing"
 
-	defaultQuotaScope     = "global"
-	defaultProvider       = "default"
-	defaultTenantHeader   = "x-mse-tenant"
-	defaultConsumerHeader = "x-mse-consumer"
-	defaultRedisPort      = 6379
-	defaultRedisTimeout   = int64(500)
-	defaultRedisStream    = "billing:events"
+	defaultQuotaScope      = "global"
+	defaultProvider        = "default"
+	defaultTenantHeader    = "x-mse-tenant"
+	defaultConsumerHeader  = "x-mse-consumer"
+	defaultRedisPort       = 6379
+	defaultRedisTimeout    = int64(500)
+	defaultRedisStream     = "billing:events"
+	gatewayRequestIDHeader = "x-ocmf-gateway-request-id"
 
 	FailPolicyOpen = "open"
 
@@ -402,8 +403,12 @@ func initBillingRequestContext(ctx wrapper.HttpContext, requestPath, requestID, 
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, config BillingConfig) types.Action {
+	_ = proxywasm.RemoveHttpResponseHeader(gatewayRequestIDHeader)
 	if !ctx.GetBoolContext(ctxBillingEnabled, false) {
 		return types.ActionContinue
+	}
+	if requestID := ctx.GetStringContext(ctxRequestID, ""); requestID != "" {
+		_ = proxywasm.AddHttpResponseHeader(gatewayRequestIDHeader, requestID)
 	}
 	status, _ := proxywasm.GetHttpResponseHeader(":status")
 	statusCode, err := strconv.Atoi(status)

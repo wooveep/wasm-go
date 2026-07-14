@@ -1168,7 +1168,10 @@ func ExtractStreamingEvents(ctx wrapper.HttpContext, chunk []byte) []StreamEvent
 }
 
 func (c *ProviderConfig) isSupportedAPI(apiName ApiName) bool {
-	_, exist := c.capabilities[string(apiName)]
+	capabilityPath, exist := c.capabilities[string(apiName)]
+	if exist && c.typ == providerTypeQwen && apiName == ApiNameResponses && strings.TrimSpace(capabilityPath) == "" {
+		return false
+	}
 	if exist {
 		return true
 	}

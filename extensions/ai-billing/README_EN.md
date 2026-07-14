@@ -49,6 +49,8 @@ When provider usage exposes cache details, `usage` also includes `input_cache_hi
 
 `route`, `provider`, and `model` use Console-native object facts: `{ "id"?: "...", "name"?: "..." }`. Gateways usually do not know Console UUIDs, so the plugin populates runtime `name` values by default.
 
+For billing-enabled AI requests, the plugin overwrites `x-ocmf-gateway-request-id` on the response with the gateway's final `x-request-id`. This value exactly matches the event `request_id`, allowing Console and UI billing correlation; a same-named header supplied by the upstream provider is not retained. Paths where billing is not enabled do not expose this correlation header. The response header identifies the gateway request but does not by itself prove that the Redis event has been persisted.
+
 Configuration fields:
 
 | Name | Type | Default | Description |

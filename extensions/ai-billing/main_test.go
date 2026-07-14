@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -410,8 +411,10 @@ func TestBillingEventDelivery(t *testing.T) {
 			action = host.CallOnHttpResponseHeaders([][2]string{
 				{":status", "200"},
 				{"content-type", "application/json"},
+				{gatewayRequestIDHeader, "provider-spoofed-id"},
 			})
 			require.Equal(t, types.ActionContinue, action)
+			require.False(t, test.HasHeader(host.GetResponseHeaders(), gatewayRequestIDHeader))
 
 			action = host.CallOnHttpResponseBody([]byte(`{"ok":true}`))
 			require.Equal(t, types.ActionContinue, action)
@@ -447,8 +450,11 @@ func TestBillingEventDelivery(t *testing.T) {
 			action = host.CallOnHttpResponseHeaders([][2]string{
 				{":status", "200"},
 				{"content-type", "application/json"},
+				{gatewayRequestIDHeader, "provider-spoofed-id"},
 			})
 			require.Equal(t, types.ActionContinue, action)
+			responseHeaders := host.GetResponseHeaders()
+			responseRequestID := singleHeaderValue(t, responseHeaders, gatewayRequestIDHeader)
 			action = host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-flash","usage":{"prompt_tokens":5,"completion_tokens":8,"total_tokens":13}}`))
 			require.Equal(t, types.ActionContinue, action)
 
@@ -460,6 +466,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			require.Equal(t, "internal", event["worker_kind"])
 			require.Equal(t, "ai-memory-digest:job-1", event["source_job"])
 			require.Equal(t, false, event["bill_customer"])
+			require.Equal(t, event["request_id"], responseRequestID)
 
 			ackRedisBillingEvent(t, host)
 			host.CompleteHttp()
@@ -1451,6 +1458,55 @@ func TestBillingEventDelivery(t *testing.T) {
 			host.CompleteHttp()
 		})
 	})
+}
+
+func TestBillingResponseRequestIDHeader(t *testing.T) {
+	test.RunTest(t, func(t *testing.T) {
+		for _, testCase := range []struct {
+			name        string
+			contentType string
+		}{
+			{name: "non-streaming", contentType: "application/json"},
+			{name: "streaming", contentType: "text/event-stream"},
+		} {
+			t.Run(testCase.name, func(t *testing.T) {
+				host, status := test.NewTestHost(billingConfig)
+				defer host.Reset()
+				require.Equal(t, types.OnPluginStartStatusOK, status)
+
+				host.CallOnHttpRequestHeaders([][2]string{
+					{":authority", "example.com"},
+					{":path", "/v1/chat/completions"},
+					{":method", "POST"},
+					{"x-request-id", "gateway-request-1"},
+				})
+				host.CallOnHttpResponseHeaders([][2]string{
+					{":status", "200"},
+					{"content-type", testCase.contentType},
+					{gatewayRequestIDHeader, "provider-spoofed-id"},
+				})
+
+				require.Equal(
+					t,
+					"gateway-request-1",
+					singleHeaderValue(t, host.GetResponseHeaders(), gatewayRequestIDHeader),
+				)
+			})
+		}
+
+	})
+}
+
+func singleHeaderValue(t *testing.T, headers [][2]string, name string) string {
+	t.Helper()
+	values := make([]string, 0, 1)
+	for _, header := range headers {
+		if strings.EqualFold(header[0], name) {
+			values = append(values, header[1])
+		}
+	}
+	require.Len(t, values, 1)
+	return values[0]
 }
 
 func deliverTestBillingEvent(t *testing.T, config json.RawMessage, routeName, requestID string) map[string]interface{} {

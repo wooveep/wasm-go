@@ -18,6 +18,8 @@ description: ai-billing 请求级账单事件插件配置参考
 
 `route`、`provider`、`model` 使用 Console 原生对象事实格式：`{ "id"?: "...", "name"?: "..." }`。网关通常不知道 Console UUID，因此默认填充运行时 `name`。
 
+对启用账单的 AI 请求，插件会用网关最终采用的 `x-request-id` 覆盖响应中的 `x-ocmf-gateway-request-id`。该值与事件的 `request_id` 完全一致，可供 Console 和 UI 关联账单；上游伪造的同名响应头不会被保留。未启用账单的路径不会暴露该关联头。响应头仅证明本次网关关联 ID，不能单独证明 Redis 事件已经持久化。
+
 ## 配置示例
 
 ```yaml

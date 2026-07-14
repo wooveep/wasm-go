@@ -58,7 +58,7 @@ description: AI 代理插件配置参考
 | `failover`             | object                 | 非必填   | -      | 配置 apiToken 的 failover 策略，当 apiToken 不可用时，将其移出 apiToken 列表，待健康检测通过或冷却时间到期后重新添加回 apiToken 列表                                                                                                                                                                                                                                                                                                       |
 | `retryOnFailure`       | object                 | 非必填   | -      | 当请求失败时立即进行重试                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `reasoningContentMode` | string                 | 非必填   | -      | 如何处理大模型服务返回的推理内容。目前支持以下取值：passthrough（正常输出推理内容）、ignore（不输出推理内容）、concat（将推理内容拼接在常规输出内容之前）。默认为 passthrough。仅支持通义千问服务。                                                                                                                                                                                                                                        |
-| `capabilities`         | map of string          | 非必填   | -      | 部分 provider 的部分 ai 能力原生兼容 openai/v1 格式，不需要重写，可以直接转发，通过此配置项指定来开启转发, key 表示的是采用的厂商协议能力，values 表示的真实的厂商该能力的 api path, 厂商协议能力当前支持: openai/v1/chatcompletions, openai/v1/responses, openai/v1/embeddings, openai/v1/imagegeneration, openai/v1/audiospeech, cohere/v1/rerank                                                                                                             |
+| `capabilities`         | map of string          | 非必填   | -      | 部分 provider 的部分 ai 能力原生兼容 openai/v1 格式，不需要重写，可以直接转发，通过此配置项指定来开启转发。key 表示厂商协议能力，value 表示真实的厂商 API path。对于 Qwen，显式将 `openai/v1/responses` 配置为空或仅空白会关闭其默认原生 Responses 能力并触发 Chat Completions 兼容回退；其他 Provider 的空路径仍保留既有“保持原路径”语义。当前支持: openai/v1/chatcompletions, openai/v1/responses, openai/v1/embeddings, openai/v1/imagegeneration, openai/v1/audiospeech, cohere/v1/rerank                                                                                                             |
 | `basePath`             | string                 | 非必填   | -      | 如果配置了 basePath，可用于在请求 path 中移除该前缀，或添加至请求 path 中，默认为进行移除                                                                                                                                                                                                                                                                                                                                                 |
 | `basePathHandling`     | string                 | 非必填   | removePrefix | basePathHandling 用于指定 basePath 的处理方式。可选值：removePrefix（移除路径前缀，将请求转发给上游时去除 basePath 前缀后再拼接）、prepend（添加路径前缀，将请求转发给上游时在路径前面添加 basePath 前缀）                                                                                                                                                                                                                                                                                                                         |
 | `contextCleanupCommands` | array of string      | 非必填   | -      | 上下文清理命令列表。当请求的 messages 中存在完全匹配任意一个命令的 user 消息时，将该消息及之前所有非 system 消息清理掉，只保留 system 消息和该命令之后的消息。可用于主动清理对话上下文。                                                                                                                                                                                                                                                    |
@@ -1293,7 +1293,17 @@ provider:
     openai/v1/chatcompletions: /v1/chat/completions
 ```
 
-如果未声明 `openai/v1/responses` 但供应商支持 `openai/v1/chatcompletions`，插件会将支持的 Responses 请求回退转换为 Chat Completions，并把非流式响应和流式 SSE 转回 Responses 格式。回退模式支持文本 `input`、由 `input_text`/`output_text` 组成的消息数组、`instructions`、常见生成参数、函数工具和兼容的 `tool_choice`。回退模式不支持 `previous_response_id`、`conversation`、托管工具、文件输入和图片等多模态输入。
+如果未声明 `openai/v1/responses`，且供应商支持 `openai/v1/chatcompletions`，插件会将支持的 Responses 请求回退转换为 Chat Completions，并把非流式响应和流式 SSE 转回 Responses 格式。对于 Qwen，也可以将其 Responses 路径显式配置为 `''`（仅空白值等价），覆盖 Qwen 默认的原生 Responses 能力，让兼容模式中不支持原生 Responses 的模型使用 Chat Completions：
+
+```yaml
+provider:
+  type: qwen
+  qwenEnableCompatible: true
+  capabilities:
+    openai/v1/responses: ''
+```
+
+回退模式支持文本 `input`、由 `input_text`/`output_text` 组成的消息数组、`instructions`、常见生成参数、函数工具和兼容的 `tool_choice`。回退模式不支持 `previous_response_id`、`conversation`、托管工具、文件输入和图片等多模态输入。
 
 **响应示例**
 
