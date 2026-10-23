@@ -50,7 +50,7 @@ func init() {
 // @Title zh-CN AI History
 // @Description zh-CN 大模型对话历史缓存
 // @IconUrl
-// @Version 0.1.0
+// @Version 0.1.2
 //
 // @Contact.name sakura
 // @Contact.url
@@ -180,7 +180,8 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.
 	// get identity key
 	identityKey, _ := proxywasm.GetHttpRequestHeader(config.IdentityHeader)
 	if identityKey == "" {
-		log.Warnf("identity key is empty")
+		ctx.DontReadRequestBody()
+		ctx.DontReadResponseBody()
 		return types.ActionContinue
 	}
 	identityKey = strings.ReplaceAll(identityKey, " ", "")
@@ -202,7 +203,17 @@ func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte
 		ctx.SetContext(StreamContextKey, struct{}{})
 	}
 	identityKey := ctx.GetStringContext(IdentityKey, "")
-	question := TrimQuote(bodyJson.Get(config.QuestionFrom.RequestBody).String())
+	questionValue := bodyJson.Get(config.QuestionFrom.RequestBody)
+	question := TrimQuote(questionValue.String())
+	if questionValue.IsArray() {
+		var text strings.Builder
+		for _, part := range questionValue.Array() {
+			if part.Get("type").String() == "text" {
+				text.WriteString(part.Get("text").String())
+			}
+		}
+		question = text.String()
+	}
 	if question == "" {
 		log.Debug("parse question from request body failed")
 		return types.ActionContinue
@@ -245,15 +256,12 @@ func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte
 			return
 		}
 		fillHistoryCnt := getIntQueryParameter("fill_history_cnt", path, config.FillHistoryCnt) * 2
-		currJson := bodyJson.Get("messages").String()
-		var currMessage []ChatHistory
-		err = json.Unmarshal([]byte(currJson), &currMessage)
+		finalChat, err := fillHistoryPreservingContent(chat, []byte(bodyJson.Get("messages").Raw), fillHistoryCnt)
 		if err != nil {
-			log.Errorf("unmarshal currMessage:%s failed, err:%v", currJson, err)
+			log.Errorf("cannot parse history request messages: %v", err)
 			_ = proxywasm.ResumeHttpRequest()
 			return
 		}
-		finalChat := fillHistory(chat, currMessage, fillHistoryCnt)
 		var parameter map[string]any
 		err = json.Unmarshal(body, &parameter)
 		if err != nil {
@@ -268,7 +276,7 @@ func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte
 			_ = proxywasm.ResumeHttpRequest()
 			return
 		}
-		log.Infof("start to replace request body, parameter:%s", string(parameterJson))
+		log.Debugf("applied history context, messages:%d", len(finalChat))
 		_ = proxywasm.ReplaceHttpRequestBody(parameterJson)
 		_ = proxywasm.ResumeHttpRequest()
 	})
@@ -277,6 +285,38 @@ func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte
 		return types.ActionContinue
 	}
 	return types.ActionPause
+}
+
+func fillHistoryPreservingContent(chat []ChatHistory, raw []byte, count int) ([]json.RawMessage, error) {
+	var current []json.RawMessage
+	if err := json.Unmarshal(raw, &current); err != nil {
+		return nil, err
+	}
+	users, leading := 0, 0
+	for index, message := range current {
+		role := gjson.GetBytes(message, "role").String()
+		if role == "user" {
+			users++
+		}
+		if index == leading && (role == "system" || role == "developer") {
+			leading++
+		}
+	}
+	if users > 1 || count <= 0 {
+		return current, nil
+	}
+	if count > len(chat) {
+		count = len(chat)
+	}
+	result := append([]json.RawMessage{}, current[:leading]...)
+	for _, message := range chat[len(chat)-count:] {
+		encoded, err := json.Marshal(message)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, encoded)
+	}
+	return append(result, current[leading:]...), nil
 }
 
 func fillHistory(chat []ChatHistory, currMessage []ChatHistory, fillHistoryCnt int) []ChatHistory {
@@ -480,7 +520,7 @@ func saveChatHistory(ctx wrapper.HttpContext, config PluginConfig, questionI any
 		log.Errorf("marshal chat:%v failed, err:%v", chat, err)
 		return
 	}
-	log.Infof("start to Set history, identityKey:%s, chat:%s", identityKey, string(str))
+	log.Debugf("saving history, messages:%d", len(chat))
 	_ = config.redisClient.Set(config.CacheKeyPrefix+identityKey, string(str), nil)
 	if config.CacheTTL != 0 {
 		_ = config.redisClient.Expire(config.CacheKeyPrefix+identityKey, config.CacheTTL, nil)
