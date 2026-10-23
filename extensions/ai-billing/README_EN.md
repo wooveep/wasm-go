@@ -4,7 +4,7 @@ keywords: [AI Gateway, AI Billing, ai-billing]
 description: Configuration reference for request-level AI billing event delivery.
 ---
 
-> Plugin version: `0.1.8`
+> Plugin version: `0.1.9`
 
 ## Overview
 
@@ -116,3 +116,8 @@ The old HTTP-shaped transport is removed from the current configuration surface.
 ## Independent deployment boundary
 
 `ai-billing`, `ai-quota`, and `ai-statistics` can be deployed independently. `ai-billing` only publishes billing events; the plugins do not depend on or share one another's private runtime state. Balance admission and observability stay within their respective plugins, while settlement and persistence belong to Console/billing-service.
+
+
+## Event delivery and transport recovery
+
+Freeze the event at response completion, then deliver it from a bounded plugin-tick queue so HTTP context deletion cannot cancel the XADD. Retry a host transport failure once with exactly the same event ID, idempotency key and payload; do not retry Redis server errors. PostgreSQL event and settlement idempotency prevent duplicate customer debits. Queued and in-flight work share limits of 1024 events and 256 MiB, with a 100 ms tick interval. This in-memory queue is not a durable outbox: plugin shutdown or persistent failure can still lose events under fail-open. Monitor delivery failures and reconcile events.

@@ -201,3 +201,8 @@ APIs, authorization checks, and repair policy belong to Console.
 | Retention and deletion | Does not enforce retention or deletion; Console owns memory lifecycle policy. |
 | Management APIs | Exposes no memory management APIs from the gateway. |
 | Authorization checks | Trusts upstream identity headers and leaves memory authorization checks to Console APIs and workers. |
+
+
+## Event delivery and transport recovery
+
+Freeze MemoryEvent on response completion and dispatch it from the plugin tick context. Retry a host transport failure once with the same event ID, idempotency key and payload; Redis server errors are not retried. Queued and in-flight work share limits of 1024 events and 256 MiB, with a 100 ms tick interval. The queue is in memory, so plugin shutdown or persistent Redis failure can still lose events under fail-open. Audit source-event completeness.

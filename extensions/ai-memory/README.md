@@ -222,3 +222,8 @@ retention, deletion, management API, authorization, and repair policy.
 When `ai-memory` and `ai-cache` are both enabled, use a conservative cache
 policy such as consumer-scoped cache, memory-policy or digest-aware cache keys,
 or cache bypass until Console materializes memory-aware replay records.
+
+
+## 事件投递生命周期
+
+响应结束时冻结 MemoryEvent，再由插件 tick 上下文投递，避免 HTTP 上下文销毁取消在途 XADD。连接中断仅重试一次，保持原事件 ID、幂等键和内容不变；服务端错误不重试。队列同时限制待投递和在途任务（1024 条、256 MiB），每次 tick 最长间隔 100 ms。队列保存在内存中，插件关闭或持续 Redis 故障仍可能丢失事件；须结合源事件完整性审计监测 fail-open。

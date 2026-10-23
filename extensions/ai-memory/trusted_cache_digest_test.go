@@ -101,7 +101,7 @@ func startMemoryTrustedDigestRequestWithCleanup(t *testing.T, body []byte, calle
 		host = startMemoryConsoleAssembleRequestWithConfigNoCleanup(t, memoryConsoleAssembleConfig(t, "semantic"), body, headers)
 	}
 	require.False(t, test.HasHeader(host.GetRequestHeaders(), memorycache.DeprecatedDigestHeader))
-	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	requireMemoryAssembleCall(t, host)
 	return host
 }

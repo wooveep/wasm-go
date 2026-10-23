@@ -128,7 +128,7 @@ func TestBillingRedisFailOpenContract(t *testing.T) {
 			require.Equal(t, types.ActionContinue, action)
 			require.Equal(t, responseBody, host.GetResponseBody())
 
-			attrs := host.GetRedisCalloutAttributes()
+			attrs := billingRedisCallouts(host)
 			require.Len(t, attrs, 1)
 			command := redisCommand(t, attrs[0].Query)
 			require.Equal(t, []string{"xadd", "global:billing:events", "*", "event"}, command[:4])
@@ -142,11 +142,11 @@ func TestBillingRedisFailOpenContract(t *testing.T) {
 			require.Equal(t, usageSourceProvider, event["usage_source"])
 			require.NotContains(t, command[4], requestSecret)
 
-			host.CallOnRedisCall(0, test.CreateRedisRespError("temporary delivery failure"))
+			billingRedisRespond(host, 0, test.CreateRedisRespError("temporary delivery failure"))
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 			require.Equal(t, responseBody, host.GetResponseBody())
 			host.CompleteHttp()
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, billingRedisCallouts(host))
 
 			logs := make([]string, 0)
 			logs = append(logs, host.GetTraceLogs()...)

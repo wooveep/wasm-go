@@ -171,23 +171,23 @@ func TestQuotaAdmissionSurfaceResources(t *testing.T) {
 			}{
 				"extension README.md": {
 					text:          extensionReadme,
-					versionMarker: "> 插件版本：`1.0.2`",
+					versionMarker: "> 插件版本：`1.0.4`",
 				},
 				"extension README_EN.md": {
 					text:          extensionReadmeEN,
-					versionMarker: "> Plugin version: `1.0.2`",
+					versionMarker: "> Plugin version: `1.0.4`",
 				},
 				"resource README.md": {
 					text:          resourceReadme,
-					versionMarker: "> 插件版本：`1.0.2`",
+					versionMarker: "> 插件版本：`1.0.4`",
 				},
 				"resource README_EN.md": {
 					text:          resourceReadmeEN,
-					versionMarker: "> Plugin version: `1.0.2`",
+					versionMarker: "> Plugin version: `1.0.4`",
 				},
 			} {
 				normalized := strings.ToLower(strings.Join(strings.Fields(fixture.text), " "))
-				require.Equalf(t, 1, strings.Count(fixture.text, fixture.versionMarker), "%s must identify release 1.0.2 exactly once", label)
+				require.Equalf(t, 1, strings.Count(fixture.text, fixture.versionMarker), "%s must identify release 1.0.4 exactly once", label)
 				require.Contains(t, normalized, "ai-quota", label)
 				require.Contains(t, normalized, "legacy_suffixes", label)
 				require.Contains(t, normalized, "bound_target", label)

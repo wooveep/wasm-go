@@ -57,7 +57,7 @@ func TestBillingCorrelationLifecycleContract(t *testing.T) {
 			require.Equal(t, "canonical-non-stream-3-3", event["request_id"])
 			require.NotEmpty(t, event["event_id"])
 			require.Equal(t, event["event_id"], event["idempotency_key"])
-			require.Len(t, host.GetRedisCalloutAttributes(), 1)
+			require.Len(t, billingRedisCallouts(host), 1)
 		})
 
 		t.Run("streaming completion preserves one header and one XADD", func(t *testing.T) {
@@ -91,10 +91,10 @@ func TestBillingCorrelationLifecycleContract(t *testing.T) {
 			require.Equal(t, "canonical-stream-3-3", event["request_id"])
 			require.Equal(t, event["event_id"], event["idempotency_key"])
 			require.Equal(t, true, event["is_stream"])
-			require.Len(t, host.GetRedisCalloutAttributes(), 1)
+			require.Len(t, billingRedisCallouts(host), 1)
 
 			host.CompleteHttp()
-			require.Len(t, host.GetRedisCalloutAttributes(), 1)
+			require.Len(t, billingRedisCallouts(host), 1)
 			require.Equal(t, "canonical-stream-3-3", singleHeaderValue(t, host.GetResponseHeaders(), gatewayRequestIDHeader))
 		})
 
@@ -136,7 +136,7 @@ func TestBillingCorrelationLifecycleContract(t *testing.T) {
 				require.Equal(t, requestID, event["request_id"])
 				require.Equal(t, false, event["upstream_invoked"])
 				require.Equal(t, event["event_id"], event["idempotency_key"])
-				require.Len(t, host.GetRedisCalloutAttributes(), 1)
+				require.Len(t, billingRedisCallouts(host), 1)
 			})
 		}
 
@@ -153,7 +153,7 @@ func TestBillingCorrelationLifecycleContract(t *testing.T) {
 			})
 			require.Equal(t, types.ActionContinue, action)
 			assert.False(t, test.HasHeader(host.GetResponseHeaders(), gatewayRequestIDHeader))
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, billingRedisCallouts(host))
 		})
 
 		t.Run("credentials and submitted header body query values never enter event or logs", func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestBillingCorrelationLifecycleContract(t *testing.T) {
 			action = host.CallOnHttpResponseBody([]byte(`{"model":"vendor-model","usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}`))
 			require.Equal(t, types.ActionContinue, action)
 
-			attrs := host.GetRedisCalloutAttributes()
+			attrs := billingRedisCallouts(host)
 			require.Len(t, attrs, 1)
 			command := redisCommand(t, attrs[0].Query)
 			require.Equal(t, []string{"xadd", defaultRedisStream, "*", "event"}, command[:4])

@@ -420,7 +420,7 @@ func TestBillingEventDelivery(t *testing.T) {
 
 			action = host.CallOnHttpResponseBody([]byte(`{"ok":true}`))
 			require.Equal(t, types.ActionContinue, action)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, billingRedisCallouts(host))
 		})
 
 		t.Run("internal cost preserves task consumer without tenant billing identity", func(t *testing.T) {
@@ -584,7 +584,7 @@ func TestBillingEventDelivery(t *testing.T) {
 					action = host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-flash","usage":{"prompt_tokens":5,"completion_tokens":8,"total_tokens":13}}`))
 					require.Equal(t, types.ActionContinue, action)
 
-					require.Empty(t, host.GetRedisCalloutAttributes())
+					require.Empty(t, billingRedisCallouts(host))
 					host.CompleteHttp()
 				})
 			}
@@ -654,7 +654,7 @@ func TestBillingEventDelivery(t *testing.T) {
 					action = host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-flash","usage":{"prompt_tokens":5,"completion_tokens":8,"total_tokens":13}}`))
 					require.Equal(t, types.ActionContinue, action)
 
-					require.Empty(t, host.GetRedisCalloutAttributes())
+					require.Empty(t, billingRedisCallouts(host))
 					host.CompleteHttp()
 				})
 			}
@@ -1011,7 +1011,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			}))
 			defer host.Reset()
 			require.Equal(t, types.OnPluginStartStatusFailed, status)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, billingRedisCallouts(host))
 		})
 
 		t.Run("each ai request gets new event identity", func(t *testing.T) {
@@ -1654,9 +1654,9 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			action := host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 			require.Equal(t, types.ActionContinue, action)
-			require.Len(t, host.GetRedisCalloutAttributes(), 1)
+			require.Len(t, billingRedisCallouts(host), 1)
 
-			host.CallOnRedisCall(0, test.CreateRedisRespError("temporary"))
+			billingRedisRespond(host, 0, test.CreateRedisRespError("temporary"))
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 			host.CompleteHttp()
 		})
@@ -1679,7 +1679,7 @@ func TestBillingEventDelivery(t *testing.T) {
 			})
 			host.CallOnHttpResponseBody([]byte(`{"model":"gpt-4","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 
-			attrs := host.GetRedisCalloutAttributes()
+			attrs := billingRedisCallouts(host)
 			require.Len(t, attrs, 1)
 			command := redisCommand(t, attrs[0].Query)
 			require.Equal(t, "xadd", command[0])
@@ -1750,7 +1750,7 @@ func TestUnsafeInternalAttributionDoesNotLogSubmittedValue(t *testing.T) {
 		action = host.CallOnHttpResponseBody([]byte(`{"model":"deepseek-v4-flash","usage":{"prompt_tokens":5,"completion_tokens":8,"total_tokens":13}}`))
 		require.Equal(t, types.ActionContinue, action)
 
-		require.Empty(t, host.GetRedisCalloutAttributes())
+		require.Empty(t, billingRedisCallouts(host))
 		require.NotContains(t, strings.Join(logs.entries, "\n"), submitted)
 		host.CompleteHttp()
 	})
@@ -1867,7 +1867,7 @@ func requireRedisBillingEventStruct(t *testing.T, host test.TestHost) BillingEve
 
 func requireRedisBillingEventBody(t *testing.T, host test.TestHost) []byte {
 	t.Helper()
-	attrs := host.GetRedisCalloutAttributes()
+	attrs := billingRedisCallouts(host)
 	require.Len(t, attrs, 1)
 	require.Regexp(t, `^outbound\|6379\|\|redis\.static(\?.*)?$`, attrs[0].Upstream)
 	command := redisCommand(t, attrs[0].Query)
@@ -1890,7 +1890,7 @@ func redisCommand(t *testing.T, query []byte) []string {
 
 func ackRedisBillingEvent(t *testing.T, host test.TestHost) {
 	t.Helper()
-	host.CallOnRedisCall(0, test.CreateRedisRespString("1700000000000-0"))
+	billingRedisRespond(host, 0, test.CreateRedisRespString("1700000000000-0"))
 }
 
 func mapKeys(values map[string]interface{}) []string {
@@ -2768,7 +2768,7 @@ func TestStreamingNormalEndWithoutProviderUsageIsEstimated(t *testing.T) {
 	require.Nil(t, event.Usage.Details)
 
 	host.CompleteHttp()
-	require.Len(t, host.GetRedisCalloutAttributes(), 1)
+	require.Len(t, billingRedisCallouts(host), 1)
 }
 
 func TestStreamDoneFallbackDeliversEstimatedUsage(t *testing.T) {
@@ -2968,11 +2968,11 @@ func TestStreamDoneFallbackSkipsAfterNormalDelivery(t *testing.T) {
 	})
 	action := host.CallOnHttpStreamingResponseBody([]byte("data: {\"model\":\"gpt-4\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"), true)
 	require.Equal(t, types.ActionContinue, action)
-	require.Len(t, host.GetRedisCalloutAttributes(), 1)
+	require.Len(t, billingRedisCallouts(host), 1)
 
 	host.CompleteHttp()
 
-	require.Len(t, host.GetRedisCalloutAttributes(), 1)
+	require.Len(t, billingRedisCallouts(host), 1)
 }
 
 type mockBillingHttpContext struct {

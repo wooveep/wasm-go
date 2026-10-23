@@ -53,7 +53,7 @@ func TestMemoryEventPayload(t *testing.T) {
 			requireMemoryEventJSONExcludes(t, event, "response-extra-should-not-appear", "unpermitted_response_field")
 			require.NotContains(t, eventJSON, "cache:events")
 
-			host.CallOnRedisCall(0, test.CreateRedisRespString("1700000000000-0"))
+			memoryRedisRespond(host, 0, test.CreateRedisRespString("1700000000000-0"))
 			host.CompleteHttp()
 
 			startMemoryEventRequestOnHost(t, host, requestBody)
@@ -152,7 +152,7 @@ func TestMemoryEventPayload(t *testing.T) {
 					require.Equal(t, string(responseBody), string(host.GetResponseBody()))
 					requireMemoryEventXADDCommand(t, host)
 
-					host.CallOnRedisCall(tt.status, tt.response)
+					memoryRedisRespond(host, tt.status, tt.response)
 
 					require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 					require.Nil(t, host.GetLocalResponse())
@@ -187,7 +187,7 @@ func startMemoryEventRequestOnHost(t *testing.T, host test.TestHost, body []byte
 	require.Equal(t, types.ActionPause, action)
 	requireMemoryRecentRedisLookup(t, host)
 
-	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 }
 
@@ -270,7 +270,7 @@ func requireMemoryEventRequiredFields(t *testing.T, event map[string]interface{}
 func requireMemoryEventXADDCommand(t *testing.T, host test.TestHost) []string {
 	t.Helper()
 	var xadds [][]string
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		cmd, ok := memoryResponseCaptureCommand(t, call.Query)
 		if !ok || len(cmd) < 5 {
 			continue

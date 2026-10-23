@@ -185,3 +185,8 @@ deletion、management APIs、authorization checks 和 repair policy 都由 Conso
 | Retention / deletion | 不执行 retention 或 deletion policy；memory lifecycle 由 Console 管理。 |
 | Management APIs | 网关不暴露 memory management APIs。 |
 | Authorization checks | 网关信任上游身份头，memory authorization checks 由 Console API 和 worker 负责。 |
+
+
+## 事件投递生命周期
+
+响应结束时冻结 MemoryEvent，再由插件 tick 上下文投递，避免 HTTP 上下文销毁取消在途 XADD。连接中断仅重试一次，保持原事件 ID、幂等键和内容不变；服务端错误不重试。队列同时限制待投递和在途任务（1024 条、256 MiB），每次 tick 最长间隔 100 ms。队列保存在内存中，插件关闭或持续 Redis 故障仍可能丢失事件；须结合源事件完整性审计监测 fail-open。

@@ -268,7 +268,7 @@ func startMemoryStreamingResponseCaptureRequest(t *testing.T, extraHeaders ...[2
 	require.Equal(t, types.ActionPause, action)
 	requireMemoryRecentRedisLookup(t, host)
 
-	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 	return host
 }

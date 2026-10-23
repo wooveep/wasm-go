@@ -4,7 +4,9 @@ keywords: [AI Gateway, AI Quota, Monetary Quota]
 description: Resource reference for read-only Redis balance admission.
 ---
 
-> Plugin version: `1.0.2`
+> Plugin version: `1.0.4`
+
+A transport failure during the read-only balance GET is retried once. Persistent failure returns 503. Redis server errors and invalid or nonpositive balances do not trigger transport retries; wallet mutations are never replayed.
 
 ## Overview
 
@@ -94,3 +96,8 @@ enable_methods:
 
 `ai-quota`, `ai-billing`, and `ai-statistics` share no private runtime state
 and can be deployed independently.
+
+
+## Event delivery and transport recovery
+
+Ordinary admission performs a read-only GET. Only a host-reported Redis transport failure permits one additional GET of the same key, without another RedisInit. Writes are never retried. Missing or nonpositive balances, server errors and persistent transport errors retain their existing rejection semantics.

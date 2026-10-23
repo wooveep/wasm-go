@@ -219,9 +219,26 @@ func onHttpRequestHeaders(context wrapper.HttpContext, config QuotaConfig) types
 	balanceKey := config.buildBalanceKey(tenant, consumer)
 	log.Debugf("ai-quota admission tenant:%s consumer:%s balance_key:%s", tenant, consumer, balanceKey)
 
-	err := config.redisClient.Get(balanceKey, func(response resp.Value) {
+	if err := readQuotaBalance(config, balanceKey, true); err != nil {
+		log.Errorf("ai-quota redis balance dispatch failed (service=%s timeout_ms=%d): %v", config.redisInfo.ServiceName, config.redisInfo.Timeout, err)
+		util.SendResponse(http.StatusServiceUnavailable, "ai-quota.redis_error", "text/plain", "Request denied by ai quota check. Redis balance read failed.")
+		return types.ActionContinue
+	}
+	return types.HeaderStopAllIterationAndWatermark
+}
+
+func readQuotaBalance(config QuotaConfig, balanceKey string, retryTransport bool) error {
+	return config.redisClient.Get(balanceKey, func(response resp.Value) {
 		if err := response.Error(); err != nil {
-			log.Errorf("ai-quota redis balance read failed: %v", err)
+			// A sibling VM's RedisInit closes the shared host pool. Reconnect
+			// through a fresh GET once, without replaying any wallet mutation.
+			if retryTransport && err.Error() == wrapper.RedisTransportErrorMessage {
+				log.Warnf("ai-quota retrying balance read after Redis transport failure")
+				if retryErr := readQuotaBalance(config, balanceKey, false); retryErr == nil {
+					return
+				}
+			}
+			log.Errorf("ai-quota redis balance read failed (service=%s timeout_ms=%d): %v", config.redisInfo.ServiceName, config.redisInfo.Timeout, err)
 			util.SendResponse(http.StatusServiceUnavailable, "ai-quota.redis_error", "text/plain", "Request denied by ai quota check. Redis balance read failed.")
 			return
 		}
@@ -246,12 +263,6 @@ func onHttpRequestHeaders(context wrapper.HttpContext, config QuotaConfig) types
 		}
 		proxywasm.ResumeHttpRequest()
 	})
-	if err != nil {
-		log.Errorf("ai-quota redis balance dispatch failed: %v", err)
-		util.SendResponse(http.StatusServiceUnavailable, "ai-quota.redis_error", "text/plain", "Request denied by ai quota check. Redis balance read failed.")
-		return types.ActionContinue
-	}
-	return types.HeaderStopAllIterationAndWatermark
 }
 
 func deniedMissingIdentity() types.Action {

@@ -69,7 +69,7 @@ func TestMemoryCacheReplaySuppression(t *testing.T) {
 func countMemoryEventXADDCallouts(t *testing.T, host test.TestHost) int {
 	t.Helper()
 	count := 0
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		command, ok := memoryResponseCaptureCommand(t, call.Query)
 		if !ok || len(command) < 2 {
 			continue

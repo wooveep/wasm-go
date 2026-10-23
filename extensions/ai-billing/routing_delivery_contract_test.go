@@ -160,7 +160,7 @@ func TestBillingRoutingAndDeliveryConfigContract(t *testing.T) {
 			))
 			require.Equal(t, types.ActionContinue, action)
 
-			attributes := host.GetRedisCalloutAttributes()
+			attributes := billingRedisCallouts(host)
 			require.Len(t, attributes, 1)
 			require.Regexp(t, `^outbound\|6382\|\|redis\.global(\?.*)?$`, attributes[0].Upstream)
 			command := redisCommand(t, attributes[0].Query)
@@ -324,7 +324,7 @@ func runBillingRoutingRequest(
 		require.Equal(t, path, event["request_path"])
 		ackRedisBillingEvent(t, host)
 	} else {
-		require.Len(t, host.GetRedisCalloutAttributes(), 0)
+		require.Len(t, billingRedisCallouts(host), 0)
 	}
 	host.CompleteHttp()
 }

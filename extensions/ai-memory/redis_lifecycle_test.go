@@ -47,9 +47,9 @@ func TestMemoryRedisClientLifecycle(t *testing.T) {
 			require.Equal(t, types.HeaderStopIteration, action)
 			action = host.CallOnHttpRequestBody(memoryEventRequestBody(t, "persistent redis clients", nil))
 			require.Equal(t, types.ActionPause, action)
-			require.NotEmpty(t, host.GetRedisCalloutAttributes())
-			require.Equal(t, "outbound|6379||redis.shared", host.GetRedisCalloutAttributes()[0].Upstream)
-			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			require.NotEmpty(t, memoryRedisCallouts(host))
+			require.Equal(t, "outbound|6379||redis.shared", memoryRedisCallouts(host)[0].Upstream)
+			memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 
 			callMemoryEventResponse(t, host, 200, memoryEventResponseBody(t, "persistent redis response", "stop", 4, 3, 7))
@@ -63,7 +63,7 @@ func TestMemoryRedisClientLifecycle(t *testing.T) {
 
 func requireMemoryEventXADDUpstream(t *testing.T, host test.TestHost, expected string) {
 	t.Helper()
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		command, ok := memoryResponseCaptureCommand(t, call.Query)
 		if !ok || len(command) < 2 || !strings.EqualFold(command[0], "XADD") {
 			continue

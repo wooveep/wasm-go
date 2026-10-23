@@ -105,6 +105,6 @@ func TestScopedOnlyEmptyResponseDeliversOnStreamDone(t *testing.T) {
 		require.Equal(t, float64(404), event["status_code"])
 		require.Equal(t, "route:qwen-chat", event["quota_scope"])
 		require.Equal(t, true, event["usage_missing"])
-		require.Len(t, host.GetRedisCalloutAttributes(), 1)
+		require.Len(t, billingRedisCallouts(host), 1)
 	})
 }

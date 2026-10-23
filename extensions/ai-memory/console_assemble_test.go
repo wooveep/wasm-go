@@ -23,13 +23,13 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 
 			require.Equal(t, types.ActionContinue, headerAction)
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 		})
 
 		t.Run("recent-only mode skips Console assemble and injects Redis recent messages", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "recent-only")
-			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+			memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 
 			require.Empty(t, host.GetHttpCalloutAttributes(), "recent-only mode must not call Console assemble")
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
@@ -43,7 +43,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		for _, mode := range []string{"digest", "semantic"} {
 			t.Run(mode+" mode calls Console assemble after Redis miss", func(t *testing.T) {
 				host := startMemoryConsoleAssembleRequest(t, mode)
-				host.CallOnRedisCall(0, test.CreateRedisRespNull())
+				memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 
 				facts := requireMemoryAssembleCall(t, host)
 				require.Equal(t, mode, facts["memory_mode"])
@@ -94,7 +94,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		t.Run("omitted recent cache service skips Redis lookup", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequestWithConfig(t, memoryConsoleAssembleCustomConfig(t, "semantic", nil, false, true), memoryConsoleAssembleRequestBody(), memoryConsoleAssembleHeaders())
 
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			requireMemoryAssembleCall(t, host)
 		})
 
@@ -110,7 +110,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			bodyAction := host.CallOnHttpRequestBody(memoryConsoleAssembleRequestBody())
 
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 		})
 
@@ -170,7 +170,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				host := startMemoryConsoleAssembleRequest(t, "semantic")
-				host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+				memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 				requireMemoryAssembleCall(t, host)
 
 				host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, tt.decision, tt.memoryMessage, tt.responseRecent))
@@ -195,7 +195,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 				memoryConsoleAssembleRequestBody(),
 				memoryConsoleAssembleHeadersWith([2]string{memoryNoStoreHeader, "true"}),
 			)
-			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
@@ -213,7 +213,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		t.Run("skip decision preserves original request body without empty rewrite", func(t *testing.T) {
 			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
 			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)
-			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+			memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "skip", nil, nil))
@@ -224,7 +224,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 
 		t.Run("timeout falls back to Redis recent memory", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "semantic")
-			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+			memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(nil, nil)
@@ -239,7 +239,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 
 		t.Run("invalid response falls back to Redis recent memory and does not leak raw memory into logs", func(t *testing.T) {
 			host := startMemoryConsoleAssembleRequest(t, "semantic")
-			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+			memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"system","content":"raw Console memory must not be logged"}`))
@@ -256,7 +256,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 		t.Run("invalid response with multi-user request preserves original body", func(t *testing.T) {
 			original := []byte(`{"model":"qwen-turbo","messages":[{"role":"user","content":"opening question"},{"role":"system","content":"late client system"},{"role":"user","content":"current question"}],"metadata":{"trace":"keep"}}`)
 			host := startMemoryConsoleAssembleRequestWithBody(t, "semantic", original)
-			host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+			memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 			requireMemoryAssembleCall(t, host)
 
 			host.CallOnHttpCall(memoryAssembleHeaders(), []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"system","content":"raw Console memory must not be logged"}`))
@@ -286,7 +286,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					host := startMemoryConsoleAssembleRequest(t, "semantic")
-					host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+					memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 					requireMemoryAssembleCall(t, host)
 
 					host.CallOnHttpCall(memoryAssembleHeaders(), tt.response)
@@ -305,7 +305,7 @@ func TestMemoryConsoleAssemble(t *testing.T) {
 				],
 				"stream": false
 			}`))
-			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
@@ -406,8 +406,8 @@ func memoryConsoleAssembleFactsWithConfig(t *testing.T, config json.RawMessage, 
 	t.Helper()
 	host := startMemoryConsoleAssembleRequestWithConfigNoCleanup(t, config, body, headers)
 	defer host.Reset()
-	if len(host.GetRedisCalloutAttributes()) > 0 {
-		host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	if len(memoryRedisCallouts(host)) > 0 {
+		memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	}
 	return requireMemoryAssembleCall(t, host)
 }
@@ -427,7 +427,7 @@ func startMemoryConsoleAssembleRequestWithConfigCleanup(t *testing.T, config jso
 
 	bodyAction := host.CallOnHttpRequestBody(body)
 	require.Equal(t, types.ActionPause, bodyAction)
-	if len(host.GetRedisCalloutAttributes()) > 0 {
+	if len(memoryRedisCallouts(host)) > 0 {
 		requireMemoryRecentRedisLookup(t, host)
 	}
 	return host

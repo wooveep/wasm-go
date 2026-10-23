@@ -247,8 +247,8 @@ func startMemoryProtocolInjectionAndRequireAssembleWithoutCleanup(t *testing.T, 
 
 	bodyAction := host.CallOnHttpRequestBody(body)
 	require.Equal(t, types.ActionPause, bodyAction)
-	if len(host.GetRedisCalloutAttributes()) > 0 {
-		host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	if len(memoryRedisCallouts(host)) > 0 {
+		memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	}
 	return host, requireMemoryAssembleCall(t, host)
 }

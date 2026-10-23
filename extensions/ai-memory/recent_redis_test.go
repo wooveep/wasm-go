@@ -123,7 +123,7 @@ func startMemoryRecentRedisRequest(t *testing.T) test.TestHost {
 
 func requireMemoryRecentRedisLookup(t *testing.T, host test.TestHost) {
 	t.Helper()
-	calls := host.GetRedisCalloutAttributes()
+	calls := memoryRedisCallouts(host)
 	require.NotEmpty(t, calls, "memory-enabled request should read Redis recent memory before Console assemble")
 	require.Equal(t, memoryRecentRedisUpstream, calls[0].Upstream)
 
@@ -155,7 +155,7 @@ func requireMemoryRecentRedisCommand(t *testing.T, query []byte) []string {
 
 func callMemoryRecentRedisResponse(t *testing.T, host test.TestHost, status int32, redisResp []byte) {
 	t.Helper()
-	host.CallOnRedisCall(status, redisResp)
+	memoryRedisRespond(host, status, redisResp)
 	requireMemoryAssembleCall(t, host)
 }
 

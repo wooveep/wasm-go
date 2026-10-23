@@ -4,7 +4,7 @@ keywords: [AI网关, AI账单, ai-billing]
 description: ai-billing 请求级账单事件插件配置参考
 ---
 
-> 插件版本：`0.1.8`
+> 插件版本：`0.1.9`
 
 ## 功能说明
 
@@ -116,3 +116,8 @@ enable_methods:
 ## 独立部署边界
 
 `ai-billing`、`ai-quota` 和 `ai-statistics` 可以独立部署。`ai-billing` 只发布账单事件，不依赖或共享彼此的私有运行时状态；余额准入和可观测性分别由另外两个插件独立处理，结算与持久化归 Console/billing-service 所有。
+
+
+## 事件投递生命周期
+
+响应末尾生成的不可变事件先进入有界内存队列，再由插件 tick 上下文投递 Redis，避免 HTTP 上下文结束时取消尚未完成的 XADD。仅主机连接中断重试一次，并沿用原 event_id / idempotency_key；Redis 服务端错误不重试。PostgreSQL 事件与结算幂等约束负责阻止重复扣款。队列同时限制待投递和在途任务（1024 条、256 MiB），每次 tick 最长间隔 100 ms；这不是持久化 outbox，插件关闭或持续故障仍遵循 fail-open，须监测投递失败日志。

@@ -29,7 +29,7 @@ func TestMemoryRequestGating(t *testing.T) {
 
 			require.Equal(t, types.ActionContinue, headerAction)
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "accept-encoding"))
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "content-length"))
@@ -43,7 +43,7 @@ func TestMemoryRequestGating(t *testing.T) {
 
 			require.Equal(t, types.ActionContinue, headerAction)
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "accept-encoding"))
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "content-length"))
@@ -57,7 +57,7 @@ func TestMemoryRequestGating(t *testing.T) {
 
 			require.Equal(t, types.ActionContinue, headerAction)
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "accept-encoding"))
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "content-length"))
@@ -71,7 +71,7 @@ func TestMemoryRequestGating(t *testing.T) {
 
 			require.Equal(t, types.ActionContinue, headerAction)
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "accept-encoding"))
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "content-length"))
@@ -83,7 +83,7 @@ func TestMemoryRequestGating(t *testing.T) {
 
 			require.Equal(t, types.ActionContinue, headerAction)
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "accept-encoding"))
 			require.True(t, test.HasHeader(host.GetRequestHeaders(), "content-length"))

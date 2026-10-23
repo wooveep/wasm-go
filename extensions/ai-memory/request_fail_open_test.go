@@ -21,7 +21,7 @@ func TestMemoryRequestFailOpen(t *testing.T) {
 			host, bodyAction := startMemoryFailOpenRequest(t, original)
 
 			require.Equal(t, types.ActionContinue, bodyAction)
-			require.Empty(t, host.GetRedisCalloutAttributes())
+			require.Empty(t, memoryRedisCallouts(host))
 			require.Empty(t, host.GetHttpCalloutAttributes())
 			requireMemoryFailOpenOriginalBody(t, host, original)
 			requireMemoryConsoleSafeLogs(t, host, "raw parse failure prompt")
@@ -33,7 +33,7 @@ func TestMemoryRequestFailOpen(t *testing.T) {
 			require.Equal(t, types.ActionPause, bodyAction)
 			requireMemoryRecentRedisLookup(t, host)
 
-			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 			requireMemoryAssembleCall(t, host)
 			host.CallOnHttpCall(memoryAssembleHeaders(), []byte(`{"schema_version":1,"decision":"inject","memory_message":{"role":"system","content":"raw assemble failure memory"}`))
 
@@ -53,7 +53,7 @@ func TestMemoryRequestReplacementFailureFailsOpen(t *testing.T) {
 		require.Equal(t, types.ActionPause, bodyAction)
 		requireMemoryRecentRedisLookup(t, host)
 
-		host.CallOnRedisCall(0, test.CreateRedisRespNull())
+		memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 		requireMemoryAssembleCall(t, host)
 		host.CallOnHttpCall(memoryAssembleHeaders(), memoryAssembleResponse(t, "inject", map[string]interface{}{
 			"role":    "system",
@@ -98,7 +98,7 @@ func TestMemoryRecentLoadDispatchFailureStillAssembles(t *testing.T) {
 		host, bodyAction := startMemoryFailOpenRequest(t, original)
 
 		require.Equal(t, types.ActionPause, bodyAction)
-		require.Empty(t, host.GetRedisCalloutAttributes())
+		require.Empty(t, memoryRedisCallouts(host))
 		facts := requireMemoryAssembleCall(t, host)
 		require.Equal(t, "semantic", facts["memory_mode"])
 		require.Equal(t, "current question", facts["current_question"])

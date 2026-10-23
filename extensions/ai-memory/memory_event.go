@@ -12,7 +12,7 @@ import (
 
 const (
 	memoryEventSchemaVersion = 1
-	memoryEventPluginVersion = "0.1.1"
+	memoryEventPluginVersion = "0.1.3"
 	memoryEventKind          = "memory_event"
 	memoryEventField         = "event"
 
@@ -213,7 +213,7 @@ func memoryDispatchEventXADD(c config.PluginConfig, event MemoryEvent, command [
 	if client == nil {
 		return fmt.Errorf("memory event Redis client is not configured")
 	}
-	return client.Command(command, func(value resp.Value) {
+	return c.DispatchEvent(command, func(value resp.Value) {
 		if err := value.Error(); err != nil {
 			log.Warnf("[ai-memory] Redis Stream delivery failed open, request_id:%s stream:%s reason:redis_response_error", event.RequestID, c.RedisStream.Stream)
 			return

@@ -371,7 +371,7 @@ func startMemoryResponseCaptureRequest(t *testing.T, captureResponse bool, extra
 	require.Equal(t, types.ActionPause, action)
 	requireMemoryRecentRedisLookup(t, host)
 
-	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 	return host
 }
@@ -395,7 +395,7 @@ func startMemoryProtocolResponseCaptureRequest(t *testing.T, path string, body [
 	require.Equal(t, types.ActionPause, action)
 	requireMemoryRecentRedisLookup(t, host)
 
-	host.CallOnRedisCall(0, test.CreateRedisRespNull())
+	memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 	require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 	return host
 }
@@ -439,7 +439,7 @@ func memoryProtocolResponseCaptureConfig(t *testing.T, path string) json.RawMess
 func requireMemoryResponseCaptureEvent(t *testing.T, host test.TestHost) map[string]interface{} {
 	t.Helper()
 	var events []map[string]interface{}
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		cmd, ok := memoryResponseCaptureCommand(t, call.Query)
 		if !ok || len(cmd) < 5 {
 			continue
@@ -538,7 +538,7 @@ func memoryResponseCaptureCommand(t *testing.T, query []byte) ([]string, bool) {
 func memoryResponseCaptureCallSummary(t *testing.T, host test.TestHost) string {
 	t.Helper()
 	var parts []string
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		cmd, ok := memoryResponseCaptureCommand(t, call.Query)
 		if ok {
 			parts = append(parts, fmt.Sprintf("%s %s", call.Upstream, memoryResponseCaptureCommandSummary(cmd)))

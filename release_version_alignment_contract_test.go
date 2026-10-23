@@ -178,7 +178,7 @@ func TestAIPluginVersionAlignmentContract(t *testing.T) {
 		},
 		{
 			name:               "ai-billing",
-			selectedVersion:    "0.1.8",
+			selectedVersion:    "0.1.9",
 			artifactURLExample: "extensions/ai-billing/plugin.yaml",
 			documentation:      releaseDocumentation("ai-billing"),
 		},
@@ -200,7 +200,7 @@ func TestAIPluginVersionAlignmentContract(t *testing.T) {
 		},
 		{
 			name:               "ai-quota",
-			selectedVersion:    "1.0.2",
+			selectedVersion:    "1.0.4",
 			artifactURLExample: "extensions/ai-quota/plugin.yaml",
 			documentation:      releaseDocumentation("ai-quota"),
 		},

@@ -71,6 +71,7 @@ type RouteConfig struct {
 type PluginConfig struct {
 	recentRedis wrapper.RedisClient
 	eventRedis  EventRedisClient
+	eventQueue  *wrapper.BackgroundQueue
 
 	RedisStream        RedisStreamConfig     `yaml:"redis_stream" json:"redis_stream"`
 	RecentCache        RecentCacheConfig     `yaml:"recent_cache" json:"recent_cache"`
@@ -188,6 +189,9 @@ func (c *PluginConfig) Complete(log log.Log) error {
 			return err
 		}
 		c.eventRedis = client
+	}
+	if c.eventQueue == nil {
+		c.eventQueue = wrapper.NewBackgroundQueue()
 	}
 	return nil
 }

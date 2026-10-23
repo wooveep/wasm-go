@@ -118,6 +118,7 @@ type BillingConfig struct {
 	dormant            bool
 	invalidBase        bool
 	redisClient        wrapper.RedisClient
+	eventQueue         *wrapper.BackgroundQueue
 }
 
 type RedisStream struct {
@@ -411,6 +412,7 @@ func parseRedisStream(redisStream gjson.Result, config *BillingConfig) error {
 		FQDN: serviceName,
 		Port: int64(servicePort),
 	})
+	config.eventQueue = wrapper.NewBackgroundQueue()
 	return config.redisClient.Init(username, password, timeout, wrapper.WithDataBase(database))
 }
 
@@ -789,18 +791,35 @@ func sendBillingEvent(config BillingConfig, event BillingEvent) {
 		log.Warnf("ai-billing redis dispatch skipped fail open, request_id:%s err:redis client is nil", event.RequestID)
 		return
 	}
-	err = config.redisClient.Command(
-		[]interface{}{"xadd", config.RedisStream.Stream, "*", "event", string(body)},
-		func(response resp.Value) {
-			if response.Error() != nil {
-				log.Warnf("ai-billing redis delivery failed open, request_id:%s err:%v", event.RequestID, response.Error())
-				return
+	dispatch := func(done func()) {
+		// A lost acknowledgement can duplicate XADD, so keep the immutable event's
+		// idempotency key. Settlement arbitrates the debit in PostgreSQL.
+		command := []interface{}{"xadd", config.RedisStream.Stream, "*", "event", string(body)}
+		var attempt func(bool)
+		attempt = func(retryTransport bool) {
+			err := config.redisClient.Command(command, func(response resp.Value) {
+				if response.Error() != nil {
+					if retryTransport && response.Error().Error() == wrapper.RedisTransportErrorMessage {
+						attempt(false)
+						return
+					}
+					log.Warnf("ai-billing redis delivery failed open, request_id:%s reason:redis_response_error", event.RequestID)
+				} else {
+					log.Debugf("ai-billing redis delivery accepted, stream:%s request_id:%s id:%s", config.RedisStream.Stream, event.RequestID, response.String())
+				}
+				done()
+			})
+			if err != nil {
+				log.Warnf("ai-billing redis dispatch failed open, request_id:%s reason:redis_dispatch_error", event.RequestID)
+				done()
 			}
-			log.Debugf("ai-billing redis delivery accepted, stream:%s request_id:%s id:%s", config.RedisStream.Stream, event.RequestID, response.String())
-		},
-	)
-	if err != nil {
-		log.Warnf("ai-billing redis dispatch failed open, request_id:%s err:%v", event.RequestID, err)
+		}
+		attempt(true)
+	}
+	if config.eventQueue == nil {
+		dispatch(func() {})
+	} else if err := config.eventQueue.Enqueue(len(body), dispatch); err != nil {
+		log.Warnf("ai-billing redis dispatch failed open, request_id:%s reason:event_capacity_exhausted", event.RequestID)
 	}
 }
 

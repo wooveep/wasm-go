@@ -178,7 +178,7 @@ func TestBillingInternalCostAndSensitiveDataContract(t *testing.T) {
 				action = host.CallOnHttpResponseBody(responseBody)
 				require.Equal(t, types.ActionContinue, action)
 				require.Equal(t, responseBody, host.GetResponseBody())
-				require.Empty(t, host.GetRedisCalloutAttributes())
+				require.Empty(t, billingRedisCallouts(host))
 				require.NotContains(t, billingHostLogs(host), testCase.marker)
 			})
 		}

@@ -22,6 +22,7 @@
 - [测试框架说明](../pkg/test/README.md)
 - [发布验证记录](release-evidence/)
 - [2026-10-23 Qwen 原生 SSE 完成标记与 K3S 验收](release-evidence/2026-10-23-qwen-stream-completion-k3s.md)
+- [2026-10-24 quota、记忆和账单生命周期修复与 K3S 验收](release-evidence/2026-10-24-quota-memory-delivery.md)
 
 ## 历史资料
 

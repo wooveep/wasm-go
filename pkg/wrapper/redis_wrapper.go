@@ -30,6 +30,10 @@ import (
 
 type RedisResponseCallback func(response resp.Value)
 
+// RedisTransportErrorMessage identifies a failed host call. RESP values retain
+// error text, not Go error identity. Only idempotent reads may be retried.
+const RedisTransportErrorMessage = "cannot connect to redis cluster"
+
 type RedisClient interface {
 	Init(username, password string, timeout int64, opts ...optionFunc) error
 	// return whether redis client is ready
@@ -181,7 +185,7 @@ func redisCallInternal(clusterName string, respQuery []byte, callback RedisRespo
 			var responseValue resp.Value
 			if status != 0 {
 				proxywasm.LogCriticalf("Error occurred while calling redis, it seems cannot connect to the redis cluster. request-id: %s", requestID)
-				responseValue = resp.ErrorValue(fmt.Errorf("cannot connect to redis cluster"))
+				responseValue = resp.ErrorValue(errors.New(RedisTransportErrorMessage))
 			} else {
 				if err != nil {
 					proxywasm.LogCriticalf("failed to get redis response body, request-id: %s, error: %v", requestID, err)

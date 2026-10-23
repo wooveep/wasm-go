@@ -74,7 +74,7 @@ func TestMemoryPrivacyAndIsolation(t *testing.T) {
 			require.Equal(t, rawAssistantContent, event["assistant_content"])
 			requireMemoryEventXADDCommand(t, host)
 
-			host.CallOnRedisCall(0, test.CreateRedisRespError(rawUserContent+" "+rawAssistantContent+" "+redisSecret))
+			memoryRedisRespond(host, 0, test.CreateRedisRespError(rawUserContent+" "+rawAssistantContent+" "+redisSecret))
 
 			require.Equal(t, types.ActionContinue, host.GetHttpStreamAction())
 			require.Nil(t, host.GetLocalResponse())
@@ -84,7 +84,7 @@ func TestMemoryPrivacyAndIsolation(t *testing.T) {
 
 		t.Run("inbound credentials are not forwarded to Console assemble or logs", func(t *testing.T) {
 			host := startMemoryPrivacyAssembleRequest(t, memoryEventRequestBody(t, "privacy assemble prompt", nil), memoryPrivacyCredentialHeaders()...)
-			host.CallOnRedisCall(0, test.CreateRedisRespNull())
+			memoryRedisRespond(host, 0, test.CreateRedisRespNull())
 			facts := requireMemoryAssembleCall(t, host)
 			require.Equal(t, "privacy assemble prompt", facts["current_question"])
 
@@ -134,7 +134,7 @@ func TestMemoryPrivacyAndIsolation(t *testing.T) {
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					host := startMemoryPrivacyAssembleRequest(t, memoryEventRequestBody(t, "privacy assemble prompt", nil))
-					host.CallOnRedisCall(0, validMemoryRecentZSetResponse(t))
+					memoryRedisRespond(host, 0, validMemoryRecentZSetResponse(t))
 					requireMemoryAssembleCall(t, host)
 					host.CallOnHttpCall(memoryAssembleHeaders(), tt.response)
 
@@ -192,7 +192,7 @@ func startMemoryPrivacyAssembleRequest(t *testing.T, body []byte, extraHeaders .
 func requireMemoryPrivacyUsesMemoryEventStream(t *testing.T, host test.TestHost) {
 	t.Helper()
 	var xadds [][]string
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		cmd, ok := memoryResponseCaptureCommand(t, call.Query)
 		require.Truef(t, ok, "memory Redis call must be valid RESP; calls=%s", memoryResponseCaptureCallSummary(t, host))
 		require.NotEmpty(t, cmd)
@@ -267,7 +267,7 @@ func memoryPrivacyCacheArtifacts() []string {
 func memoryPrivacyRedisCommands(t *testing.T, host test.TestHost) string {
 	t.Helper()
 	var commands []string
-	for _, call := range host.GetRedisCalloutAttributes() {
+	for _, call := range memoryRedisCallouts(host) {
 		cmd, ok := memoryResponseCaptureCommand(t, call.Query)
 		if !ok {
 			commands = append(commands, string(call.Query))
