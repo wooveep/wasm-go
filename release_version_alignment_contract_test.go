@@ -158,7 +158,7 @@ func TestAIPluginVersionAlignmentContract(t *testing.T) {
 	contracts := []pluginReleaseVersionContract{
 		{
 			name:            "ai-proxy",
-			selectedVersion: "1.0.2",
+			selectedVersion: "1.0.3",
 			metadata: []releaseVersionSurface{
 				{path: "extensions/ai-proxy/option.yaml", yamlPath: []string{"version"}},
 			},

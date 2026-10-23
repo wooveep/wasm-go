@@ -1,0 +1,97 @@
+{
+  "artifact": {
+    "name": "ai-proxy",
+    "version": "1.0.3",
+    "upload_status": 201,
+    "download_status": 200,
+    "bytes": 9891306,
+    "sha256": "ff2a05b962e95665d9f1ecf23ba010871c265b8a1b678e312b7dda2ed081d686"
+  },
+  "native_sse": {
+    "case": "qwen-sse-artifact-proof",
+    "at_utc": "2026-10-23T01:21:47.953798+00:00",
+    "client_request_id": "4d8f5cb6-9ef9-48fc-a1fa-7fa371e496c1",
+    "response_request_id": "f121de77-7a8b-9b5c-8af2-2f9ca7111b0e",
+    "gateway_request_id": "bfbe7db8-248b-4ce0-bbc0-8735a3bb5634",
+    "route": "c",
+    "stream": true,
+    "prebound_model_header": false,
+    "status": 200,
+    "elapsed_ms": 473,
+    "content_type": "text/event-stream;charset=UTF-8",
+    "cache_headers": {},
+    "done": true,
+    "chunks": 3,
+    "has_content": true,
+    "usage": {
+      "prompt_tokens": 13,
+      "completion_tokens": 1,
+      "total_tokens": 14
+    },
+    "finish_reasons": [
+      "stop"
+    ]
+  },
+  "final_sse": {
+    "case": "postfix-stream",
+    "at_utc": "2026-10-23T02:20:07.548573+00:00",
+    "client_request_id": "5cab5f3c-23a8-4324-9f23-57b5a8bde31c",
+    "response_request_id": "79f7b19d-eee4-9d8b-b3c4-f59eea754457",
+    "gateway_request_id": "f2ec4952-e3ac-4272-8672-587ae43c01a3",
+    "route": "c",
+    "stream": true,
+    "prebound_model_header": false,
+    "status": 200,
+    "elapsed_ms": 663,
+    "content_type": "text/event-stream;charset=UTF-8",
+    "cache_headers": {},
+    "done": true,
+    "chunks": 3,
+    "has_content": true,
+    "usage": {
+      "prompt_tokens": 13,
+      "completion_tokens": 1,
+      "total_tokens": 14
+    },
+    "finish_reasons": [
+      "stop"
+    ]
+  },
+  "go_root": {
+    "case": "qwen-root-tests-off.jsonl",
+    "packages_passed": 7,
+    "tests_passed_including_subtests": 157,
+    "failures": 0,
+    "skips": 4
+  },
+  "ai_proxy_tests": {
+    "case": "qwen-proxy-tests.jsonl",
+    "packages_passed": 4,
+    "tests_passed_including_subtests": 1983,
+    "failures": 0,
+    "skips": 1
+  },
+  "binding_upgrade": {
+    "catalog_version": "1.0.3",
+    "upgraded_count": 14,
+    "operation": "3 parent AI Routes saved through AdminWeb, 4 parent AI Routes reprojected via unchanged enabled PATCH",
+    "ui_protected_binding_version_readonly": true,
+    "protected_binding_patch_rejected": true,
+    "parent_business_semantic_changes": [],
+    "migrated_binding_count": 16,
+    "active_binding_count_before_lifecycle_fixture": 16,
+    "config_owners_active_targets_and_enable_overrides_preserved": true,
+    "inactive_projection_target_history_retained": true,
+    "comparison_differences": []
+  },
+  "model_experience": {
+    "completed": true,
+    "reply_present": true,
+    "gateway_request_id": "7dd9a461-0ee7-4063-9fdc-0e8be7c68002",
+    "model": "main-e2e-paid-300d12"
+  },
+  "pricing_note": "Synthetic test price; not vendor list price",
+  "source_base": "80bc6bff",
+  "local_sdk_commit": "662ed04",
+  "truncated_stream_case": "passed without DONE"
+}

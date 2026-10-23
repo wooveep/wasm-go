@@ -274,6 +274,7 @@ func (m *qwenProvider) OnStreamingEvent(ctx wrapper.HttpContext, name ApiName, e
 	}
 
 	var outputEvents []StreamEvent
+	finished := false
 	responses := m.buildChatCompletionStreamingResponse(ctx, qwenResponse, incrementalStreaming)
 	for _, response := range responses {
 		responseBody, err := json.Marshal(response)
@@ -284,6 +285,14 @@ func (m *qwenProvider) OnStreamingEvent(ctx wrapper.HttpContext, name ApiName, e
 		modifiedEvent := event
 		modifiedEvent.Data = string(responseBody)
 		outputEvents = append(outputEvents, modifiedEvent)
+		for _, choice := range response.Choices {
+			finished = finished || choice.FinishReason != nil
+		}
+	}
+	if finished {
+		// Native DashScope streams end with a finish reason, without OpenAI's
+		// terminal marker. Emit it after the converted finish and usage frames.
+		outputEvents = append(outputEvents, StreamEvent{Data: streamEndDataValue})
 	}
 	return outputEvents, nil
 }

@@ -4,7 +4,9 @@ keywords: [AI网关, AI代理]
 description: AI 代理插件配置参考
 ---
 
-> 插件版本：`1.0.2`
+> 插件版本：`1.0.3`
+
+Qwen 原生聊天流在明确的结束原因和用量事件之后补齐 OpenAI `[DONE]` 标记；上游中断时不会伪造完成事件。
 
 ## 功能说明
 
@@ -2689,7 +2691,7 @@ spec:
             - 'YOUR_API_TOKEN'
       ingress:
         - groq
-  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-proxy:1.0.2
+  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-proxy:1.0.3
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

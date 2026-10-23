@@ -4,7 +4,9 @@ keywords: [AI Gateway, AI Proxy]
 description: Reference for configuring the AI Proxy plugin
 ---
 
-> Plugin version: `1.0.2`
+> Plugin version: `1.0.3`
+
+Native Qwen chat streams emit the OpenAI `[DONE]` marker after an explicit finish reason and usage event. An interrupted upstream stream is never marked complete.
 
 ## Function Description
 
@@ -2462,7 +2464,7 @@ spec:
           - "YOUR_API_TOKEN"
     ingress:
     - groq
-  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-proxy:1.0.2
+  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ai-proxy:1.0.3
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -21,6 +21,7 @@
 - [Wasm 镜像规范](wasm-image-spec.md)与[插件构建入口](../Makefile)
 - [测试框架说明](../pkg/test/README.md)
 - [发布验证记录](release-evidence/)
+- [2026-10-23 Qwen 原生 SSE 完成标记与 K3S 验收](release-evidence/2026-10-23-qwen-stream-completion-k3s.md)
 
 ## 历史资料
 
