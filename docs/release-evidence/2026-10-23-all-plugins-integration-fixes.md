@@ -13,6 +13,8 @@
 
 新版本为 `ai-billing/0.1.8`、`ai-history/0.1.2`。发布必须使用新版本，禁止覆盖旧文件。Higress Redis 地址需要使用实际已发现的服务标识；本次历史配置采用 `redis-stack-server.dns`。
 
+main 交付收尾另补齐发布信息：billing 的 VERSION、资源规格、示例 URL 与四份 README 统一为 0.1.8；cache / history 补上默认 Makefile 必需的 VERSION，分别为 1.0.3 / 0.1.2，并同步 builder option、资源规格与中英文 README。既有版本契约扩展到 cache / history，在修复前实际报告缺少 VERSION 和版本不一致，修复后通过。此项只对齐源码中的发布信息，不重新上传、覆盖或部署已经验证的制品。
+
 GitNexus 将请求头入口和供应商解析入口评为 CRITICAL；结果包含多个插件的同名与动态回调关系，精确 UID 查询未命中，不能将它视作完整的精确调用图。变更限制在上述两个插件，并通过各自完整测试及后续原生 API、账单、慢连接预检控制风险。提交前仍执行 staged detect-changes；源码修改后更新 graphify 索引。
 
 ## 验收边界

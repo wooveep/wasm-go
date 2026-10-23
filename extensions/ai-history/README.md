@@ -4,6 +4,9 @@ keywords: [ AI网关, AI历史对话 ]
 description: AI 历史对话插件配置参考
 ---
 
+> 插件版本：`0.1.2`
+
+
 ## 功能说明
 
 `AI 历史对话` 基于请求头实现用户身份识别，并自动缓存对应用户的历史对话,且在后续对话中自动填充到上下文。同时支持用户主动查询历史对话。
@@ -53,7 +56,7 @@ redis:
  curl 'http://example.com/api/openai/v1/chat/completions?fill_history_cnt=3' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer sk-Nzf7RtkdS4s0zFyn5575124129254d9bAf9473A5D7D06dD3'
+  -H 'Authorization: Bearer YOUR_API_KEY'
   --data-raw '{"model":"qwen-long","frequency_penalty":0,"max_tokens":800,"stream":false,"messages":[
         {
             "role": "user",
@@ -97,7 +100,7 @@ redis:
  curl 'http://example.com/api/openai/v1/chat/completions?fill_history_cnt=3' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer sk-Nzf7RtkdS4s0zFyn5575124129254d9bAf9473A5D7D06dD3'
+  -H 'Authorization: Bearer YOUR_API_KEY'
   --data-raw '{"model":"qwen-long","frequency_penalty":0,"max_tokens":800,"stream":false,"messages":[
         {
             "role": "user",
@@ -113,7 +116,7 @@ redis:
  curl 'http://example.com/api/openai/v1/chat/completions?fill_history_cnt=3' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer sk-Nzf7RtkdS4s0zFyn5575124129254d9bAf9473A5D7D06dD3'
+  -H 'Authorization: Bearer YOUR_API_KEY'
   --data-raw '{"model":"qwen-long","frequency_penalty":0,"max_tokens":800,"stream":false,"messages":[
          {
             "role": "user",
@@ -138,7 +141,7 @@ redis:
 curl 'http://example.com/api/openai/v1/chat/completions/ai-history/query?cnt=3' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer sk-Nzf7RtkdS4s0zFyn5575124129254d9bAf9473A5D7D06dD3'
+  -H 'Authorization: Bearer YOUR_API_KEY'
 ```
 
 响应示例:

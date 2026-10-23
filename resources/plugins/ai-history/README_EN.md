@@ -3,6 +3,9 @@ title: AI History Dialogue
 keywords: [ AI Gateway, AI History Dialogue ]
 description: AI History Dialogue Plugin Configuration Reference
 ---
+
+> Plugin version: `0.1.2`
+
 ## Functional Description
 `AI History Dialogue` implements user identity recognition based on request headers and automatically caches the historical dialogues of corresponding users, which are then automatically filled into the context in subsequent dialogues. It also supports users to actively query historical dialogues.
 

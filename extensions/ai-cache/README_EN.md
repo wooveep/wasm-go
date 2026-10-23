@@ -4,6 +4,9 @@ keywords: [higress,ai cache]
 description: ai-cache thin gateway plugin configuration reference
 ---
 
+> Plugin version: `1.0.3`
+
+
 ## Function Description
 
 `ai-cache` is a thin Higress Wasm-Go gateway cache plugin. In the online request

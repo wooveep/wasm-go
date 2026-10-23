@@ -93,5 +93,53 @@
   "pricing_note": "Synthetic test price; not vendor list price",
   "source_base": "80bc6bff",
   "local_sdk_commit": "662ed04",
-  "truncated_stream_case": "passed without DONE"
+  "truncated_stream_case": "passed without DONE",
+  "final_merged_plugin_tests": [
+    {
+      "plugin": "ai-proxy",
+      "exit_code": 0,
+      "seconds": 294.66,
+      "packages_passed": 4,
+      "tests_passed_including_subtests": 1984,
+      "skips": 1,
+      "failures": []
+    },
+    {
+      "plugin": "ai-cache",
+      "exit_code": 0,
+      "seconds": 35.66,
+      "packages_passed": 2,
+      "tests_passed_including_subtests": 197,
+      "skips": 0,
+      "failures": []
+    },
+    {
+      "plugin": "ai-history",
+      "exit_code": 0,
+      "seconds": 11.99,
+      "packages_passed": 1,
+      "tests_passed_including_subtests": 55,
+      "skips": 0,
+      "failures": []
+    },
+    {
+      "plugin": "ai-billing",
+      "exit_code": 0,
+      "seconds": 12.18,
+      "packages_passed": 1,
+      "tests_passed_including_subtests": 295,
+      "skips": 0,
+      "failures": []
+    }
+  ],
+  "final_root_and_release_contract": {
+    "tests_passed_including_subtests": 159,
+    "packages_passed": 7,
+    "skips": 4,
+    "failures": 0,
+    "release_contract_red_before_alignment": true,
+    "release_contract_green_after_alignment": true
+  },
+  "go_vet_ai_proxy_exit_code": 0,
+  "published_artifacts_reuploaded_during_metadata_alignment": false
 }

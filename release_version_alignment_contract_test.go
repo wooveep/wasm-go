@@ -178,9 +178,25 @@ func TestAIPluginVersionAlignmentContract(t *testing.T) {
 		},
 		{
 			name:               "ai-billing",
-			selectedVersion:    "0.1.7",
+			selectedVersion:    "0.1.8",
 			artifactURLExample: "extensions/ai-billing/plugin.yaml",
 			documentation:      releaseDocumentation("ai-billing"),
+		},
+		{
+			name:            "ai-cache",
+			selectedVersion: "1.0.3",
+			metadata: []releaseVersionSurface{
+				{path: "extensions/ai-cache/option.yaml", yamlPath: []string{"version"}},
+			},
+			documentation: releaseDocumentation("ai-cache"),
+		},
+		{
+			name:            "ai-history",
+			selectedVersion: "0.1.2",
+			metadata: []releaseVersionSurface{
+				{path: "extensions/ai-history/option.yaml", yamlPath: []string{"version"}},
+			},
+			documentation: releaseDocumentation("ai-history"),
 		},
 		{
 			name:               "ai-quota",

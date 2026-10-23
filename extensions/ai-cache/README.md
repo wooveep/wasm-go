@@ -4,6 +4,9 @@ keywords: [higress,ai cache]
 description: ai-cache 薄网关缓存插件配置参考
 ---
 
+> 插件版本：`1.0.3`
+
+
 **Note**
 
 > 若使用 tinygo 编译，则需要数据面的 proxy wasm 版本大于等于 0.2.100，且编译时需要带上版本的 tag，例如：`tinygo build -o main.wasm -scheduler=none -target=wasi -gc=custom -tags="custommalloc nottinygc_finalizer proxy_wasm_version_0_2_100" ./`
