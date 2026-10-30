@@ -1,3 +1,5 @@
+> **2026-10-31：历史源码仓库，已退出日常维护和构建。** 唯一维护路径为 [`plugin-server/plugins/wasm-go/`](../../plugin-server/plugins/wasm-go/)，统一入口为 `make -C ../../plugin-server build-all` 或 `build-plugin PLUGIN=<名称>`。本目录的 Git 历史及既有未提交资料保留；历史重现需显式设置 `ALLOW_ARCHIVED_SOURCE=1`。来源、版本裁决与验收进展见[整合计划](../../plugin-server/docs/plans/2026-10-31-unified-plugin-source-and-delivery.md)。
+
 ## Intro
 
 This SDK is used to develop the WASM Plugins for Higress in Go.

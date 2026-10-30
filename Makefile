@@ -1,3 +1,8 @@
+# Historical checkout: the maintained source and build entry moved to plugin-server.
+ifneq ($(ALLOW_ARCHIVED_SOURCE),1)
+$(error Archived source checkout. Use make -C ../../plugin-server build-all or build-plugin PLUGIN=name. Historical reproduction only: ALLOW_ARCHIVED_SOURCE=1)
+endif
+
 EXTENSIONS_DIR ?= extensions
 BUILD_DIR ?= build/plugins
 PLUGIN_VERSION ?=
