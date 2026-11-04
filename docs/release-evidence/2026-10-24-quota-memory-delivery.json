@@ -1,0 +1,197 @@
+{
+  "passed": true,
+  "artifacts": {
+    "quota": {
+      "plugin": "ai-quota",
+      "version": "1.0.4",
+      "bytes": 6356787,
+      "sha256": "f82ee2fb23d3d3f30564f0aea1afe99f8db03dd838573b8c645c61dd030f55d6"
+    },
+    "billing": {
+      "plugin": "ai-billing",
+      "version": "0.1.9",
+      "bytes": 18457925,
+      "sha256": "6d40f54767b847b9f38ea46fb00394ef4e9797a08990d57521a2d67a3a587a53",
+      "readback_matches": true
+    },
+    "memory": {
+      "plugin": "ai-memory",
+      "version": "0.1.3",
+      "bytes": 6727409,
+      "sha256": "5cc4c51d77255516eb53eeb20b41f06003098087a04a50fefdd5fa4c6c8bbfc9",
+      "readback_matches": true
+    }
+  },
+  "go_tests": {
+    "root": {
+      "exit_code": 0,
+      "seconds": 0.22,
+      "summary": [
+        "ok  \tgithub.com/higress-group/wasm-go\t0.106s",
+        "ok  \tgithub.com/higress-group/wasm-go/pkg/ai/memorycache\t(cached)",
+        "ok  \tgithub.com/higress-group/wasm-go/pkg/ai/protocol\t(cached)",
+        "ok  \tgithub.com/higress-group/wasm-go/pkg/ai/sessionctx\t(cached)",
+        "?   \tgithub.com/higress-group/wasm-go/pkg/iface\t[no test files]",
+        "?   \tgithub.com/higress-group/wasm-go/pkg/log\t[no test files]",
+        "ok  \tgithub.com/higress-group/wasm-go/pkg/matcher\t(cached)",
+        "?   \tgithub.com/higress-group/wasm-go/pkg/protos\t[no test files]",
+        "?   \tgithub.com/higress-group/wasm-go/pkg/test\t[no test files]",
+        "ok  \tgithub.com/higress-group/wasm-go/pkg/tokenusage\t(cached)",
+        "ok  \tgithub.com/higress-group/wasm-go/pkg/wrapper\t(cached)"
+      ],
+      "failures": []
+    },
+    "ai-quota": {
+      "exit_code": 0,
+      "seconds": 0.21,
+      "summary": [
+        "ok  \tgithub.com/alibaba/higress/plugins/wasm-go/extensions/ai-quota\t0.003s"
+      ],
+      "failures": []
+    },
+    "ai-billing": {
+      "exit_code": 0,
+      "seconds": 15.36,
+      "summary": [
+        "ok  \tai-billing\t14.588s"
+      ],
+      "failures": []
+    },
+    "ai-memory": {
+      "exit_code": 0,
+      "seconds": 26.64,
+      "summary": [
+        "ok  \tgithub.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory\t26.260s",
+        "ok  \tgithub.com/alibaba/higress/plugins/wasm-go/extensions/ai-memory/config\t(cached)"
+      ],
+      "failures": []
+    }
+  },
+  "formal": {
+    "run_id": "formal-f3-quota-memory-20261023",
+    "requested_duration_seconds": 300.0,
+    "aborted": false,
+    "abort_reason": null,
+    "all_failures": 0,
+    "run_end_wall": 1792771556.9887586,
+    "issued_total": 919,
+    "completed_total": 919,
+    "steady_requests": 579,
+    "steady_successes": 579,
+    "success_rate": 1.0,
+    "cohort_rps": 1.93,
+    "errors": {},
+    "connections": {
+      "created": 200,
+      "reused": 719
+    },
+    "ttfb_ms": {
+      "n": 579,
+      "mean": 11975.804995213935,
+      "p50": 12117.283294996014,
+      "p95": 16010.332241399738,
+      "p99": 17046.148361560197,
+      "max": 18891.74051101145
+    },
+    "ttft_ms": {
+      "n": 579,
+      "mean": 11975.810977132789,
+      "p50": 12117.2941949917,
+      "p95": 16010.335331196256,
+      "p99": 17046.151360767843,
+      "max": 18891.754256997956
+    },
+    "duration_ms": {
+      "n": 579,
+      "mean": 103332.10483597893,
+      "p50": 94339.44714900281,
+      "p95": 126968.16898190884,
+      "p99": 182564.0017456064,
+      "max": 184176.52707100206
+    },
+    "connection_queue_ms": {
+      "n": 579,
+      "mean": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "max": 0
+    },
+    "chunk_interval_ms": {
+      "n": 36453,
+      "mean": 1451.0533367349738,
+      "p50": 1421.867,
+      "p95": 2373.1014000000005,
+      "p99": 2779.8125600000008,
+      "max": 3917.678
+    }
+  },
+  "financial": {
+    "passed": true,
+    "errors": [],
+    "error_count": 0,
+    "requests": 919,
+    "billable_requests": 919,
+    "forwards": 919,
+    "cache_hits": 0,
+    "accounts": 200,
+    "internal_cutoff_epoch": 1792771585.3375666,
+    "internal_calls_completed_by_cutoff": 2801,
+    "later_internal_calls_observed": 0,
+    "internal_events": 2801,
+    "internal_kinds": {
+      "embedding": 963,
+      "intent": 919,
+      "analysis": 919
+    },
+    "customer_total_units": 2409995410000,
+    "supplier_total_units": 1204997705000,
+    "internal_supplier_units": 25613620000,
+    "actual_debit_units": 2409995410000,
+    "difference_units": 0,
+    "amount_scale": 10000000000
+  },
+  "memory": {
+    "passed": true,
+    "expected_requests": 919,
+    "source_events": 919,
+    "job_statuses": {
+      "succeeded": 919
+    },
+    "failures": {
+      "empty_scope": 0,
+      "missing_events": 0,
+      "unexpected_events": 0,
+      "duplicate_events": 0,
+      "unsuccessful_capture": 0,
+      "incomplete_extraction": 0,
+      "invalid_job_lineage": 0,
+      "candidate_accounting": 0
+    },
+    "max_attempt_count": 1,
+    "persisted_candidates": 0,
+    "historical_dlq_jobs_preserved": 0,
+    "successfully_replayed_events": 0,
+    "duplicate_candidates_preserved": 919,
+    "at": 1792771585.3386934,
+    "scope": "full-memory source events; policy enabled/active gates are intentionally not consulted",
+    "derived_state": {
+      "active_chunks": 1,
+      "chunks_without_vector": 0,
+      "vector_statuses": {
+        "ready": 1
+      }
+    },
+    "source_since_epoch": null,
+    "source_until_epoch": null,
+    "eligible_only": false,
+    "retained_event_inventory": [
+      {
+        "event_status": "succeeded",
+        "deletion_state": "active",
+        "events": 919
+      }
+    ]
+  },
+  "scope": "Default K3S, mock model providers, frozen 200 concurrent / 300-second full-plugin cohort; historical failed rounds preserved in the deployment report."
+}
