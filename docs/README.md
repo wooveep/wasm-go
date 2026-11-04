@@ -1,5 +1,7 @@
 # wasm-go 文档
 
+> 本轮派工入口：[G01–G11实施任务卡](2026-10-25-gap-dispatch-task-cards.md)与[P0/D0任务卡](2026-10-25-p0-d0-task-cards.md)；实现/运行尚未执行，Issue见跨项目总表。
+
 当前需求、设计和验证记录使用普通 Markdown 与 Git/PR 记录维护。插件行为与配置以当前插件 README 和资源 schema 为入口。
 
 ## 当前插件契约
@@ -14,6 +16,12 @@
 | 请求与路由可观测性 | [ai-statistics](../extensions/ai-statistics/README.md) | [ai-statistics schema](../resources/plugins/ai-statistics/spec.yaml) |
 
 ## 设计与验证资料
+
+- [P0/D0首批4卡](2026-10-25-p0-d0-task-cards.md)：固定契约导入、身份/body语料、指定callout薄适配及离线驱动；文件owner与合入门槛已拆清，均待实施。
+
+- [EB-01/02 执行边界验证](2026-10-25-execution-boundary-verification-plan.md)：可信身份、mapper前目标、回调及逐发送观测的方法和12项待执行案例。
+
+- [2026-10-25 接口实施计划](2026-10-25-interface-implementation-plan.md)：执行选择、单发许可、事实、余额准入与冷却；文档已细化，实现与验收待执行。
 
 - [Higress 上游基线与独立插件维护边界](2026-10-22-upstream-boundary.md)
 - [缓存与记忆共享运行时设计](2026-06-26-ai-cache-memory-shared-runtime-design.md)

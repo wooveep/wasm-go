@@ -28,3 +28,6 @@ openspec/specs/*
 !openspec/changes/support-qwen-dashscope-openai-media-conversion/specs/**/*.md
 graphify-out/*
 build/
+
+# Local indexes, temporary checkouts, and recovery data.
+.codegraph/
